@@ -1,0 +1,40 @@
+from setuptools import setup, find_packages
+
+setup(
+    name="biodiscoverygym",
+    version="0.1.0",
+    packages=find_packages(),
+    python_requires=">=3.11",
+    install_requires=[
+        "numpy==2.1",
+        "pandas>=2.0",
+        "scipy>=1.11",
+        "scikit-learn>=1.3",
+        "statsmodels>=0.14",
+        "networkx",
+        "pyarrow>=12.0",
+        "tqdm",
+        "requests",
+        "pyyaml",
+        "gseapy>=1.0.4",
+        "lifelines>=0.27",
+        "umap-learn",
+        "gget",
+        "cryptography>=41",
+    ],
+    extras_require={
+        "llm": [
+            "anthropic>=0.25",
+            "openai>=1.0",
+            "sentence-transformers>=2.2",
+            "faiss-cpu",
+            "langchain",
+            "langchain-anthropic",
+            "langchain-openai",
+            "langchain-community",
+            "langgraph==0.3.18",
+        ],
+        "bio": ["biopython", "scanpy"],
+        "dev": ["pytest>=7.4", "pytest-cov", "jupyter"],
+    },
+)

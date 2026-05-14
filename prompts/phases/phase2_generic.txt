@@ -1,0 +1,68 @@
+Commit Phase complete. Here are the follow-up questions.
+For each question: report all requested numbers first, then interpret.
+Where asked to cite Commit Phase values, quote the exact number you committed.
+Use run_code for any additional analysis needed.
+
+────────────────────────────────────────────────────────────
+Q1 — Survival and Clinical Associations
+
+For each subtype you identified:
+(a) Median overall survival in months and log-rank p-value vs all other subtypes
+    (if survival data available; otherwise, report the strongest clinical variable
+    that differs between subtypes with effect size and p-value).
+(b) Hazard ratio from unadjusted Cox proportional hazards regression.
+(c) Distribution of tumor stage/grade across subtypes (chi-squared p-value).
+Report all numbers first. Then in one sentence, state whether the clinical differences
+between subtypes were expected or unexpected given the molecular profiles you observed.
+Cite your Commit Phase committed values.
+
+────────────────────────────────────────────────────────────
+Q2 — Mutation Landscape by Subtype
+
+If mutation data is available:
+(a) Top 3 most enriched mutations per subtype — gene, mutation rate (mutant/total),
+    Fisher's exact p-value, odds ratio vs all other samples.
+(b) Is there any pair of mutations that is mutually exclusive across subtypes?
+    Report the most striking pair with Fisher's exact p-value.
+(c) Are total mutation burdens different between subtypes? Report median TMB per
+    subtype and Mann-Whitney p-value.
+Report all numbers first. Then state in one sentence whether the mutation landscape
+reinforces or contradicts the transcriptional grouping.
+If no mutation data is available, describe instead the top 5 genes most correlated
+with clinical outcome within each subtype (Spearman r, p-value).
+
+────────────────────────────────────────────────────────────
+Q3 — Cross-Modal and Within-Subtype Heterogeneity
+
+(a) From any available RPPA data: which single protein shows the largest difference
+    between subtypes? Report protein name, mean ± SD per subtype, Mann-Whitney p-value.
+    Is this protein correlated with the dominant transcriptional PC across all samples?
+    Report Spearman r and p-value.
+    If no RPPA data: identify the top 3 genes within each subtype whose expression
+    correlates most strongly with survival (Spearman r, p-value per subtype).
+(b) Within the worse-prognosis subtype (or the subtype you find most heterogeneous),
+    split samples at the median of your top marker gene's expression. Do these
+    two halves differ in survival (log-rank p-value), mutation burden (Mann-Whitney
+    p-value), or any available clinical variable?
+Report all numbers before any mechanistic interpretation.
+
+────────────────────────────────────────────────────────────
+Q4 — Mechanistic Follow-up Experiment
+
+Based on all your data findings, propose ONE experiment that would definitively
+validate or refute the molecular distinction between your subtypes.
+
+Your answer must specify:
+(a) Model system: which cell line(s), organoid, or animal model — and why this
+    system is appropriate (cite any RPPA, mutation, or expression evidence that
+    supports this choice from the dataset).
+(b) Perturbation: what you would do (knockdown, knockout, overexpression, drug
+    treatment) and the specific target(s). State the expected direction of effect
+    on the readout based on your committed data.
+(c) Primary readout: the specific measurable outcome (e.g., cell viability assay,
+    RNA-seq, phosphoprotein level) with the expected magnitude or direction of
+    change if your hypothesis is correct.
+(d) Falsification criterion: what result would cause you to reject your hypothesis?
+
+────────────────────────────────────────────────────────────
+Answer each question clearly, citing specific data or statistical results.

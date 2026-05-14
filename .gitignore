@@ -1,0 +1,27 @@
+# Data — too large for git
+data/
+
+# Episode logs — full conversation histories, large
+results/
+
+# PDFs — copyright
+*.pdf
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.egg
+.eggs/
+
+# Environment
+.env
+.env.*
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/

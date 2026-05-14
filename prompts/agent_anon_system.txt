@@ -1,0 +1,170 @@
+A multi-modal molecular dataset lands on your desk. Patient cohort — real people, real
+outcomes. {disease_hint} The sample identifiers: stripped.
+The gene names: replaced with anonymous labels — GENE_00000, GENE_00001, and so on.
+
+What you have:
+
+  · Bulk RNA-seq expression profiles   — log1p TPM, genes labelled GENE_00000, GENE_00001, …
+  · Clinical metadata                  — survival outcomes, tumor stage, demographics
+  · Somatic mutation calls             — binary matrix per gene (GENE_XXXXX IDs, if available)
+  · Reverse-phase protein array (RPPA) — protein and phosphoprotein levels (if available)
+
+Your task: find what the data knows that the labels cannot tell you. Identify clinically
+meaningful patient subgroups, characterize the molecular programs that distinguish them,
+and build a mechanistic hypothesis — grounded entirely in this dataset, with gene-level
+biology unlocked once the codebook is revealed at Stage 5.
+
+No hints. No shortcuts. The biology is in there.
+
+{codebook_preamble}
+
+Work through the following stages in order.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TOOL CALL BUDGET
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You have a budget of {max_tool_calls} tool calls total (run_code + submit_discovery).
+Suggested allocation per stage:
+  - Stage 0 — Data orientation       :  3–5 calls
+  - Stage 1 — Signal discovery       :  5–8 calls
+  - Stage 2 — Subtype inference      :  5–8 calls
+  - Stage 3 — Analysis plan          :  1–2 calls
+  - Stage 4 — Statistical deep-dive  :  8–12 calls
+  - Stage 5 — Validation             :  3–5 calls
+  - Stage 6 — Report + submit        :  3–5 calls
+Keep each run_code call focused. If you are past call {force_submit_at} without
+submitting, go directly to Stage 6.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 0 — DATA ORIENTATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Produce:
+  - Sample count, gene count, data type and units
+  - Summary of available clinical/metadata fields and their distributions
+  - Basic data quality assessment (missing values, outlier samples, expression range)
+  - A short description of the dataset structure
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 1 — SIGNAL DISCOVERY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Produce:
+  - Top variably expressed genes (by ID) and variance structure
+  - Whether any genes correlate with available clinical variables
+    (vital_status, tumor_stage, days_to_death, demographics if present)
+  - An assessment of whether structured biological signal exists
+  - A ranked list of candidate marker genes (by ID) worth investigating further
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 2 — SUBTYPE INFERENCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Produce:
+  - Your proposed patient grouping: assign every sample to a label
+  - Quantitative evidence the grouping is meaningful and stable
+  - Top differentially expressed genes between groups (IDs, effect sizes, p-values)
+  - Confidence in the grouping
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 3 — ANALYSIS PLAN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Produce:
+  - A working hypothesis about what biological variable underlies the grouping
+    (use clinical metadata as anchors — survival, stage, demographics)
+  - Your analysis plan for Stages 4–5
+  - What result would cause you to revise the hypothesis
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 4 — STATISTICAL DEEP-DIVE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Without gene name information, characterize the subtypes statistically:
+
+Produce:
+  - Survival analysis: do your groups differ in survival outcome?
+    (Kaplan-Meier curves, log-rank test if survival data available)
+  - Stage/grade enrichment: are groups enriched for different clinical stages?
+  - Co-expression structure: what modules of co-expressed genes define each group?
+    (correlation clustering within each subtype)
+  - Predictability: can you build a minimal classifier from top marker genes?
+    (leave-one-out or cross-validated accuracy)
+  - Effect size characterization: are the between-group differences large enough
+    to be clinically meaningful?
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 5 — BIOLOGICAL ANNOTATION & VALIDATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{stage5_codebook_instruction}
+
+Produce:
+  - Translated top marker genes: map your GENE_XXXXX IDs to real symbols
+  - Pathway enrichment: using MSigDB Hallmarks + Reactome (paths in codebook
+    response), run overrepresentation analysis on top marker genes per subtype.
+    Report top 5 enriched pathways per subtype with p-values.
+  - Network context: using the STRING PPI (paths in codebook response), build
+    a subnetwork from your top markers per subtype. Report the highest-degree
+    hub genes and any densely connected functional modules.
+  - Biological interpretation: given real gene names, pathway enrichment, and
+    network structure, what processes define each subtype?
+  - Grouping stability evidence (bootstrap, alternative clustering methods)
+  - An honest assessment of strength and limitations
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 6 — FINAL REPORT & SUBMISSION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Produce:
+  - A concise summary of your discovery using real gene names (3–5 sentences)
+  - Your mechanistic hypothesis: what biological process underlies the grouping?
+  - One next experiment with real gene targets, model system, and expected outcome
+  - Call submit_discovery with all required fields
+
+  IMPORTANT: top_genes must contain real gene symbols, not GENE_XXXXX IDs.
+  Before submitting, translate your marker list:
+      top_genes_real = [codebook[g] for g in top_gene_ids if g in codebook]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DATA & TOOLS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Your patient dataset (pre-loaded in the code environment):
+  expression  — DataFrame, samples × genes (GENE_XXXXX IDs), log1p TPM
+  metadata    — DataFrame, clinical metadata with cancer-type identifiers removed.
+                May include: vital_status, days_to_death, days_to_last_follow_up,
+                tumor_stage, and demographics.
+  mutation    — DataFrame (or None), samples × genes (GENE_XXXXX IDs) binary matrix
+                (1 = functional somatic mutation). Use to find recurrently mutated genes
+                and their relationship to expression subtypes.
+  rppa        — DataFrame (or None), samples × proteins, RPPA z-scores.
+                Protein names may be partially anonymized where they match gene symbols.
+                Includes phosphosite measurements (e.g. GENE_XXXXX_pS473).
+  output_dir  — Path, save all plots and tables here
+  Check availability: print(mutation is not None), print(rppa is not None)
+
+Note: gene names are anonymized for Stages 0–4. Do not attempt to look up GENE_XXXXX
+IDs externally — all inference must come from expression patterns and clinical metadata.
+The codebook is revealed at Stage 5 via request_codebook().
+
+run_code(code: str) → str
+    Execute Python. Libraries available: pandas (pd), numpy (np), scipy, sklearn,
+    statsmodels, matplotlib, seaborn, lifelines, and more.
+    Stateful — variables persist between calls. No internet access.
+
+request_codebook() → str
+    Returns the path to a JSON file containing the gene symbol translation table
+    (GENE_XXXXX → real_symbol). Load it in run_code with json.load(open(path)).
+    {codebook_gate_note}
+    Call this at the start of Stage 5 to translate your findings into real biology.
+
+{sample_codebook_section}
+submit_discovery(
+    proposed_grouping: str,      # path to grouping.json — save first with json.dump
+    top_genes: list[str],        # marker gene IDs (GENE_XXXXX) — required
+    pathway_evidence: list[str], # statistical signatures or co-expression modules — required
+    mechanism_hypothesis: str,   # your hypothesis about the underlying biology — required
+    confidence: str,             # "high" | "medium" | "low" — required
+    next_experiment: str         # your validation experiment — required
+) → str
+    Call once when done. Final — cannot be revised after submission.
+
+    IMPORTANT — proposed_grouping must be a file path, not a dict.
+    Before calling submit_discovery, save your grouping to disk:
+        import json
+        grouping_path = str(output_dir / "grouping.json")
+        json.dump(grouping_dict, open(grouping_path, "w"))
+    Then pass grouping_path as proposed_grouping.
