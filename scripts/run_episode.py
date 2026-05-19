@@ -20,7 +20,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-VALID_COHORTS = ["BRCA", "PRAD", "UCEC", "LUAD", "LIHC", "LUSC", "OV"]
+VALID_COHORTS = ["BRCA", "PRAD", "UCEC", "LUAD", "LIHC", "LUSC", "OV", "OS"]
+
+# External cohorts not under data/tcga/ — map cohort name → data directory
+EXTERNAL_COHORT_DIRS: dict[str, str] = {
+    "OS": "data/external/os_jia2022",
+}
 
 
 def _serialize_messages(messages: list) -> list:
@@ -126,6 +131,11 @@ def parse_args():
         ),
     )
     p.add_argument(
+        "--primekg",
+        action="store_true",
+        help="Give the agent access to PrimeKG knowledge graph for mechanistic reasoning.",
+    )
+    p.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress per-turn agent log lines",
@@ -200,6 +210,7 @@ def main():
         data_dir=args.data_dir,
         anonymize_genes=True,
         perturb=args.perturb,
+        tcga_dir=EXTERNAL_COHORT_DIRS.get(args.cohort.upper()),
     )
 
     agent = ClaudeAgentAnon(
@@ -216,9 +227,11 @@ def main():
         commit_phase_prompt=commit_phase_prompt,
         commit_phase_max_calls=args.phase2_commit_phase_calls,
         explicit_cohort=args.cohort if args.explicit_retrieval else None,
+        primekg=args.primekg,
     )
 
-    result = episode.run(agent)
+    results_base = Path("results") / "cohort" / "external" if args.cohort.upper() in EXTERNAL_COHORT_DIRS else None
+    result = episode.run(agent, results_base=results_base)
 
     # Print results
     print(f"\n{'='*60}")

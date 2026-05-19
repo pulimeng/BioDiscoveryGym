@@ -21,7 +21,7 @@ _DEFAULT_MODEL = "claude-sonnet-4-6"
 _MECHANISM_SYSTEM = """\
 You are a scientific peer reviewer evaluating a molecular discovery submission.
 
-Score the MECHANISM GROUNDING of the submitted hypothesis on two axes:
+Score the MECHANISM GROUNDING of the submitted hypothesis on three axes:
 
 1. Internal coherence (0–4): Does the mechanistic hypothesis logically follow
    from the submitted top genes and pathway evidence?
@@ -39,13 +39,22 @@ Score the MECHANISM GROUNDING of the submitted hypothesis on two axes:
    1 = could have been written without seeing any data
    0 = purely literature recall with no data reference
 
+3. Mechanistic logic (0–4): Is a directional causal chain explicitly traced?
+   4 = full chain with direction at each step (A activates B → B phosphorylates C → C drives phenotype X)
+   3 = directional relationships stated but one link is missing or vague
+   2 = two endpoints named with a plausible mechanism implied but chain not traced
+   1 = pathway name + phenotype stated, no causal chain (e.g. "Hedgehog is involved in differentiation")
+   0 = correlation stated as mechanism (e.g. "X correlates with poor survival therefore causes it")
+
 Respond ONLY with valid JSON:
 {
   "internal_coherence": <int 0-4>,
   "data_grounding": <int 0-4>,
-  "total": <sum 0-8>,
+  "mechanistic_logic": <int 0-4>,
+  "total": <sum 0-12>,
   "coherence_note": "<one sentence>",
-  "grounding_note": "<one sentence>"
+  "grounding_note": "<one sentence>",
+  "logic_note": "<one sentence>"
 }
 """
 
@@ -73,7 +82,7 @@ def score_mechanism_grounding(
         )
         result = _parse_json(response.content[0].text)
         raw = float(result.get("total", 0))
-        score = float(raw / 8.0)  # normalize to 0-1
+        score = float(raw / 12.0)  # normalize to 0-1 (3 axes × 4 pts)
         return score, result
     except Exception as e:
         return 0.0, {"error": str(e)}

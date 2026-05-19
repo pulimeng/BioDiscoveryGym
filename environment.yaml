@@ -15,7 +15,7 @@ dependencies:
   - statsmodels>=0.14
   - matplotlib>=3.7
   - seaborn>=0.12
-  - networkx             # pathway / gene network analysis
+  - networkx>=3.0        # pathway / gene network analysis + Steiner tree (PCST)
 
   # --- bioinformatics (conda-forge / bioconda) ---
   - biopython            # gene ID mapping, sequence utilities
@@ -66,6 +66,16 @@ dependencies:
 
     # sealed label encryption
     - cryptography>=41
+
+    # PDF parsing (paper analysis)
+    - pypdf>=4.0
+
+    # Excel parsing (supplementary data)
+    - openpyxl>=3.1
+
+    # HuggingFace datasets (PrimeKG download)
+    - datasets>=2.0
+    - huggingface_hub>=0.20
 
     # testing
     - pytest>=7.4

@@ -175,6 +175,22 @@ if [[ $TARGET_DISCOVERY_ONLY -eq 0 ]]; then
 fi
 
 # ------------------------------------------------------------------
+# 13. PrimeKG knowledge graph  (mechanistic reasoning — optional)
+#     Saves 4 split parquets to data/networks/primekg_*.parquet
+#     Pass --skip-download /path/to/kg.csv to use a local file
+# ------------------------------------------------------------------
+run_step "PrimeKG (gene_gene / gene_drug / gene_disease / gene_pathway)" \
+    scripts/download_primekg.py
+
+# ------------------------------------------------------------------
+# 14. OpenTargets actionability  (tractability + known drugs)
+#     Queries OpenTargets GraphQL API — requires network access
+#     Saves data/opentargets/ot_tractability.parquet + ot_known_drugs.parquet
+# ------------------------------------------------------------------
+run_step "OpenTargets (tractability + known drugs for ~700 cancer genes)" \
+    scripts/download_opentargets.py
+
+# ------------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------------
 echo -e "${GREEN}==============================${NC}"

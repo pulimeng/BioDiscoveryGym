@@ -21,8 +21,10 @@ Two benchmark tasks:
 
 - **5-layer identity blinding** — cancer-type columns stripped, demographics removed, sample IDs → `SAMPLE_XXXX`, gene symbols → `GENE_XXXXX`, data served from neutral path
 - **4 experimental groups** — G0 (explicit retrieval ceiling), G1 (implicit retrieval), G2 (data-driven blind phase), G3 (mislead — wrong barcodes injected)
-- **Post-hoc v2 scoring** — 9 components, 18 points max; quantitative + LLM judge; agent never sees scoring criteria
+- **Post-hoc v2 scoring** — 9 components, 18 points max; quantitative + LLM judge (3 axes including mechanistic logic); agent never sees scoring criteria
 - **Multi-model** — designed to run across Claude, GPT, and Gemini model families
+- **Knowledge graph integration** — PrimeKG (gene-gene PPI, drug-gene, gene-disease, gene-pathway) + Prize-Collecting Steiner Tree for mechanistic reasoning (optional `--primekg` flag)
+- **Actionability data** — OpenTargets tractability and known drugs for 1,200+ cancer genes (revealed to agent at Stage 5 alongside codebook)
 
 ---
 
@@ -45,20 +47,45 @@ See [SETUP.md](SETUP.md) for detailed data setup instructions.
 ## Running Benchmarks
 
 ```bash
-# Task A — full benchmark (67 runs × 5 models)
-bash taskA.sh              # all groups
-bash taskA.sh --group G2   # single group
-bash taskA.sh --dry-run    # preview commands
-
-# Single episode
+# Task A — single episode (G2 default, data-driven)
 python scripts/run_episode.py --cohort BRCA --seed 42 --save-log results/ep.json
 
+# With PrimeKG knowledge graph (PCST + path-finding tools)
+python scripts/run_episode.py --cohort BRCA --seed 42 --primekg --save-log results/ep.json
+
+# G0 — explicit retrieval ceiling
+python scripts/run_episode.py --cohort BRCA --explicit-retrieval --seed 42
+
+# G1 — implicit retrieval
+python scripts/run_episode.py --cohort BRCA --gene-codebook-gate 0 --seed 42
+
 # Score an episode
-python scripts/score_episode_v2.py results/ep.json --save
+python scripts/score_episode_v2.py results/{id}/episode.json --cohort BRCA
+
+# Multi-seed OS benchmark (3 seeds × 3 modes)
+bash scripts/run_os_multiseed.sh
 
 # Task B — target discovery
 python scripts/run_target_discovery.py --indication "Acute Myeloid Leukemia" --save-log results/aml.json
 ```
+
+---
+
+## Completed Results
+
+### OS Benchmark (SGH-OS, Jia et al. 2022) — 9 runs complete
+
+91-sample osteosarcoma cohort (mRNA + sparse mutation panel). 3 modes × 3 seeds each.
+
+| Group | Mean score (/15 achievable) | Normalized | Notes |
+|-------|--------------------------:|-----------|-------|
+| G0 — explicit retrieval | 7.93 | 0.529 | Best mean, tightest spread |
+| G1 — implicit retrieval | 7.59 | 0.506 | Most variable (SD = 0.40) |
+| G2 — data-driven        | 7.69 | 0.513 | Most stable (SD = 0.06) |
+
+All 9 runs recover the same 4-cluster partition (25/25/21/20 vs paper 25/22/23/21). Mode differences are smaller than G1 seed-to-seed variance — no mode effect detected. Full WES/CNA pending GSA HRA003260 approval.
+
+Results: [`results/cohort/external/os_benchmark_summary.md`](results/cohort/external/os_benchmark_summary.md)
 
 ---
 

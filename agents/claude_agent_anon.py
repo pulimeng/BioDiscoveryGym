@@ -127,7 +127,14 @@ _TOOLS: list[dict] = [
                 },
                 "mechanism_hypothesis": {
                     "type": "string",
-                    "description": "Hypothesis about the biological variable underlying the grouping.",
+                    "description": (
+                        "A mechanistic hypothesis explaining the biological variable underlying the grouping. "
+                        "Must trace an explicit causal chain with direction at each step "
+                        "(e.g. 'Gene A activates receptor B → B phosphorylates C → C drives phenotype X in cluster Y'). "
+                        "Name the specific molecular actors (ligand, receptor, effector, downstream target) "
+                        "and anchor each claim to a data-derived finding (expression level, survival difference, "
+                        "pathway p-value). Do not state pathway names alone — trace the logic."
+                    ),
                 },
                 "confidence": {
                     "type": "string",
@@ -174,6 +181,7 @@ class ClaudeAgentAnon:
         commit_phase_prompt: str | None = None,
         commit_phase_max_calls: int = 15,
         explicit_cohort: str | None = None,
+        primekg: bool = False,
     ):
         self.model = model
         self.max_tool_calls = max_tool_calls
@@ -188,6 +196,7 @@ class ClaudeAgentAnon:
         self.commit_phase_prompt = commit_phase_prompt
         self.commit_phase_max_calls = commit_phase_max_calls
         self.explicit_cohort = explicit_cohort.upper() if explicit_cohort else None
+        self.primekg = primekg
 
         import httpx
         self.client = anthropic.Anthropic(
@@ -292,11 +301,18 @@ class ClaudeAgentAnon:
             codebook_path = output_dir / "codebook.json"
             codebook_path.write_text(json.dumps(self.gene_map))
             executor.namespace["codebook"] = dict(self.gene_map)
+            executor.unblock_genesets()
             pre_reveal_lines.append(
                 f"Gene codebook (GENE_XXXXX → real symbol) is available as the variable `codebook`"
-                f"  — {len(self.gene_map)} translations, available immediately."
+                f"  — {len(self.gene_map)} translations, available immediately.\n"
+                f"  Pathway gene sets (MSigDB) are also accessible:\n"
+                f"    Hallmarks : data/genesets/msigdb/h.all.v2023.2.Hs.symbols.gmt\n"
+                f"    Reactome  : data/genesets/msigdb/c2.cp.reactome.v2023.2.Hs.symbols.gmt\n"
+                f"    KEGG      : data/genesets/msigdb/c2.cp.kegg_medicus.v2023.2.Hs.symbols.gmt\n"
+                f"    GO BP     : data/genesets/msigdb/c5.go.bp.v2023.2.Hs.symbols.gmt\n"
+                f"  GMT format: name, _, *genes = line.strip().split('\\t')"
             )
-            self._log(f"[ClaudeAgentAnon] Pre-revealed gene codebook → namespace['codebook']")
+            self._log(f"[ClaudeAgentAnon] Pre-revealed gene codebook → namespace['codebook'] + unblocked genesets")
 
         if self.mislead_cohort and self.sample_codebook_gate == 0:
             fake_map = self._generate_fake_sample_codebook()
@@ -310,6 +326,51 @@ class ClaudeAgentAnon:
             self._log(
                 f"[ClaudeAgentAnon] Pre-revealed sample codebook ({self.mislead_cohort} barcodes) → namespace['sample_codebook']"
             )
+
+        if self.primekg:
+            kg_base = Path("data/networks")
+            kg_files = {
+                "gene_gene":    kg_base / "primekg_gene_gene.parquet",
+                "gene_drug":    kg_base / "primekg_gene_drug.parquet",
+                "gene_disease": kg_base / "primekg_gene_disease.parquet",
+                "gene_pathway": kg_base / "primekg_gene_pathway.parquet",
+            }
+            if all(p.exists() for p in kg_files.values()):
+                pre_reveal_lines.append(
+                    f"PrimeKG knowledge graph splits are available (columns: x_name, x_type, y_name, y_type, relation, display_relation):\n"
+                    f"  data/networks/primekg_gene_gene.parquet    — protein-protein interactions (path-finding)\n"
+                    f"  data/networks/primekg_gene_drug.parquet    — drug-gene targets (therapeutic hypotheses)\n"
+                    f"  data/networks/primekg_gene_disease.parquet — gene-disease associations (driver context)\n"
+                    f"  data/networks/primekg_gene_pathway.parquet — pathway membership (mechanism support)\n"
+                    f"\n"
+                    f"  Use AFTER identifying top marker genes per cluster to build your mechanism_hypothesis.\n"
+                    f"  The goal is to trace a directional causal chain — name the intermediate nodes\n"
+                    f"  (Steiner nodes) that link your hub genes through the network.\n"
+                    f"\n"
+                    f"  === RECOMMENDED: Prize-Collecting Steiner Tree ===\n"
+                    f"  Run after clustering to find the minimal connected network backbone:\n"
+                    f"    from biodiscoverygym.tools.pcst import run_pcst\n"
+                    f"    result = run_pcst(expression, cluster_labels, n_terminals=20)\n"
+                    f"    print(result.summary())\n"
+                    f"    # result.terminal_genes  — top differential genes connected in tree\n"
+                    f"    # result.steiner_nodes   — intermediate connectors (key for mechanism)\n"
+                    f"    # result.edges           — (gene_a, gene_b, relation) triples\n"
+                    f"  Use Steiner nodes to name the causal chain in mechanism_hypothesis.\n"
+                    f"\n"
+                    f"  === Manual path-finding between specific genes ===\n"
+                    f"    import pandas as pd, networkx as nx\n"
+                    f"    gg = pd.read_parquet('data/networks/primekg_gene_gene.parquet')\n"
+                    f"    G  = nx.from_pandas_edgelist(gg, 'x_name', 'y_name', 'display_relation')\n"
+                    f"    path = nx.shortest_path(G, 'GENE_A', 'GENE_B')\n"
+                    f"\n"
+                    f"  === Drug targets for a hub gene ===\n"
+                    f"    gd = pd.read_parquet('data/networks/primekg_gene_drug.parquet')\n"
+                    f"    gd[gd['x_name'] == 'GENE_A'][['y_name', 'display_relation']]\n"
+                )
+                self._log(f"[ClaudeAgentAnon] PrimeKG enabled → {kg_base}/primekg_*.parquet")
+            else:
+                missing = [k for k, p in kg_files.items() if not p.exists()]
+                self._log(f"[ClaudeAgentAnon] PrimeKG requested but missing splits: {missing} — run scripts/download_primekg.py")
 
         begin_text = "Begin. Work through each stage in order and show your reasoning."
         if pre_reveal_lines:
@@ -415,6 +476,24 @@ class ClaudeAgentAnon:
                         codebook_path.write_text(json.dumps(self.gene_map))
                         executor.namespace["codebook"] = dict(self.gene_map)
                         executor.unblock_genesets()
+                        ot_available = (
+                            Path("data/opentargets/ot_tractability.parquet").exists()
+                            and Path("data/opentargets/ot_known_drugs.parquet").exists()
+                        )
+                        ot_section = (
+                            f"\nOpenTargets actionability (tractability + approved/clinical drugs):\n"
+                            f"  data/opentargets/ot_tractability.parquet\n"
+                            f"    columns: gene_symbol, modality (SM/AB/PR/OC), bucket_label,\n"
+                            f"             value (bool), has_approved_drug, has_clinical_drug\n"
+                            f"  data/opentargets/ot_known_drugs.parquet\n"
+                            f"    columns: gene_symbol, drug_id, drug_name, drug_type,\n"
+                            f"             max_phase_str (e.g. PHASE_3 / APPROVAL), max_phase_num (1-4),\n"
+                            f"             is_approved, disease_id, disease_name\n"
+                            f"  Quick lookup:\n"
+                            f"    from biodiscoverygym.tools.opentargets import get_actionability, batch_actionability\n"
+                            f"    print(get_actionability('EGFR').summary())\n"
+                            f"    ranked = batch_actionability(['EGFR','TP53','MYC'])  # DataFrame\n"
+                        ) if ot_available else ""
                         content = (
                             f"Gene codebook is now available as the variable `codebook` in your Python namespace.\n"
                             f"Use it directly in run_code — no file loading needed:\n"
@@ -438,6 +517,7 @@ class ClaudeAgentAnon:
                             f"\n"
                             f"Cancer gene list (OncoKB):\n"
                             f"  data/cancer_genes/oncokb_cancer_gene_list.tsv\n"
+                            f"{ot_section}"
                         )
                         self._log(f"[request_codebook] Released → {codebook_path} (genesets unblocked)")
                     tool_results.append(

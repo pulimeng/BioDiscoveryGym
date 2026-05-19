@@ -25,3 +25,8 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+
+# Claude Code settings
+.claude/
+*.docx
+*.pptx

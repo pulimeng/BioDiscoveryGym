@@ -1,6 +1,6 @@
 # BioDiscoveryGym — Grand Design
 
-**Last updated:** 2026-05-14
+**Last updated:** 2026-05-19
 **Status:** Living document — architecture and open design decisions
 
 ---

@@ -99,6 +99,7 @@ class Episode:
         data_dir: str | Path = "data",
         anonymize_genes: bool = False,
         perturb: bool = False,
+        tcga_dir: str | Path | None = None,
     ) -> "Episode":
         """
         Load a cohort and set up a fully anonymized episode.
@@ -106,6 +107,7 @@ class Episode:
         anonymize_genes=True replaces gene symbols with GENE_XXXX identifiers.
         perturb=True loads survival-inverted + mutation-swapped data files
         (must run scripts/perturb_lihc.py first).
+        tcga_dir overrides the default data/tcga/<cohort> path (for external cohorts).
         """
         data_dir = Path(data_dir)
         cohort = cohort.upper()
@@ -113,7 +115,8 @@ class Episode:
 
         # 1. Load dataset
         loader = DataLoader(data_dir)
-        dataset = loader.load_tcga(cohort, tcga_dir=data_dir / "tcga" / cohort_lower,
+        resolved_tcga_dir = Path(tcga_dir) if tcga_dir else data_dir / "tcga" / cohort_lower
+        dataset = loader.load_tcga(cohort, tcga_dir=resolved_tcga_dir,
                                    perturb=perturb)
 
         # 2. Strip leaky columns
@@ -143,7 +146,7 @@ class Episode:
     # Run
     # ------------------------------------------------------------------
 
-    def run(self, agent: Any) -> "EpisodeResult":
+    def run(self, agent: Any, results_base: str | Path | None = None) -> "EpisodeResult":
         import json
 
         set_global_seed(self.seed)
@@ -151,7 +154,8 @@ class Episode:
 
         self._write_episode_data()
 
-        output_dir = Path("results") / "cohort" / self.episode_id
+        base = Path(results_base) if results_base else Path("results") / "cohort"
+        output_dir = base / self.episode_id
         output_dir.mkdir(parents=True, exist_ok=True)
 
         if self._gene_map:

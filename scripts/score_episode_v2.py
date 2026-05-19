@@ -101,15 +101,20 @@ def main():
 
     data_dir = Path(args.data_dir)
 
+    _EXTERNAL_COHORT_DIRS = {
+        "OS": "data/external/os_jia2022",
+    }
+
     # --- Reconstruct dataset (real gene names, SAMPLE_XXXX indices) ---
     print("Loading dataset from TCGA files...")
     from biodiscoverygym.utils.data_loader import DataLoader
     from biodiscoverygym.utils.hidden_context import DataAnonymizer
 
     loader = DataLoader(data_dir)
+    tcga_dir = Path(_EXTERNAL_COHORT_DIRS[cohort]) if cohort in _EXTERNAL_COHORT_DIRS else data_dir / "tcga" / cohort.lower()
     dataset = loader.load_tcga(
         cohort,
-        tcga_dir=data_dir / "tcga" / cohort.lower(),
+        tcga_dir=tcga_dir,
     )
     # Strip leaky columns but keep real gene names
     anon_dataset = DataAnonymizer.mask(dataset)

@@ -7,9 +7,9 @@ Complete setup for both benchmarks (Task B: target discovery + Task A: cohort an
 ## Prerequisites
 
 ```bash
-conda create -n biodiscoverygym python=3.11
+conda env create -f environment.yaml
 conda activate biodiscoverygym
-pip install -r requirements.txt
+pip install -e .
 export ANTHROPIC_API_KEY="sk-..."
 ```
 
@@ -100,6 +100,36 @@ python scripts/download_genesets.py
 python scripts/download_cancer_genes.py
 ```
 
+### 13. PrimeKG knowledge graph (~50 MB, optional)
+```bash
+python scripts/download_primekg.py
+```
+
+Downloads from Harvard Dataverse (doi:10.7910/DVN/IXA7BM) and splits into four parquets:
+
+| File | Edges | Content |
+|------|------:|---------|
+| `data/networks/primekg_gene_gene.parquet` | ~642k | Protein-protein interactions |
+| `data/networks/primekg_gene_drug.parquet` | ~24k | Drug-gene targets |
+| `data/networks/primekg_gene_disease.parquet` | ~95k | Gene-disease associations |
+| `data/networks/primekg_gene_pathway.parquet` | ~84k | Pathway membership |
+
+Used by the `--primekg` agent flag for Prize-Collecting Steiner Tree analysis and path-finding. Pass `--skip-download /path/to/kg.csv` to use a locally cached `kg.csv`.
+
+### 14. OpenTargets actionability (~5 MB, optional)
+```bash
+python scripts/download_opentargets.py
+```
+
+Queries the OpenTargets Platform GraphQL API (no auth required) for ~1,200 OncoKB cancer genes. Takes ~5 minutes.
+
+| File | Rows | Content |
+|------|-----:|---------|
+| `data/opentargets/ot_tractability.parquet` | ~32k | SM/AB/PROTAC tractability buckets per gene |
+| `data/opentargets/ot_known_drugs.parquet` | ~46k | Approved/clinical drugs × disease per gene |
+
+Automatically revealed to the agent at Stage 5 (alongside the gene codebook) when the files exist. No flag required.
+
 ---
 
 ## Verify setup
@@ -158,53 +188,51 @@ Expected output:
 | MSigDB Hallmarks | MSigDB v2023.2 | `data/genesets/h.all.v2023.2.Hs.symbols.gmt` | target discovery (Phase 3) |
 | MSigDB KEGG | MSigDB v2023.2 | `data/genesets/c2.cp.kegg_medicus.v2023.2.Hs.symbols.gmt` | target discovery (Phase 3) |
 | MSigDB Reactome | MSigDB v2023.2 | `data/genesets/c2.cp.reactome.v2023.2.Hs.symbols.gmt` | target discovery (Phase 3) |
-| STRING PPI | STRING v11 | `data/genesets/human_ppi_high_conf.tsv` | target discovery (Phase 3) |
-| OncoKB genes | OncoKB | `data/cancer_genes/oncokb_cancer_gene_list.tsv` | target discovery (Phase 3) |
+| STRING PPI | STRING v11 | `data/genesets/human_ppi_high_conf.tsv` | cohort analysis (Stage 5) |
+| OncoKB genes | OncoKB | `data/cancer_genes/oncokb_cancer_gene_list.tsv` | cohort analysis (Stage 5) |
 | GDSC | EMBL-EBI | `data/gdsc/` | cohort analysis (Task A) |
 | TCGA RPPA | UCSC Xena | `data/tcga/{cohort}/rppa.parquet` | cohort analysis (Task A) |
+| PrimeKG gene-gene | Harvard Dataverse | `data/networks/primekg_gene_gene.parquet` | mechanistic reasoning (--primekg) |
+| PrimeKG gene-drug | Harvard Dataverse | `data/networks/primekg_gene_drug.parquet` | mechanistic reasoning (--primekg) |
+| PrimeKG gene-disease | Harvard Dataverse | `data/networks/primekg_gene_disease.parquet` | mechanistic reasoning (--primekg) |
+| PrimeKG gene-pathway | Harvard Dataverse | `data/networks/primekg_gene_pathway.parquet` | mechanistic reasoning (--primekg) |
+| OpenTargets tractability | OpenTargets API | `data/opentargets/ot_tractability.parquet` | actionability (Stage 5) |
+| OpenTargets known drugs | OpenTargets API | `data/opentargets/ot_known_drugs.parquet` | actionability (Stage 5) |
 
 ---
 
 ## Run benchmarks
 
-### Target discovery — three-phase run
+### Task A — cohort analysis
 
 ```bash
-# Phase 1 only — anonymized gene analysis, submit candidates
-python scripts/run_target_discovery.py --save-log results/td.json
+# G2 — data-driven (default)
+python scripts/run_episode.py --cohort BRCA --seed 42 --save-log results/ep.json
 
-# Phase 1 + 2 — adds V1–V4 validation design questions (genes still anonymized)
-python scripts/run_target_discovery.py --phase2 --save-log results/td.json
+# G2 + PrimeKG (PCST + path-finding)
+python scripts/run_episode.py --cohort BRCA --seed 42 --primekg --save-log results/ep.json
 
-# Phase 1 + 2 + 3 — full pipeline: anonymized → validation → gene revelation + MOA check
-python scripts/run_target_discovery.py --phase2 --phase3 --save-log results/td.json
+# G0 — explicit retrieval ceiling
+python scripts/run_episode.py --cohort BRCA --explicit-retrieval --seed 42
 
-# Indication-specific, full pipeline
-python scripts/run_target_discovery.py \
-  --indication "Acute Myeloid Leukemia" \
-  --phase2 --phase3 \
-  --save-log results/aml.json
+# G1 — implicit retrieval (real gene names from call 0)
+python scripts/run_episode.py --cohort BRCA --gene-codebook-gate 0 --seed 42
 
-# Longer budget, Opus model
-python scripts/run_target_discovery.py \
-  --model claude-opus-4-7 \
-  --max-tool-calls 80 \
-  --phase2 --phase2-max-calls 30 \
-  --phase3 --phase3-max-calls 30 \
-  --save-log results/td_opus.json
+# G3 — mislead (wrong barcodes injected)
+python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42
+
+# Score any episode
+python scripts/score_episode_v2.py --episode results/{id}/episode.json --cohort BRCA
+
+# Multi-seed OS benchmark (3 modes × 3 seeds = 9 runs)
+bash scripts/run_os_multiseed.sh
 ```
 
-Output files per session (under `results/<session_id>/`):
-- `td.json` — full session log (submission + revision + message history)
-- plots/tables saved by the agent via `output_dir`
-
-Gene map (for post-session evaluation only):
-- `results/_evaluation/<session_id>_gene_map.json` — GENE_XXXXX → real symbol
-
-### Anomaly detection
+### Task B — target discovery
 
 ```bash
-python scripts/run_episode.py --cohort LIHC
+python scripts/run_target_discovery.py --save-log results/td.json
+python scripts/run_target_discovery.py --indication "Acute Myeloid Leukemia" --phase2 --phase3 --save-log results/aml.json
 ```
 
 ### Tests
