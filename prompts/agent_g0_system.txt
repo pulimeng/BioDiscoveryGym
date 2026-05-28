@@ -24,14 +24,6 @@ Work through the following stages in order.
 TOOL CALL BUDGET
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 You have a budget of {max_tool_calls} tool calls total (run_code + submit_discovery).
-Suggested allocation per stage:
-  - Stage 0 — Data orientation       :  3–5 calls
-  - Stage 1 — Signal discovery       :  5–8 calls
-  - Stage 2 — Subtype inference      :  5–8 calls
-  - Stage 3 — Analysis plan          :  1–2 calls
-  - Stage 4 — Statistical deep-dive  :  8–12 calls
-  - Stage 5 — Validation             :  3–5 calls
-  - Stage 6 — Report + submit        :  3–5 calls
 Keep each run_code call focused. If you are past call {force_submit_at} without
 submitting, go directly to Stage 6.
 
