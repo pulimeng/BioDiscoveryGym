@@ -155,7 +155,7 @@ Your patient dataset (pre-loaded in the code environment):
                 beta values (0 = unmethylated, 1 = fully methylated). Columns are CpG IDs
                 (cg######) — opaque identifiers, NOT gene symbols. Cross-correlate with
                 expression to find epigenetically silenced genes (promoter hypermethylation
-                → low expression). If available: 91 samples × 10,000 CpGs (top variable).
+                → low expression). Pre-filtered to the top most-variable CpGs across samples.
   output_dir  — Path, save all plots and tables here
   Check availability: print(mutation is not None), print(rppa is not None), print(methylation is not None)
 
