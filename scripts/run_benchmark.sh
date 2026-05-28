@@ -80,9 +80,9 @@ fi
 EXTERNAL_COHORTS="OS"   # space-separated list of non-TCGA cohorts
 if [[ -z "$RESULTS_BASE" ]]; then
     if [[ " $EXTERNAL_COHORTS " == *" $COHORT "* ]]; then
-        RESULTS_BASE="results/cohort/external/${TAG}"
+        RESULTS_BASE="results/task_a/external/${TAG}"
     else
-        RESULTS_BASE="results/cohort/${TAG}"
+        RESULTS_BASE="results/task_a/${TAG}"
     fi
 else
     RESULTS_BASE="${RESULTS_BASE}/${TAG}"
