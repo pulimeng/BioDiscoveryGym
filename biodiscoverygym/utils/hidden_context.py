@@ -217,10 +217,13 @@ class HiddenContextBuilder:
 # but carry real biological signal — renamed rather than stripped, with a codebook
 # mapping CLIN_XX → real column name and CAT_X → real category value.
 # True = also remap categorical string values; False = numeric, column rename only.
+#
+# Rule: keep columns that represent clinical/histological measurements (pathology subtype,
+# numeric scores derived from assays). Strip molecular clustering labels entirely —
+# precomputed cluster assignments are the paper's answer, not independent data.
 _CLINICAL_RENAME = {
-    "pathology":    True,   # "Osteoblastic"/"Chondroblastic" directly name OS histology
-    "mrna_cluster": False,  # numeric; column name pre-labels the paper's mRNA clusters
-    "hrd_score":    False,  # numeric; column name names the S-HRD axis directly
+    "pathology": True,   # histological subtype — "Osteoblastic"/"Chondroblastic" → CAT_X
+    "hrd_score": False,  # continuous genomic instability score — numeric, rename only
 }
 
 # Columns that directly reveal cancer type, tissue of origin, or molecular subtype.
@@ -233,8 +236,9 @@ _ALWAYS_STRIP = [
     "lineage", "lineage_subtype", "cancer_type", "tissue_type",
     # mutation labels (DepMap)
     "BRCA1_mut", "BRCA2_mut", "TP53_mut", "KRAS_mut",
-    # subtypes (DepMap / TCGA paper annotations)
-    "paper_BRCA_Subtype_PAM50", "molecular_subtype", "subtype",
+    # subtypes and precomputed molecular cluster assignments
+    # mrna_cluster is stripped entirely — it is the paper's iCluster answer, not a measurement
+    "paper_BRCA_Subtype_PAM50", "molecular_subtype", "subtype", "mrna_cluster",
     # drug sensitivity proxies
     "auc", "ic50", "lfc",
     # TCGA GDC fields that directly reveal histology or tissue of origin

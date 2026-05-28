@@ -1,7 +1,7 @@
 # Task A — Cohort-Based Analysis
 
 **Part of:** BioDiscoveryGym → Part 2 (Benchmark)
-**Last updated:** 2026-05-19
+**Last updated:** 2026-05-28
 **Status:** Infrastructure complete. OS 9-run benchmark complete. TCGA 67-run benchmark planned (awaiting budget).
 
 ---
@@ -21,17 +21,21 @@ The central challenge: for well-studied cancer types, recall and discovery produ
 
 ## Identity Blinding
 
-Five layers prevent the agent from knowing what it is looking at:
+Six layers prevent the agent from knowing what it is looking at:
 
 | Layer | What is stripped/replaced |
 |-------|--------------------------|
-| `DataAnonymizer._ALWAYS_STRIP` | Cancer-type clinical columns (`primary_diagnosis`, `OncotreePrimaryDisease`, lineage, subtype) |
+| `DataAnonymizer._ALWAYS_STRIP` | Cancer-type columns (`primary_diagnosis`, `OncotreePrimaryDisease`, lineage, subtype) |
+| Molecular clustering labels | **Stripped entirely** — precomputed cluster assignments (e.g. `mrna_cluster`) are the paper's answer, not independent data. Keeping them gives the agent the partition for free. |
+| Leaky clinical columns | **Renamed** to `CLIN_00`, `CLIN_01`, … with categorical string values replaced by `CAT_0`, `CAT_1`, … A clinical codebook (CLIN_XX → real name, CAT_X → real value) is kept by the harness and released to the agent alongside the gene codebook. |
 | Demographics | `gender`, `race`, `ethnicity` (cohort identity leakage — e.g. LIHC is >50% Asian from HBV-endemic regions) |
 | Sample IDs | TCGA barcodes → `SAMPLE_XXXX` (shuffled with seed) |
-| Gene names | Real symbols → `GENE_XXXXX` (shuffled with seed); real names revealed via codebook |
+| Gene names | Real symbols → `GENE_XXXXX` (shuffled with seed); real names revealed via codebook at call 25 (G2) or call 0 (G0/G1) |
 | Data path | Served from neutral `data/episode/` path, not `data/tcga/lihc/` |
 
-Survival columns (`vital_status`, `days_to_death`) are intentionally kept — they're needed for biological reasoning, not identity.
+**Kept intentionally:** Survival columns (`vital_status`, `days_to_death`, staging) — valid phenotypic anchors. Numeric molecular scores (e.g. `hrd_score` → `CLIN_00`) — a continuous measurement, not a cluster label; the column name is anonymized but values are kept.
+
+**Rule:** Strip anything that *is* the answer (precomputed cluster assignments). Rename/anonymize anything that *informs* clustering but doesn't predetermine it.
 
 ---
 
@@ -60,20 +64,27 @@ The osteosarcoma cohort closes the primary confound of the TCGA set: for well-ch
 
 **67 runs total across 4 groups. 7 cohorts: BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV.**
 
-| Group | Label | Gene names | Cohort name | Gate | Seeds | Runs | Cost (~$3/ep) |
-|-------|-------|------------|-------------|------|-------|------|---------------|
-| **G0** | Explicit retrieval | Real (forced) | **Revealed** | 0 | 42 | 7 × 1 = 7 | ~$21 |
-| **G1** | Implicit retrieval | Real | Hidden | 0 | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
-| **G2** | Data-driven | GENE_XXXXX → real at call 30 | Hidden | 30 | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
-| **G3** | Mislead | GENE_XXXXX → real at call 30 | Hidden + wrong barcodes | 30 | 42, 7, 123 | 6 pairs × 3 = 18 | ~$54 |
+| Group | Label | Gene names | Cohort name | Codebook gate | Seeds | Runs | Cost (~$3/ep) |
+|-------|-------|------------|-------------|--------------|-------|------|---------------|
+| **G0** | Explicit retrieval | Real from call 0 | **Revealed** | 0 | 42 | 7 × 1 = 7 | ~$21 |
+| **G1** | Implicit retrieval | Real from call 0 | Hidden | 0 | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
+| **G2** | Data-driven | GENE_XXXXX → real at call 25 | Hidden | 25 | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
+| **G3** | Mislead | GENE_XXXXX → real at call 25 | Hidden + wrong barcodes | 25 | 42, 7, 123 | 6 pairs × 3 = 18 | ~$54 |
 | **Total** | | | | | | **67** | **~$201** |
 
 ### Group definitions
 
-- **G0 (explicit retrieval):** Ceiling baseline. Agent is told "You are analyzing a TCGA BRCA (Breast Invasive Carcinoma) cohort" and has real gene names from call 1.
-- **G1 (implicit retrieval):** Agent has real gene names from call 1 but cohort is hidden.
-- **G2 (data-driven):** Agent works with GENE_XXXXX for 30 calls, then receives the codebook. Pure data-driven phase before gene biology access.
-- **G3 (mislead):** Agent receives wrong TCGA-style barcodes suggesting a different cancer type. Fake barcodes released at call 30. Tests robustness against misleading provenance signals.
+The three groups form a clean ablation over what recall channels are open:
+
+- **G0 (explicit retrieval) — pure recall baseline.** The agent is told the cancer type upfront (e.g., "You are analyzing an Osteosarcoma cohort"). It can directly recall known subtypes, markers, and biology from training data without looking at the data. G0 measures how much a model *already knows* from pretraining.
+
+- **G1 (implicit retrieval) — gene-biology-mediated recall.** Cohort identity is hidden, but real gene names are available from call 0. The agent can infer the cancer type from gene signatures (e.g., H3F3A → pediatric bone tumor, SP7 → osteoblast) and then recall subtype structure indirectly. G0→G1 isolates the effect of direct cohort identity on recall.
+
+- **G2 (data-driven) — data-first discovery.** Genes are anonymized as GENE_XXXXX until call 25; cohort is hidden. The agent must work from expression patterns, correlations, and clustering before any recall context is available. G1→G2 isolates the effect of gene-biology recall.
+
+- **G3 (mislead):** Same as G2, but sample barcodes suggest the wrong cancer type. Tests whether the agent correctly overrides misleading provenance signals with data evidence.
+
+**What differs between G0 and G1:** only the cohort identity string in the system prompt. All other data (clinical metadata, gene names, codebook reveal timing) is identical. This makes the G0/G1 comparison a clean single-variable test of direct cohort recall.
 
 ### G3 cohort pairs
 
@@ -145,18 +156,28 @@ Achievable max = **15 / 18 points** — `genomic_coherence_drivers` (2 pts) and 
 | G1 — implicit retrieval | 7.59 | 0.506 | 0.40 |
 | G2 — data-driven        | 7.69 | 0.513 | 0.06 |
 
-### Key observations
+### Key observations (run3 — clinical columns not yet anonymized)
 
-**Partition stability:** All 9 runs converge to a 4-cluster solution with sizes 25/25/21/20 (paper: 25/22/23/21). Structural, survival, and reference-concordance scores are byte-identical across runs. Variation between runs lives entirely in qualitative outputs.
+**Partition stability:** All 9 runs converge to a 4-cluster solution with sizes 25/25/21/20 (paper: 25/22/23/21). Structural, survival, and reference-concordance scores are byte-identical across runs — later found to be caused by agents reading the `mrna_cluster` column directly, not by genuine clustering.
 
-**Consistent marker recovery:** Top markers appearing in ≥7/9 runs — `SP7, DLX3, S100A9, HMOX1, ALPL, FCGR3A, VWF, SELP, ACKR1, IFITM5, BAMBI, CXCL12, SYNPO2`. These trace four reproducible biological axes (osteoblastic-differentiated, immune-myeloid, stromal/endothelial, proliferative/undifferentiated).
+**Consistent marker recovery:** Top markers appearing in ≥7/9 runs — `SP7, DLX3, S100A9, HMOX1, ALPL, FCGR3A, VWF, SELP, ACKR1, IFITM5, BAMBI, CXCL12, SYNPO2`. Four reproducible biological axes: osteoblastic-differentiated, immune-myeloid, stromal/endothelial, proliferative/undifferentiated.
 
 **What the agents miss (information-gap misses, not failures):**
 - MYC amplification → S-MD (CNA-defined; agents see OXPHOS/G2M signature but cannot name amplification)
 - HRD as a distinct subtype (requires CNA/methylation)
 - S-IA vs S-IS split (requires deeper immune deconvolution)
 
-**No mode effect:** G0–G1–G2 differences (≤0.35 pts) are smaller than G1 seed-to-seed variability (~1 pt). The seed-42 (stale) result that G1 > G0 does not replicate at multiple seeds.
+**No mode effect (run3):** G0–G1–G2 differences (≤0.35 pts) are smaller than G1 seed-to-seed variability. This was an artifact — `mrna_cluster` in the metadata gave all modes the paper's partition for free.
+
+### Key observations (run4 — clinical anonymization + observation tracking)
+
+**Partition stability splits by mode** once `mrna_cluster` is renamed (but not yet removed): G2 3/3 canonical, G1 2/3, G0 0/3. G0 collapses to 3-cluster solutions across all seeds when it cannot read an interpretable cluster label. Confirmed that prior run3 "mode-invariant" convergence was clinical-column anchoring, not data-driven clustering.
+
+**SP7/cg15311685 finding replicates 3/3 in G2** under clinical anonymization. In the best run (b9c508c8), the methylation-expression correlation (r ≈ −0.75, p ≈ 1e-17) was identified before the agent knew the cohort identity or gene names — the cleanest data-driven discovery in the benchmark to date.
+
+**Observation tracking** reveals hypothesis evolution for the first time: confidence trajectories, alternatives considered, quantitative findings cited before codebook reveal.
+
+Full report: `results/cohort/external/run4_clinAnon_obsTrack/`
 
 Full report: `results/cohort/external/os_benchmark_summary.md`
 
