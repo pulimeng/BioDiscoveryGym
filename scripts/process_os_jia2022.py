@@ -189,12 +189,12 @@ def build_clinical(clinical: pd.DataFrame, expr_samples: list[str]) -> pd.DataFr
     df["pathology"]     = df["Pathology"]
     df["tmb"]           = df["TMB"]
     df["hrd_score"]     = df["HRD"]
-    df["mrna_cluster"]  = df["mRNA.Cluster"]
+    df["icluster"]      = df["iCluster-分组"]   # integrative iCluster (mRNA+methy+CNA), integers 1-4
 
     keep = [
         "case_id", "vital_status", "days_to_death", "days_to_last_follow_up",
         "subtype", "age_at_diagnosis", "gender", "tumor_stage",
-        "metastasis", "pathology", "tmb", "hrd_score", "mrna_cluster",
+        "metastasis", "pathology", "tmb", "hrd_score", "icluster",
     ]
     df = df[keep].set_index("case_id")
 

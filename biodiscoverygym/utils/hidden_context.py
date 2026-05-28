@@ -222,9 +222,9 @@ class HiddenContextBuilder:
 # numeric scores derived from assays). Strip molecular clustering labels entirely —
 # precomputed cluster assignments are the paper's answer, not independent data.
 _CLINICAL_RENAME = {
-    "hrd_score":    False,  # continuous genomic instability score — numeric, rename only
-    "mrna_cluster": False,  # iCluster molecular subtype (integers 1-4) — numeric, rename only
-    "pathology":    True,   # histological subtype — "Osteoblastic"/"Chondroblastic" → CAT_X
+    "hrd_score": False,  # continuous genomic instability score — numeric, rename only
+    "icluster":  False,  # integrative iCluster (mRNA+methy+CNA), integers 1-4 — numeric, rename only
+    "pathology": True,   # histological subtype — "Osteoblastic"/"Chondroblastic" → CAT_X
 }
 
 # Columns that directly reveal cancer type, tissue of origin, or molecular subtype.
