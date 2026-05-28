@@ -37,6 +37,18 @@ Six layers prevent the agent from knowing what it is looking at:
 
 **Rule:** Strip anything that *directly names* the cancer type or paper subtype labels. Rename/anonymize everything else that leaks identity through its column name — both clinical (histological) and molecular (iCluster) features are kept as `CLIN_XX`, since a real analyst would have access to both and the benchmark tests whether the agent discovers additional biology beyond what these features encode.
 
+### OS-specific: histological pathology column (CLIN_02)
+
+For the OS cohort, `CLIN_02` encodes traditional histological subtype (Osteoblastic, Fibroblastic, Chondroblastic, Telangiectatic, Mixed), anonymized to `CAT_0`–`CAT_4`.
+
+**Design decision: keep as anonymized CLIN_XX.** Rationale:
+
+- **Weak association with molecular subtypes.** Cramer's V = 0.29 — pathology captures some but not most molecular heterogeneity. Two Osteoblastic tumors can sit in S-IA (immune-activated, good prognosis) or S-MD (MYC-driven, worst prognosis) with completely different biology.
+- **Pathology lacks therapeutic stratification.** The paper's core argument is that multi-omic integration is necessary — S-HRD requires PARPi/cisplatin, S-MD requires anti-MYC, S-IS requires ICI. Histological subtype cannot distinguish these axes; it requires CNA + methylation + mRNA together (iCluster).
+- **Agents cannot decode it without cohort knowledge.** G1/G2 see `CLIN_02 ∈ {CAT_0, CAT_1, CAT_2, CAT_3, CAT_4}` with no disease context — it is just "a 5-level clinical variable." A good molecular analysis will find the V=0.29 association and correctly deprioritize it in favor of stronger expression-driven structure.
+- **G0 caveat.** G0 agents know the cohort is OS. A sophisticated G0 agent might infer CLIN_02 (5 categories) = histological pathology and attempt to anchor on it. This is a known G0-specific leak; if G0 agents systematically collapse to pathology-based groupings in run5, CLIN_02 should be dropped for future OS runs.
+- **Prompt guard.** All three prompts explicitly prohibit adopting CLIN_XX columns directly as the proposed grouping — molecular evidence is required.
+
 ---
 
 ## Tools
@@ -98,33 +110,43 @@ The three groups form a clean ablation over what recall channels are open:
 
 ---
 
-## Scoring (v2, post-hoc)
+## Scoring (v3, post-hoc)
 
-9 components, 18 points maximum. All scoring is post-hoc — agent is not told how it is scored.
+All scoring is post-hoc — agent is not told how it is scored. Two tracks: Phase 1 (always present) and Phase 2 (only when Phase 2 Q&A was enabled during the run).
 
-| Component | Points | Method |
-|-----------|--------|--------|
-| Grouping quality (NMI vs TCGA subtypes) | 2 | Numeric |
-| Survival separation | 2 | Log-rank p-value |
-| Marker discriminability (AUROC) | 2 | Per-gene ROC |
-| Coverage (fraction of samples assigned) | 1 | Numeric |
-| Pathway evidence quality | 2 | LLM judge |
-| Mechanism hypothesis quality | 3 | LLM judge — 3 axes (see below) |
-| Next experiment quality | 2 | LLM judge |
-| Submission structure completeness | 2 | Structural check |
-| Biological insight (holistic) | 2 | LLM judge |
+### Phase 1 — 9 components, 18 points maximum
 
-Run with: `python scripts/score_episode_v2.py --episode results/{id}/episode.json --cohort BRCA`
+| Component | Weight | Method |
+|-----------|-------:|--------|
+| `structure_validity` | 2 | Bootstrap silhouette + ARI vs k-means re-cluster |
+| `clinical_signal` | 3 | ΔC-index over null Cox + log HR between extreme-survival subtypes |
+| `genomic_coherence_drivers` | 2 | FDR-corrected Fisher's exact for OncoKB drivers per subtype |
+| `genomic_coherence_rppa` | 2 | ARI between expression grouping and RPPA k-means re-cluster |
+| `reference_concordance` | 2 | Max NMI across all available TCGA / OS subtype schemes |
+| `marker_evidence` | 2 | HGNC validity + one-vs-rest AUC + OncoKB overlap |
+| `pathway_validity` | 1 | GMT name validity + ORA enrichment bonus |
+| `mechanism_grounding` | 2 | LLM judge — 3 axes: internal coherence, data grounding, mechanistic logic |
+| `experiment_quality` | 2 | LLM judge — 4 binary criteria: specific model, perturbation, measurement, quantitative outcome |
+
+### Phase 2 — 3 components, 5 points maximum (requires `--phase2` during run)
+
+| Component | Weight | Method |
+|-----------|-------:|--------|
+| `p2_commit_quality` | 1 | Regex coverage of 5 required commit-phase sections (PC loadings, survival, mutation, RPPA, unexpected finding) |
+| `p2_experiment_depth` | 2 | LLM judge on Q4 — 4 sub-parts each 0/1: model+dataset evidence, perturbation+direction, readout+magnitude, falsification criterion |
+| `p2_mechanistic_integration` | 2 | LLM judge on all Q1-Q4 — 3 axes: cross-modal consistency (4 modalities woven into one causal chain), quantitative grounding (committed numbers cited), causal coherence (directed chain vs. associations) |
+
+Phase 1 and Phase 2 are normalized separately (each 0–1) so Phase 1-only and Phase 1+Phase 2 runs are directly comparable.
+
+Run with: `bash scripts/score_all_withMeth.sh <results_dir>` or `python scripts/score_episode_v3.py <episode.json> --cohort OS --save`
 
 ### Mechanism hypothesis judge (3 axes, /12 raw → 0–1 normalized)
 
-The `mechanism_grounding` judge evaluates each cluster's mechanistic hypothesis on three axes:
-
 | Axis | Max | Evaluates |
 |------|----:|-----------|
-| `internal_coherence` | 4 | Are all claims mutually consistent? |
-| `data_grounding` | 4 | Are claims anchored to data-derived findings (expression, survival, pathway p-values)? |
-| `mechanistic_logic` | 4 | Is an explicit directional causal chain traced? (A activates B → B phosphorylates C → C drives phenotype) |
+| `internal_coherence` | 4 | Hypothesis logically follows from submitted genes and pathways |
+| `data_grounding` | 4 | Claims are anchored to data-derived findings, not literature recall |
+| `mechanistic_logic` | 4 | Explicit directional causal chain with named molecular actors at each step |
 
 Score 4 on `mechanistic_logic` requires direction at every step and named molecular actors (ligand, receptor, effector, downstream target). Stating pathway names without tracing the logic scores 0–1.
 
@@ -270,12 +292,18 @@ bash scripts/run_os_multiseed.sh
 
 ## What's Next
 
-**OS (held-out test):**
-1. Obtain WES/CNA approval (GSA HRA003260) → re-run without `_noCNA_noSNV` tag
-2. Write OS-specific `CANONICAL_EXPECTATIONS` referencing paper (S-HRD/S-MD biology)
-3. Test `--primekg` effect on OS mechanistic_logic scores (2 matched episodes)
+**OS run5 (in progress — tag `run5_threePrompt_clinAnon`):**
+- 13 runs: G0×3 seeds (0,1,7) + G1×5 seeds (0,1,7,42,123) + G2×5 seeds (0,1,7,42,123)
+- First run using per-mode prompts (agent_g0/g1/g2_system.txt) and clinical column anonymization
+- Phase 2 not enabled in run5 — Phase 1-only, Phase 2 scores will be 0
+- Score with: `bash scripts/score_all_withMeth.sh results/cohort/external/run5_threePrompt_clinAnon/`
+- Watch for: G0 anchoring on CLIN_02 (5-category pathology column) — if systematic, drop for run6
 
-**TCGA benchmark:**
-4. Fund and run 67-episode benchmark (~$201 on Sonnet)
-5. Analyze G0 vs G1 vs G2 mode effect; analyze G3 mislead fraction
-6. Score all episodes with v2 scorer (mechanistic_logic axis)
+**OS run6 (planned):**
+- Add `--phase2 OS --phase2-commit-phase` to enable commit sweep + Q1-Q4 follow-up
+- Consider dropping CLIN_02 (pathology) if run5 shows G0 pathology-anchoring
+- Obtain WES/CNA approval (GSA HRA003260) → re-run without `_noCNA_noSNV` tag
+
+**TCGA benchmark (future):**
+- Fund and run 67-episode benchmark (~$201 on Sonnet)
+- Analyze G0 vs G1 vs G2 mode effect; analyze G3 mislead fraction
