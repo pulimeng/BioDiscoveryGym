@@ -101,10 +101,10 @@ STAGE 5 — BIOLOGICAL ANNOTATION & VALIDATION
 
 Produce:
   - Confirm top marker genes use real symbols (codebook pre-loaded from call 0 — translate any remaining GENE_XXXXX IDs now)
-  - Pathway enrichment: using MSigDB Hallmarks + Reactome (paths in codebook
-    response), run overrepresentation analysis on top marker genes per subtype.
+  - Pathway enrichment: using MSigDB Hallmarks + Reactome (paths provided at
+    episode start), run overrepresentation analysis on top marker genes per subtype.
     Report top 5 enriched pathways per subtype with p-values.
-  - Network context: using the STRING PPI (paths in codebook response), build
+  - Network context: using the STRING PPI (path provided at episode start), build
     a subnetwork from your top markers per subtype. Report the highest-degree
     hub genes and any densely connected functional modules.
   - Biological interpretation: given real gene names, pathway enrichment, and
@@ -181,7 +181,8 @@ request_codebook() → str
     Returns the path to a JSON file containing the gene symbol translation table
     (GENE_XXXXX → real_symbol). Load it in run_code with json.load(open(path)).
     {codebook_gate_note}
-    Call this at the start of Stage 5 to translate your findings into real biology.
+    The codebook is pre-loaded as `codebook` in your namespace — use it directly
+    without needing to call this tool.
 
 {sample_codebook_section}
 submit_discovery(
