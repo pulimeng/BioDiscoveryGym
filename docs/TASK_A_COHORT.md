@@ -229,7 +229,7 @@ bash scripts/run_os_multiseed.sh
 | `biodiscoverygym/episode.py` | `Episode.from_cohort()`, 5-layer anonymization, `--perturb` support |
 | `biodiscoverygym/scoring/evaluator_v2.py` | 9-component v2 scorer |
 | `biodiscoverygym/scoring/judge.py` | LLM judge (Sonnet) — 3-axis mechanism_grounding (coherence + data_grounding + mechanistic_logic) |
-| `biodiscoverygym/executor.py` | Stateful Python sandbox with path blocking |
+| `biodiscoverygym/executor.py` | Stateful Python sandbox for Task A — blocks raw TCGA source files, gene maps, prior results; reference databases (DepMap, GTEx, etc.) are accessible after Stage 5 codebook reveal |
 | `biodiscoverygym/tools/pcst.py` | Prize-Collecting Steiner Tree via networkx KMB approximation |
 | `biodiscoverygym/tools/opentargets.py` | OpenTargets actionability lookup — `get_actionability()`, `batch_actionability()` |
 | `agents/claude_agent_anon.py` | `ClaudeAgentAnon` — anonymization + codebook gating + PrimeKG pre-reveal + OT at Stage 5 |

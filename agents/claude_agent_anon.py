@@ -66,6 +66,56 @@ _SUBMIT_PRECOMMIT_TOOL: dict = {
     },
 }
 
+_RECORD_OBSERVATION_TOOL: dict = {
+    "name": "record_observation",
+    "description": (
+        "Record a structured checkpoint of your evolving hypothesis. "
+        "REQUIRED at the end of every stage (0–5) before advancing. "
+        "This creates an auditable belief trail across the episode."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "current_hypothesis": {
+                "type": "string",
+                "description": "Your current working model of the biological variable driving the grouping.",
+            },
+            "evidence_for": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Key quantitative findings supporting the hypothesis (include numbers).",
+            },
+            "evidence_against": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Findings that contradict or weaken the hypothesis.",
+            },
+            "alternatives_considered": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Alternative hypotheses evaluated and why they ranked lower.",
+            },
+            "confidence": {
+                "type": "string",
+                "enum": ["high", "medium", "low"],
+                "description": "Confidence in the current hypothesis.",
+            },
+            "next_action": {
+                "type": "string",
+                "description": "Concrete first step you will take in the next stage.",
+            },
+        },
+        "required": [
+            "current_hypothesis",
+            "evidence_for",
+            "evidence_against",
+            "alternatives_considered",
+            "confidence",
+            "next_action",
+        ],
+    },
+}
+
 _TOOLS: list[dict] = [
     {
         "name": "request_codebook",
@@ -173,15 +223,17 @@ class ClaudeAgentAnon:
         data_dir: str | Path = "data",
         verbose: bool = True,
         gene_map: dict[str, str] | None = None,
-        codebook_gate: int = 30,
+        codebook_gate: int = 25,
         mislead_cohort: str | None = None,
-        sample_codebook_gate: int = 30,
+        sample_codebook_gate: int = 25,
         phase2_questions: str | None = None,
         phase2_max_calls: int = 30,
         commit_phase_prompt: str | None = None,
         commit_phase_max_calls: int = 15,
         explicit_cohort: str | None = None,
         primekg: bool = False,
+        clinical_codebook: dict | None = None,
+        thinking_budget: int = 0,
     ):
         self.model = model
         self.max_tool_calls = max_tool_calls
@@ -197,6 +249,8 @@ class ClaudeAgentAnon:
         self.commit_phase_max_calls = commit_phase_max_calls
         self.explicit_cohort = explicit_cohort.upper() if explicit_cohort else None
         self.primekg = primekg
+        self.clinical_codebook = clinical_codebook or {}
+        self.thinking_budget = thinking_budget
 
         import httpx
         self.client = anthropic.Anthropic(
@@ -287,11 +341,11 @@ class ClaudeAgentAnon:
             disease_hint=disease_hint,
         )
 
-        self._tools = list(_TOOLS)
+        self._tools = list(_TOOLS) + [_RECORD_OBSERVATION_TOOL]
         if self.mislead_cohort:
             self._tools.append(_SAMPLE_CODEBOOK_TOOL)
 
-    def run(self, episode_id: str, output_dir: Path | None = None) -> tuple[dict[str, Any], list]:
+    def run(self, episode_id: str, output_dir: Path | None = None) -> tuple[dict[str, Any], list, dict]:
         executor = CodeExecutor(data_dir=self.data_dir, output_dir=output_dir)
 
         # Pre-reveal codebooks at start when gates are 0
@@ -394,8 +448,20 @@ class ClaudeAgentAnon:
         phase2_active = False
         phase2_call_count = 0
         discovery: dict | None = None
+        usage_log: list[dict] = []
+        observations: list[dict] = []
 
         self._log(f"[ClaudeAgentAnon] Starting episode {episode_id} (model={self.model})")
+
+        _api_kwargs: dict = dict(
+            model=self.model,
+            system=self._system_prompt,
+            tools=self._tools,
+            max_tokens=32000,
+        )
+        if self.thinking_budget > 0:
+            _api_kwargs["thinking"] = {"type": "enabled", "budget_tokens": self.thinking_budget}
+            self._log(f"[ClaudeAgentAnon] Extended thinking enabled (budget={self.thinking_budget})")
 
         while (
             tool_call_count < self.max_tool_calls
@@ -405,11 +471,8 @@ class ClaudeAgentAnon:
             for attempt in range(3):
                 try:
                     with self.client.messages.stream(
-                        model=self.model,
-                        system=self._system_prompt,
                         messages=messages,
-                        tools=self._tools,
-                        max_tokens=32000,
+                        **_api_kwargs,
                     ) as stream:
                         response = stream.get_final_message()
                     break
@@ -423,6 +486,15 @@ class ClaudeAgentAnon:
                 f"stop_reason={response.stop_reason}, "
                 f"blocks={[b.type for b in response.content]}"
             )
+
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                usage_log.append({
+                    "turn": tool_call_count,
+                    "input_tokens": getattr(usage, "input_tokens", None),
+                    "output_tokens": getattr(usage, "output_tokens", None),
+                    "tool_calls": [b.name for b in response.content if getattr(b, "type", None) == "tool_use"],
+                })
 
             messages.append({"role": "assistant", "content": response.content})
 
@@ -475,6 +547,7 @@ class ClaudeAgentAnon:
                         codebook_path = output_dir / "codebook.json"
                         codebook_path.write_text(json.dumps(self.gene_map))
                         executor.namespace["codebook"] = dict(self.gene_map)
+                        executor.namespace["clinical_codebook"] = dict(self.clinical_codebook)
                         executor.unblock_genesets()
                         ot_available = (
                             Path("data/opentargets/ot_tractability.parquet").exists()
@@ -494,11 +567,29 @@ class ClaudeAgentAnon:
                             f"    print(get_actionability('EGFR').summary())\n"
                             f"    ranked = batch_actionability(['EGFR','TP53','MYC'])  # DataFrame\n"
                         ) if ot_available else ""
+                        clin_section = ""
+                        if self.clinical_codebook:
+                            clin_lines = [
+                                f"\nClinical column codebook (CLIN_XX → real column name):\n"
+                                f"  clinical_codebook is now available as a variable in your namespace.\n"
+                                f"  Each key is an anonymized column name (CLIN_00, CLIN_01, …).\n"
+                                f"  Each value is a dict with:\n"
+                                f"    'real_name': the original column name\n"
+                                f"    'value_map': {{CAT_X: real_value}} for categorical columns (None for numeric)\n"
+                                f"  Example:\n"
+                                f"    import pandas as pd\n"
+                                f"    for anon_col, info in clinical_codebook.items():\n"
+                                f"        print(anon_col, '->', info['real_name'], info['value_map'])\n"
+                                f"  Use this to reinterpret any CLIN_XX features and CAT_X values\n"
+                                f"  from your earlier analysis stages.\n"
+                            ]
+                            clin_section = "".join(clin_lines)
                         content = (
                             f"Gene codebook is now available as the variable `codebook` in your Python namespace.\n"
                             f"Use it directly in run_code — no file loading needed:\n"
                             f"  real_symbol = codebook['GENE_XXXXX']\n"
                             f"Contains {len(self.gene_map)} gene translations.\n"
+                            f"{clin_section}"
                             f"\n"
                             f"The following reference files are now accessible:\n"
                             f"\n"
@@ -604,6 +695,21 @@ class ClaudeAgentAnon:
                         })
                         submitted = True
 
+                elif block.name == "record_observation":
+                    obs = dict(block.input)
+                    obs["call_num"] = tool_call_count
+                    observations.append(obs)
+                    hyp_preview = obs.get("current_hypothesis", "")[:80]
+                    self._log(f"[record_observation] call={tool_call_count} conf={obs.get('confidence')} hyp={hyp_preview!r}")
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": (
+                            f"Observation recorded (checkpoint {len(observations)}). "
+                            f"Next: {obs.get('next_action', 'proceed')}"
+                        ),
+                    })
+
                 elif block.name == "submit_precommit":
                     commit_phase_report = block.input.get("report", "")
                     self._log(f"[submit_precommit] report length={len(commit_phase_report)}")
@@ -667,7 +773,12 @@ class ClaudeAgentAnon:
             self._log("[ClaudeAgentAnon] No submission — attempting forced submission (up to 3 turns).")
             discovery = self._force_submit(messages, output_dir)
 
-        return discovery or {}, messages
+        run_log = {
+            "usage_log": usage_log,
+            "timing_log": executor.timing_log,
+            "observations": observations,
+        }
+        return discovery or {}, messages, run_log
 
     def _force_submit(self, messages: list, output_dir) -> dict | None:
         """Send up to 3 more API turns with run_code blocked to get a submit_discovery call."""
@@ -678,14 +789,20 @@ class ClaudeAgentAnon:
                 "using the analysis you have already completed. Do NOT call run_code."
             ),
         })
+        force_kwargs: dict = dict(
+            model=self.model,
+            system=self._system_prompt,
+            tools=self._tools,
+            max_tokens=16000,
+        )
+        if self.thinking_budget > 0:
+            force_kwargs["thinking"] = {"type": "enabled", "budget_tokens": self.thinking_budget}
+
         for attempt in range(3):
             try:
                 with self.client.messages.stream(
-                    model=self.model,
-                    system=self._system_prompt,
                     messages=messages,
-                    tools=self._tools,
-                    max_tokens=16000,
+                    **force_kwargs,
                 ) as stream:
                     response = stream.get_final_message()
             except Exception as e:

@@ -262,21 +262,27 @@ class DataLoader:
                 "Perturbed data not found. Run: python scripts/perturb_lihc.py"
             )
 
-        mutation = pd.read_parquet(mutation_path).reindex(expression.index) if mutation_path.exists() else None
-        rppa     = pd.read_parquet(rppa_path).reindex(expression.index)     if rppa_path.exists()     else None
+        methylation_path = d / "methylation.parquet"
+
+        mutation    = pd.read_parquet(mutation_path).reindex(expression.index)    if mutation_path.exists()    else None
+        rppa        = pd.read_parquet(rppa_path).reindex(expression.index)         if rppa_path.exists()        else None
+        methylation = pd.read_parquet(methylation_path).reindex(expression.index) if methylation_path.exists() else None
 
         if mutation is not None:
             print(f"[TCGA {cohort}] Loaded mutations: {mutation.shape}")
         if rppa is not None:
             print(f"[TCGA {cohort}] Loaded RPPA: {rppa.shape}")
+        if methylation is not None:
+            print(f"[TCGA {cohort}] Loaded methylation: {methylation.shape}")
 
         return {
-            "expression": expression,
-            "metadata":   metadata,
-            "mutation":   mutation,
-            "rppa":       rppa,
-            "cnv":        None,
-            "crispr":     None,
+            "expression":  expression,
+            "metadata":    metadata,
+            "mutation":    mutation,
+            "rppa":        rppa,
+            "methylation": methylation,
+            "cnv":         None,
+            "crispr":      None,
             "drug_response": None,
         }
 

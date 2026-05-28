@@ -1,17 +1,21 @@
 """
-CodeExecutor: stateful Python execution environment for BioDiscoveryGym agents.
+CodeExecutor: stateful Python execution environment for Task A (cohort analysis) agents.
 
 - Maintains a persistent namespace across calls (variables survive between run_code invocations)
 - Pre-loads expression + metadata from data/episode/ on construction
 - Captures stdout and returns it as a string
-- Blocks access to data/sealed/ and vault paths (trusted-agent level enforcement)
+- Blocks access to internal keys, raw TCGA source files, and prior scored results
 - Network access blocking is handled externally by sandbox.py
+
+Task B (target discovery) uses TargetDiscoveryExecutor in executor_target.py, which has
+its own block list covering the reference datasets it pre-loads with anonymized gene names.
 """
 
 from __future__ import annotations
 
 import contextlib
 import io
+import time
 import traceback
 from pathlib import Path
 
@@ -22,22 +26,19 @@ import numpy as np
 import pandas as pd
 
 
-# Paths the agent must not be able to read.
-# data/ is blocked entirely for TargetDiscoveryExecutor sessions: all datasets are
-# pre-loaded and anonymized in the namespace — raw files contain real gene symbols.
-# results/ and _evaluation block dynamic path traversal to gene maps from prior sessions.
+# Paths the Task A cohort agent must not read.
+# data/tcga — raw source files contain real sample barcodes and could reveal cohort identity.
+# results/ and _evaluation — block traversal to prior scored episodes and gene maps.
+# Geneset paths are gated (see _GENESET_BLOCKS below) and lifted at Stage 5 codebook reveal.
+# Reference databases (depmap, gtex, gnomad, etc.) are NOT blocked here — Task A agents
+# may cross-reference them legitimately after the codebook is revealed. Task B has its own
+# executor (executor_target.py) with a separate block list covering those paths.
 _BLOCKED_SUBSTRINGS = (
     "data/sealed",
     ".biodiscoverygym/vault",
     "episode_key",
-    "data/depmap",
-    "data/gtex",
-    "data/gnomad",
     "data/tcga",
-    "data/hpa",
-    "data/cosmic",
-    "data/ccle_proteomics",
-    "data/prism",
+    "data/subtypes",
     "data/genesets",
     "data/cancer_genes",
     "gene_map.json",
@@ -72,6 +73,8 @@ class CodeExecutor:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._blocked: list[str] = list(_BLOCKED_SUBSTRINGS)
         self.namespace: dict = self._build_namespace(data_dir)
+        self.timing_log: list[dict] = []
+        self._exec_count: int = 0
 
     # ------------------------------------------------------------------
     # Public API
@@ -88,20 +91,42 @@ class CodeExecutor:
         """
         violation = self._check_blocked_paths(code)
         if violation:
-            return f"PermissionError: access to '{violation}' is not permitted during an episode."
+            output = f"PermissionError: access to '{violation}' is not permitted during an episode."
+            self.timing_log.append({
+                "call_num": self._exec_count,
+                "exec_time_s": 0.0,
+                "output_chars": len(output),
+                "is_error": True,
+            })
+            self._exec_count += 1
+            return output
 
         buf = io.StringIO()
+        t0 = time.perf_counter()
         try:
             with contextlib.redirect_stdout(buf):
                 exec(code, self.namespace)  # noqa: S102
+            is_error = False
         except Exception:
-            tb = traceback.format_exc()
-            return f"Error:\n{tb}"
+            buf.write(traceback.format_exc())
+            is_error = True
+        exec_time = time.perf_counter() - t0
 
         output = buf.getvalue()
+        if is_error:
+            output = f"Error:\n{output}"
         if len(output) > _MAX_OUTPUT_CHARS:
             output = output[:_MAX_OUTPUT_CHARS] + f"\n... [truncated — {len(output)} chars total]"
-        return output if output else "(no output)"
+        output = output if output else "(no output)"
+
+        self.timing_log.append({
+            "call_num": self._exec_count,
+            "exec_time_s": round(exec_time, 4),
+            "output_chars": len(output),
+            "is_error": is_error,
+        })
+        self._exec_count += 1
+        return output
 
     # ------------------------------------------------------------------
     # Helpers
@@ -135,12 +160,18 @@ class CodeExecutor:
         if rppa_path.exists():
             rppa = pd.read_parquet(rppa_path)
 
+        methylation = None
+        meth_path = episode_dir / "methylation.parquet"
+        if meth_path.exists():
+            methylation = pd.read_parquet(meth_path)
+
         ns: dict = {
             # Episode data
-            "expression": expression,
-            "metadata":   metadata,
-            "mutation":   mutation,   # samples × genes binary matrix (or None)
-            "rppa":       rppa,       # samples × proteins (or None)
+            "expression":  expression,
+            "metadata":    metadata,
+            "mutation":    mutation,     # samples × genes binary matrix (or None)
+            "rppa":        rppa,         # samples × proteins (or None)
+            "methylation": methylation,  # samples × CpGs beta values (or None)
             # Output directory — save all plots/tables here
             "output_dir": self.output_dir,
             # Standard scientific imports available without extra import

@@ -119,6 +119,7 @@ An LLM judge for benchmark components that cannot be scored quantitatively: biol
 | Task A: v2 scoring (9 components, LLM judge) | Implemented, validated on LIHC |
 | Task A: perturbation battery (LIHC, motivated data reading confirmed) | Complete |
 | Task B: no-sample target discovery (v1) | Implemented, not yet run systematically |
+| Task B: dedicated agent (separate from Task A) | Planned — Task A/B agents now separate; Task B agent to be drafted |
 | Task B: mutation-stratified indications (v2) | Deferred |
 | Part 3: LLM evaluator (Task A scoring) | Partial — quantitative + LLM judge working |
 | Part 3: adversarial internet-enabled evaluator | Not started |

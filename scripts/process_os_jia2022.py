@@ -5,10 +5,13 @@ Inputs  (data/external/os_jia2022/):
   sgh-count.csv                — raw counts, genes × samples
   clinical_sgh.xlsx            — per-sample metadata + subtype labels
   Supplementary Data 2.xlsx    — per-sample somatic mutations (41 genes)
+  methylation/                 — per-sample Illumina 850K beta-value .txt files
+  meth_sample_map.csv          — columns: meth_file_stem, sample_id
 
 Outputs (data/external/os_jia2022/):
   expression.parquet           — samples × genes, log2(CPM+1), float32
   mutations.parquet            — samples × genes, binary float32
+  methylation.parquet          — samples × CpGs (top 10,000 by std), beta, float32
   OS_clinical.tsv              — case_id, vital_status, days_to_death, subtype, ...
 
 Subtype mapping (iCluster → paper label):
@@ -20,6 +23,7 @@ Subtype mapping (iCluster → paper label):
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -110,6 +114,65 @@ def build_mutations(clinical: pd.DataFrame) -> pd.DataFrame:
     return mut.astype("float32")
 
 
+def build_methylation(shared_samples: list[str]) -> pd.DataFrame | None:
+    """
+    Load Illumina 850K per-sample beta-value files and build a samples × CpGs matrix.
+
+    Reads meth_sample_map.csv to map file stems to sample IDs, loads each .txt file
+    (columns: chrom, pos, cpg_id, beta, mval), then filters to the top 10,000 most
+    variable CpGs across samples. Saves to methylation.parquet as float32.
+
+    Only samples present in shared_samples are included.
+    """
+    meth_dir = DATA_DIR / "methylation"
+    map_path = DATA_DIR / "meth_sample_map.csv"
+
+    if not map_path.exists():
+        print(f"Warning: meth_sample_map.csv not found at {map_path} — skipping methylation.")
+        return None
+    if not meth_dir.exists():
+        print(f"Warning: methylation directory not found at {meth_dir} — skipping methylation.")
+        return None
+
+    print("Loading methylation data...")
+    sample_map = pd.read_csv(map_path)
+    # Filter to samples in the aligned set
+    sample_map = sample_map[sample_map["sample_id"].isin(shared_samples)].copy()
+    print(f"  {len(sample_map)} samples in map (matched to aligned set)")
+
+    frames: dict[str, pd.Series] = {}
+    for _, row in sample_map.iterrows():
+        stem = str(row["meth_file_stem"])
+        sample_id = str(row["sample_id"])
+        fpath = meth_dir / f"{stem}.txt"
+        if not fpath.exists():
+            print(f"  Warning: missing methylation file {fpath} — skipping sample {sample_id}")
+            continue
+        df = pd.read_csv(fpath, sep="\t", usecols=["cpg_id", "beta"])
+        frames[sample_id] = df.set_index("cpg_id")["beta"]
+
+    if not frames:
+        print("  Warning: no methylation files loaded — skipping methylation output.")
+        return None
+
+    meth = pd.DataFrame(frames).T  # samples × CpGs
+    meth.index.name = "case_id"
+    print(f"  Raw methylation matrix: {meth.shape[0]} samples × {meth.shape[1]} CpGs")
+
+    # Filter to top 10,000 most variable CpGs (by std across samples)
+    cpg_std = meth.std(axis=0)
+    top_cpgs = cpg_std.nlargest(10_000).index
+    meth = meth[top_cpgs].astype("float32")
+    print(f"  Filtered to top {meth.shape[1]} most variable CpGs")
+    print(f"  Beta value range: [{meth.values.min():.3f}, {meth.values.max():.3f}]")
+    print(f"  (Illumina EPIC 850K array; beta = 0 unmethylated, 1 fully methylated)")
+
+    out_path = DATA_DIR / "methylation.parquet"
+    meth.to_parquet(out_path)
+    print(f"  Saved: {out_path}  {out_path.stat().st_size // 1024} KB")
+    return meth
+
+
 def build_clinical(clinical: pd.DataFrame, expr_samples: list[str]) -> pd.DataFrame:
     print("Building clinical table...")
     df = clinical.copy()
@@ -147,6 +210,14 @@ def build_clinical(clinical: pd.DataFrame, expr_samples: list[str]) -> pd.DataFr
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Process SGH-OS (Jia 2022) data.")
+    parser.add_argument(
+        "--skip-methylation",
+        action="store_true",
+        help="Skip building methylation.parquet (use if methylation files are not available).",
+    )
+    args = parser.parse_args()
+
     print(f"\n{'='*55}")
     print(f"  SGH-OS (Jia 2022) — data processing")
     print(f"{'='*55}\n")
@@ -168,7 +239,7 @@ def main():
     clin = clin.loc[shared]
     print(f"\nFinal aligned sample count: {len(shared)}")
 
-    # Save
+    # Save expression, mutations, clinical
     expr_path = DATA_DIR / "expression.parquet"
     mut_path  = DATA_DIR / "mutations.parquet"
     clin_path = DATA_DIR / "OS_clinical.tsv"
@@ -181,6 +252,14 @@ def main():
     print(f"  {expr_path}  {expr_path.stat().st_size // 1024} KB")
     print(f"  {mut_path}   {mut_path.stat().st_size // 1024} KB")
     print(f"  {clin_path}  {clin_path.stat().st_size // 1024} KB")
+
+    # Methylation (optional — only samples in the aligned set)
+    if not args.skip_methylation:
+        print()
+        build_methylation(shared)
+    else:
+        print("\n[--skip-methylation] Skipping methylation processing.")
+
     print()
 
 

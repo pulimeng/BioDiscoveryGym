@@ -386,14 +386,24 @@ def score_pathway_validity(
     try:
         all_pathways, gene_sets = _load_all_genesets(genesets_dir)
 
-        # Name validity
+        # Name validity — match against GMT names with space/underscore normalization.
+        # Agents sometimes write "REACTOME INNATE_IMMUNE_SYSTEM" (space before module)
+        # instead of the canonical "REACTOME_INNATE_IMMUNE_SYSTEM"; normalizing catches these.
+        def _normalize(s: str) -> str:
+            return s.upper().strip().replace(" ", "_")
+
+        normalized_pathways = {_normalize(n): n for n in all_pathways}
+
         valid = []
         for pw in pathway_evidence:
+            pw_norm = _normalize(pw)
             pw_upper = pw.upper().strip()
-            # Fuzzy: pathway name contained in any GMT name or vice versa
-            match = any(
-                pw_upper in name or name in pw_upper
-                for name in all_pathways
+            match = (
+                # Original substring match (exact GMT name embedded in string)
+                any(pw_upper in name or name in pw_upper for name in all_pathways)
+                or
+                # Normalized match (handles space↔underscore variations)
+                any(norm in pw_norm or pw_norm in norm for norm in normalized_pathways)
             )
             if match:
                 valid.append(pw)
@@ -408,9 +418,11 @@ def score_pathway_validity(
             ora_hits = 0
             for pw in valid:
                 pw_upper = pw.upper().strip()
+                pw_norm = _normalize(pw)
                 matched_gs = next(
                     (gs for name, gs in gene_sets.items()
-                     if pw_upper in name or name in pw_upper), None
+                     if pw_upper in name or name in pw_upper
+                     or pw_norm in _normalize(name) or _normalize(name) in pw_norm), None
                 )
                 if matched_gs is None:
                     continue

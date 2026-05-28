@@ -37,7 +37,30 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from biodiscoverygym.executor import _BLOCKED_SUBSTRINGS, _MAX_OUTPUT_CHARS
+from biodiscoverygym.executor import _MAX_OUTPUT_CHARS
+
+# Task B-specific block list. All reference datasets are pre-loaded into the namespace
+# with genes anonymized to GENE_XXXXX — the raw files contain real gene symbols, so
+# direct file access would allow trivial de-anonymization by column-name lookup.
+_BLOCKED_SUBSTRINGS = (
+    "data/sealed",
+    ".biodiscoverygym/vault",
+    "episode_key",
+    "data/depmap",
+    "data/gtex",
+    "data/gnomad",
+    "data/tcga",
+    "data/hpa",
+    "data/cosmic",
+    "data/ccle_proteomics",
+    "data/prism",
+    "data/genesets",
+    "data/cancer_genes",
+    "gene_map.json",
+    "_gene_map",
+    "_evaluation",
+    "results/",
+)
 
 _TCGA_COHORTS = ["brca", "coad", "hnsc", "kirc", "lihc", "luad", "lusc", "ov", "prad", "skcm"]
 

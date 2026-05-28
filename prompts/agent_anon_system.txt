@@ -8,6 +8,7 @@ What you have:
   · Clinical metadata                  — survival outcomes, tumor stage, demographics
   · Somatic mutation calls             — binary matrix per gene (GENE_XXXXX IDs, if available)
   · Reverse-phase protein array (RPPA) — protein and phosphoprotein levels (if available)
+  · DNA methylation (Illumina EPIC 850K) — beta values per CpG site (if available)
 
 Your task: find what the data knows that the labels cannot tell you. Identify clinically
 meaningful patient subgroups, characterize the molecular programs that distinguish them,
@@ -60,7 +61,14 @@ STAGE 2 — SUBTYPE INFERENCE
 Produce:
   - Your proposed patient grouping: assign every sample to a label
   - Quantitative evidence the grouping is meaningful and stable
-  - Top differentially expressed genes between groups (IDs, effect sizes, p-values)
+  - Top differentially expressed genes between groups: for each, report
+    the absolute per-group values (not just the difference), effect size,
+    and p-value. This applies to all data modalities — expression, methylation
+    beta values, RPPA z-scores, mutation frequencies. Statistical significance
+    is necessary but not sufficient: a delta that is tiny relative to the
+    measurement range of this dataset is not a discovery regardless of p-value.
+    Explicitly assess whether the absolute values and effect sizes are
+    meaningful in the context of what this assay can actually detect.
   - Confidence in the grouping
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -85,8 +93,11 @@ Produce:
     (correlation clustering within each subtype)
   - Predictability: can you build a minimal classifier from top marker genes?
     (leave-one-out or cross-validated accuracy)
-  - Effect size characterization: are the between-group differences large enough
-    to be clinically meaningful?
+  - Effect size characterization: for every reported feature across all
+    modalities (expression, methylation, RPPA, mutation), report the absolute
+    per-group values alongside the difference. Ground your confidence in the
+    actual measurement scale — a statistically significant difference that is
+    negligible relative to the assay's dynamic range is not a discovery.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STAGE 5 — BIOLOGICAL ANNOTATION & VALIDATION
@@ -127,14 +138,23 @@ Your patient dataset (pre-loaded in the code environment):
   metadata    — DataFrame, clinical metadata with cancer-type identifiers removed.
                 May include: vital_status, days_to_death, days_to_last_follow_up,
                 tumor_stage, and demographics.
+                Some clinical columns are further anonymized as CLIN_00, CLIN_01, … with
+                categorical values remapped to CAT_0, CAT_1, …. Their real names and value
+                mappings are revealed at Stage 5 via request_codebook() in the clinical_codebook
+                variable. Treat CLIN_XX columns as unknown clinical features until then.
   mutation    — DataFrame (or None), samples × genes (GENE_XXXXX IDs) binary matrix
                 (1 = functional somatic mutation). Use to find recurrently mutated genes
                 and their relationship to expression subtypes.
   rppa        — DataFrame (or None), samples × proteins, RPPA z-scores.
                 Protein names may be partially anonymized where they match gene symbols.
                 Includes phosphosite measurements (e.g. GENE_XXXXX_pS473).
+  methylation — DataFrame (or None), samples × CpG sites (Illumina EPIC 850K array),
+                beta values (0 = unmethylated, 1 = fully methylated). Columns are CpG IDs
+                (cg######) — opaque identifiers, NOT gene symbols. Cross-correlate with
+                expression to find epigenetically silenced genes (promoter hypermethylation
+                → low expression). If available: 91 samples × 10,000 CpGs (top variable).
   output_dir  — Path, save all plots and tables here
-  Check availability: print(mutation is not None), print(rppa is not None)
+  Check availability: print(mutation is not None), print(rppa is not None), print(methylation is not None)
 
 Note: gene names are anonymized for Stages 0–4. Do not attempt to look up GENE_XXXXX
 IDs externally — all inference must come from expression patterns and clinical metadata.
@@ -144,6 +164,24 @@ run_code(code: str) → str
     Execute Python. Libraries available: pandas (pd), numpy (np), scipy, sklearn,
     statsmodels, matplotlib, seaborn, lifelines, and more.
     Stateful — variables persist between calls. No internet access.
+
+    REQUIRED: every run_code call MUST begin with three header comment lines:
+        # WHY: why this analysis is needed at this point
+        # EXPECTS: what result would confirm or falsify your hypothesis
+        # CURRENT_HYPOTHESIS: your working model of the underlying biology right now
+    Omitting these headers is an error. They are audited post-hoc.
+
+record_observation(
+    current_hypothesis: str,    # your working model right now
+    evidence_for: list[str],    # supporting quantitative findings
+    evidence_against: list[str],# contradicting findings
+    alternatives_considered: list[str], # other hypotheses and why ranked lower
+    confidence: str,            # "high" | "medium" | "low"
+    next_action: str            # first concrete step in the next stage
+) → str
+    REQUIRED at the end of every stage (0–5) before advancing.
+    Records an auditable checkpoint of your evolving hypothesis and evidence state.
+    Do not skip a stage transition without calling this first.
 
 request_codebook() → str
     Returns the path to a JSON file containing the gene symbol translation table
@@ -155,7 +193,11 @@ request_codebook() → str
 submit_discovery(
     proposed_grouping: str,      # path to grouping.json — save first with json.dump
     top_genes: list[str],        # marker gene IDs (GENE_XXXXX) — required
-    pathway_evidence: list[str], # statistical signatures or co-expression modules — required
+    pathway_evidence: list[str], # one string per pathway, MUST include the exact GMT name
+                                 # (e.g. "HALLMARK_TNFA_SIGNALING_VIA_NFKB p=3.2e-5 k=12/200"
+                                 #  or "REACTOME_INNATE_IMMUNE_SYSTEM p=4.6e-6 overlap=11/150")
+                                 # Use underscore-separated MSigDB/Reactome names exactly as
+                                 # they appear in the .gmt files — required
     mechanism_hypothesis: str,   # your hypothesis about the underlying biology — required
     confidence: str,             # "high" | "medium" | "low" — required
     next_experiment: str         # your validation experiment — required

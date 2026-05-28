@@ -60,6 +60,7 @@ class EpisodeResult:
     discovery: dict | None = None
     messages: list = field(default_factory=list)
     output_dir: str = ""
+    run_log: dict = field(default_factory=dict)  # usage_log + timing_log from runtime
 
 
 class Episode:
@@ -161,9 +162,15 @@ class Episode:
         if self._gene_map:
             (output_dir / "gene_map.json").write_text(json.dumps(self._gene_map, indent=2))
 
+        clinical_codebook = self.dataset.get("clinical_codebook", {})
+        if clinical_codebook:
+            (output_dir / "clinical_codebook.json").write_text(
+                json.dumps(clinical_codebook, indent=2)
+            )
+
         sandbox.enable()
         try:
-            discovery_raw, messages = agent.run(self.episode_id, output_dir=output_dir)
+            discovery_raw, messages, run_log = agent.run(self.episode_id, output_dir=output_dir)
         finally:
             sandbox.disable()
 
@@ -174,6 +181,7 @@ class Episode:
             discovery=discovery_raw,
             messages=messages,
             output_dir=str(output_dir),
+            run_log=run_log,
         )
 
     # ------------------------------------------------------------------
@@ -247,6 +255,9 @@ class Episode:
                 # RPPA uses protein aliases (ERALPHA, BETACATENIN) not gene symbols —
                 # leave column names intact to avoid inconsistent partial anonymization
                 anon_dataset[key] = val
+            elif key == "methylation":
+                # CpG IDs (cg######) are not gene symbols — pass through unchanged
+                anon_dataset[key] = val
             else:
                 anon_dataset[key] = val
 
@@ -276,6 +287,11 @@ class Episode:
         if rppa is not None:
             rppa.to_parquet(self.episode_data_dir / "rppa.parquet")
             written.append(f"rppa({rppa.shape[0]}×{rppa.shape[1]})")
+
+        meth = self.dataset.get("methylation")
+        if meth is not None:
+            meth.to_parquet(self.episode_data_dir / "methylation.parquet")
+            written.append(f"methylation({meth.shape[0]}×{meth.shape[1]})")
 
         print(f"[Episode {self.episode_id}] Data → {self.episode_data_dir}/ [{', '.join(written)}]")
 

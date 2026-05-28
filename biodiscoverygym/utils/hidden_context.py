@@ -213,6 +213,16 @@ class HiddenContextBuilder:
 # DataAnonymizer
 # ---------------------------------------------------------------------------
 
+# Clinical columns that leak cohort identity through their name or categorical values,
+# but carry real biological signal — renamed rather than stripped, with a codebook
+# mapping CLIN_XX → real column name and CAT_X → real category value.
+# True = also remap categorical string values; False = numeric, column rename only.
+_CLINICAL_RENAME = {
+    "pathology":    True,   # "Osteoblastic"/"Chondroblastic" directly name OS histology
+    "mrna_cluster": False,  # numeric; column name pre-labels the paper's mRNA clusters
+    "hrd_score":    False,  # numeric; column name names the S-HRD axis directly
+}
+
 # Columns that directly reveal cancer type, tissue of origin, or molecular subtype.
 # Survival and staging columns are intentionally NOT stripped — they are valid
 # phenotypic anchors the agent should use for mechanistic investigation.
@@ -238,17 +248,53 @@ _ALWAYS_STRIP = [
 
 class DataAnonymizer:
     """
-    Strips leaky columns from a dataset before it is handed to an agent.
+    Strips or renames leaky columns from a dataset before it is handed to an agent.
 
     Usage:
         anon_dataset = DataAnonymizer.mask(dataset)
+        clinical_codebook = anon_dataset.get("clinical_codebook", {})
     """
+
+    @staticmethod
+    def anonymize_clinical(metadata) -> tuple:
+        """
+        Rename leaky clinical columns to CLIN_00, CLIN_01, … and remap
+        categorical string values to CAT_0, CAT_1, … where flagged.
+
+        Returns (anonymized_df, codebook) where codebook maps:
+            CLIN_XX → {"real_name": str, "value_map": {CAT_X: real_val} | None}
+
+        Deterministic: columns sorted alphabetically, values sorted for categories.
+        """
+        import pandas as pd
+
+        meta = metadata.copy()
+        codebook: dict = {}
+
+        present = sorted(c for c in _CLINICAL_RENAME if c in meta.columns)
+        for idx, col in enumerate(present):
+            anon_col = f"CLIN_{idx:02d}"
+            remap_values = _CLINICAL_RENAME[col]
+
+            value_map = None
+            if remap_values and meta[col].dtype == object:
+                categories = sorted(meta[col].dropna().unique().tolist())
+                value_map = {f"CAT_{i}": cat for i, cat in enumerate(categories)}
+                inv_map = {v: k for k, v in value_map.items()}
+                meta[col] = meta[col].map(inv_map)
+
+            codebook[anon_col] = {"real_name": col, "value_map": value_map}
+            meta = meta.rename(columns={col: anon_col})
+
+        return meta, codebook
 
     @staticmethod
     def mask(dataset: dict) -> dict:
         """
-        Return a shallow-copied, agent-safe version of dataset with all
-        columns in _ALWAYS_STRIP removed from metadata.
+        Return a shallow-copied, agent-safe version of dataset with:
+        - Columns in _ALWAYS_STRIP removed from metadata
+        - Columns in _CLINICAL_RENAME renamed to CLIN_XX (values remapped where needed)
+        - 'clinical_codebook' key added with the CLIN_XX → real mapping
         """
         import copy
 
@@ -257,6 +303,9 @@ class DataAnonymizer:
         meta = safe.get("metadata")
         if meta is not None:
             cols_to_drop = [c for c in _ALWAYS_STRIP if c in meta.columns]
-            safe["metadata"] = meta.drop(columns=cols_to_drop, errors="ignore")
+            meta = meta.drop(columns=cols_to_drop, errors="ignore")
+            meta, clinical_codebook = DataAnonymizer.anonymize_clinical(meta)
+            safe["metadata"] = meta
+            safe["clinical_codebook"] = clinical_codebook
 
         return safe

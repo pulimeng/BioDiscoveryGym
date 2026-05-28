@@ -39,6 +39,13 @@ def _serialize_messages(messages: list) -> list:
             for b in content:
                 if isinstance(b, dict):
                     blocks.append(b)
+                elif hasattr(b, "type") and b.type == "thinking":
+                    # Preserve thinking blocks explicitly — model_dump may omit signature
+                    blocks.append({
+                        "type": "thinking",
+                        "thinking": getattr(b, "thinking", ""),
+                        "signature": getattr(b, "signature", ""),
+                    })
                 elif hasattr(b, "model_dump"):
                     blocks.append(b.model_dump())
                 else:
@@ -83,14 +90,20 @@ def parse_args():
     p.add_argument(
         "--sample-codebook-gate",
         type=int,
-        default=30,
-        help="Tool calls before the fake sample codebook is released (default: 30; use 0 to pre-reveal at start)",
+        default=25,
+        help="Tool calls before the fake sample codebook is released (default: 25; use 0 to pre-reveal at start)",
     )
     p.add_argument(
         "--gene-codebook-gate",
         type=int,
-        default=30,
-        help="Tool calls before the gene codebook is released (default: 30; use 0 to pre-reveal at start)",
+        default=25,
+        help="Tool calls before the gene codebook is released (default: 25; use 0 to pre-reveal at start)",
+    )
+    p.add_argument(
+        "--thinking-budget",
+        type=int,
+        default=0,
+        help="Extended thinking token budget per turn (default: 0 = off; try 2000–4000 for targeted runs)",
     )
     p.add_argument(
         "--phase2",
@@ -228,6 +241,8 @@ def main():
         commit_phase_max_calls=args.phase2_commit_phase_calls,
         explicit_cohort=args.cohort if args.explicit_retrieval else None,
         primekg=args.primekg,
+        clinical_codebook=episode.dataset.get("clinical_codebook", {}),
+        thinking_budget=args.thinking_budget,
     )
 
     results_base = Path("results") / "cohort" / "external" if args.cohort.upper() in EXTERNAL_COHORT_DIRS else None
@@ -273,6 +288,8 @@ def main():
                 "phase2_commit_phase_calls": args.phase2_commit_phase_calls,
             },
             "discovery": result.discovery,
+            "observations": result.run_log.get("observations", []),
+            "run_log": result.run_log,
             "messages": serialized_messages,
         }
         log_path.write_text(json.dumps(out, indent=2))
