@@ -9,9 +9,12 @@
 
 set -euo pipefail
 
-SEEDS=(0 1 7)   # seed 42 already done
+G0_SEEDS=(0 1 7)
+G1_SEEDS=(0 1 7 42 123)
+G2_SEEDS=(0 1 7 42 123)
 COHORT="OS"
 MODEL="claude-sonnet-4-6"
+RUN_TAG="run5_threePrompt_clinAnon"
 
 if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
     echo "Error: ANTHROPIC_API_KEY is not set." >&2
@@ -22,11 +25,11 @@ run_episode() {
     local mode="$1"
     local seed="$2"
     local extra_args="$3"
-    local label="os_${mode}_s${seed}_withMeth_noCNA"
+    local label="os_${mode}_s${seed}_${RUN_TAG}"
 
     echo ""
     echo "============================================================"
-    echo "  ${mode} | seed=${seed}"
+    echo "  ${mode} | seed=${seed} | ${RUN_TAG}"
     echo "============================================================"
 
     python scripts/run_episode.py \
@@ -38,18 +41,18 @@ run_episode() {
         --save-log "${label}.json"
 }
 
-# --- G0: explicit retrieval (cohort name + genes revealed) ---
-for seed in "${SEEDS[@]}"; do
+# --- G0: explicit retrieval (cohort name + both codebooks pre-revealed) — 3 runs ---
+for seed in "${G0_SEEDS[@]}"; do
     run_episode "g0" "$seed" "--explicit-retrieval"
 done
 
-# --- G1: implicit retrieval (genes pre-revealed, no cohort name) ---
-for seed in "${SEEDS[@]}"; do
+# --- G1: implicit retrieval (gene codebook pre-revealed, cohort hidden) — 5 runs ---
+for seed in "${G1_SEEDS[@]}"; do
     run_episode "g1" "$seed" "--gene-codebook-gate 0"
 done
 
-# --- G2: data-driven (genes gated at call 25) ---
-for seed in "${SEEDS[@]}"; do
+# --- G2: data-driven (gene codebook gated at call 25, cohort hidden) — 5 runs ---
+for seed in "${G2_SEEDS[@]}"; do
     run_episode "g2" "$seed" ""
 done
 
