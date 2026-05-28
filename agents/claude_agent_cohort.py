@@ -369,10 +369,16 @@ class ClaudeAgentCohort:
             codebook_path = output_dir / "codebook.json"
             codebook_path.write_text(json.dumps(self.gene_map))
             executor.namespace["codebook"] = dict(self.gene_map)
+            executor.namespace["clinical_codebook"] = dict(self.clinical_codebook)
             executor.unblock_genesets()
+            clin_note = (
+                f"  Clinical column codebook is available as `clinical_codebook`"
+                f"  — {len(self.clinical_codebook)} anonymized columns (CLIN_XX → real name + value map).\n"
+            ) if self.clinical_codebook else ""
             pre_reveal_lines.append(
                 f"Gene codebook (GENE_XXXXX → real symbol) is available as the variable `codebook`"
                 f"  — {len(self.gene_map)} translations, available immediately.\n"
+                f"{clin_note}"
                 f"  Pathway gene sets (MSigDB) are also accessible:\n"
                 f"    Hallmarks : data/genesets/msigdb/h.all.v2023.2.Hs.symbols.gmt\n"
                 f"    Reactome  : data/genesets/msigdb/c2.cp.reactome.v2023.2.Hs.symbols.gmt\n"
@@ -380,7 +386,7 @@ class ClaudeAgentCohort:
                 f"    GO BP     : data/genesets/msigdb/c5.go.bp.v2023.2.Hs.symbols.gmt\n"
                 f"  GMT format: name, _, *genes = line.strip().split('\\t')"
             )
-            self._log(f"[ClaudeAgentCohort] Pre-revealed gene codebook → namespace['codebook'] + unblocked genesets")
+            self._log(f"[ClaudeAgentCohort] Pre-revealed gene codebook + clinical_codebook → namespace + unblocked genesets")
 
         if self.mislead_cohort and self.sample_codebook_gate == 0:
             fake_map = self._generate_fake_sample_codebook()
