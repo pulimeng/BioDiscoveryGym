@@ -38,7 +38,7 @@ echo ""
 
 for ep in "${EPISODES[@]}"; do
     echo "=== $(basename $ep) ==="
-    python scripts/score_episode_v3.py "$ep" --cohort OS --save
+    python scripts/score_episode_v3.py "$ep" --save
     echo ""
 done
 

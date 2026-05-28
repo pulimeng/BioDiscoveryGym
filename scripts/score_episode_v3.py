@@ -28,7 +28,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 def parse_args():
     p = argparse.ArgumentParser(description="Score a BioDiscoveryGym v3 episode post-hoc.")
     p.add_argument("episode_json", help="Path to episode result JSON (from --save-log)")
-    p.add_argument("--cohort", required=True, help="Cohort name (e.g. BRCA, OS)")
+    p.add_argument("--cohort", default=None,
+                   help="Cohort name (e.g. BRCA, OS). Reads from episode JSON if omitted.")
     p.add_argument("--data-dir", default="data", help="Root data directory (default: data)")
     p.add_argument("--save", action="store_true", help="Save score + trace JSON files")
     p.add_argument("--llm-model", default="claude-sonnet-4-6")
@@ -65,7 +66,10 @@ def main():
         sys.exit(1)
 
     episode = json.loads(episode_path.read_text())
-    cohort: str = args.cohort.upper()
+    cohort: str = (args.cohort or episode.get("cohort", "")).upper()
+    if not cohort:
+        print("Error: --cohort not provided and not found in episode JSON.", file=sys.stderr)
+        sys.exit(1)
     seed: int = int(episode.get("seed", 42))
     discovery: dict = episode.get("discovery") or {}
     messages: list[dict] = episode.get("messages", [])
