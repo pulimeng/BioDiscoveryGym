@@ -7,6 +7,7 @@ All functions are defensively coded — missing data returns 0.0, never raises.
 from __future__ import annotations
 
 import gzip
+import re
 from pathlib import Path
 from typing import Any
 
@@ -465,3 +466,42 @@ def _load_all_genesets(genesets_dir: Path) -> tuple[set[str], dict[str, set[str]
         except Exception:
             pass
     return all_names, gene_sets
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# p2_commit_quality  (Phase 2, weight 1)
+# Check that the commit report contains all 5 required analysis sections.
+# ──────────────────────────────────────────────────────────────────────────────
+
+def score_p2_commit_quality(commit_report: str) -> tuple[float, dict]:
+    if not commit_report:
+        return 0.0, {"reason": "no commit report submitted"}
+
+    r = commit_report.lower()
+
+    sections = {
+        "pc_loadings": bool(re.search(
+            r"pc[\s_]?[23]\b|pc2|pc3|principal component [23]|loading", r
+        )),
+        "survival": bool(re.search(
+            r"median.*survival|survival.*median|log.rank|kaplan|hazard ratio|\bhr\b.*=|\bci\b", r
+        )),
+        "mutation": bool(re.search(
+            r"mutation|fisher.*exact|odds ratio|mutant|mutation rate|enriched.*gene", r
+        )),
+        "rppa": bool(re.search(
+            r"rppa|protein.*diff|phospho|mann.whitn|clinical.*variable", r
+        )),
+        "unexpected": bool(re.search(
+            r"unexpected|surprise|surprising|expected instead|contrary|most.*surprise", r
+        )),
+    }
+
+    n_found = sum(sections.values())
+    score = float(n_found / len(sections))
+    return score, {
+        "sections_found": [k for k, v in sections.items() if v],
+        "sections_missing": [k for k, v in sections.items() if not v],
+        "n_sections": n_found,
+        "coverage": score,
+    }

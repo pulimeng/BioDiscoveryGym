@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from .evaluator_v2 import EvaluatorV2, ScoreReport
+from .evaluator_v2 import EvaluatorV2, ScoreReport, Phase2Report
 
 
 # ---------------------------------------------------------------------------
@@ -295,12 +295,63 @@ def trace_episode(messages: list[dict], run_log: dict | None = None) -> TraceRep
 
 
 # ---------------------------------------------------------------------------
+# Phase 2 data extraction
+# ---------------------------------------------------------------------------
+
+def extract_phase2_data(messages: list[dict]) -> tuple[str, list[str]]:
+    """
+    Extract Phase 2 data from the serialized message log.
+
+    Returns:
+        commit_report: The text submitted via submit_precommit(report=...).
+                       Empty string if submit_precommit was never called.
+        phase2_answers: All assistant text blocks produced after the commit,
+                        i.e. the Q1-Q4 answers.
+    """
+    commit_report = ""
+    phase2_answers: list[str] = []
+    found_precommit = False
+
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content", [])
+        if not isinstance(content, list):
+            continue
+
+        if role == "assistant":
+            accumulated_text: list[str] = []
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                btype = block.get("type")
+                if btype == "tool_use":
+                    name = block.get("name", "")
+                    if name == "submit_precommit":
+                        commit_report = block.get("input", {}).get("report", "")
+                        found_precommit = True
+                    # Flush any text collected before this tool call
+                    if accumulated_text and found_precommit:
+                        phase2_answers.extend(t for t in accumulated_text if t.strip())
+                    accumulated_text = []
+                elif btype in ("text", "thinking") and found_precommit:
+                    text = block.get("text") or block.get("thinking") or ""
+                    if text.strip():
+                        accumulated_text.append(text)
+
+            # Flush text that came after the last tool call in this turn
+            if accumulated_text and found_precommit:
+                phase2_answers.extend(t for t in accumulated_text if t.strip())
+
+    return commit_report, phase2_answers
+
+
+# ---------------------------------------------------------------------------
 # V3 evaluator
 # ---------------------------------------------------------------------------
 
 class EvaluatorV3(EvaluatorV2):
     """
-    V2 scorer + agent trace. Call score_and_trace() to get both reports.
+    V2 scorer + agent trace + Phase 2 scoring. Call score_and_trace() to get both reports.
     """
 
     def score_and_trace(
@@ -324,5 +375,15 @@ class EvaluatorV3(EvaluatorV2):
             sample_id_map=sample_id_map,
             cohort=cohort,
         )
+
+        # Phase 2: prefer commit_phase_report from discovery dict (captured at runtime);
+        # fall back to extraction from the message log.
+        runtime_commit = discovery.get("commit_phase_report", "")
+        extracted_commit, phase2_answers = extract_phase2_data(messages)
+        commit_report = runtime_commit or extracted_commit
+
+        phase2_report = self.score_phase2(commit_report, phase2_answers)
+        score_report.phase2 = phase2_report
+
         trace_report = trace_episode(messages, run_log=run_log)
         return score_report, trace_report

@@ -119,9 +119,13 @@ def main():
         import biodiscoverygym.scoring.judge as _judge
         _judge.score_mechanism_grounding = lambda *a, **k: (0.0, {"skipped": True})
         _judge.score_experiment_quality = lambda *a, **k: (0.0, {"skipped": True})
+        _judge.score_p2_experiment_depth = lambda *a, **k: (0.0, {"skipped": True})
+        _judge.score_p2_mechanistic_integration = lambda *a, **k: (0.0, {"skipped": True})
         import biodiscoverygym.scoring.evaluator_v2 as _ev2
         _ev2.score_mechanism_grounding = _judge.score_mechanism_grounding
         _ev2.score_experiment_quality = _judge.score_experiment_quality
+        _ev2.score_p2_experiment_depth = _judge.score_p2_experiment_depth
+        _ev2.score_p2_mechanistic_integration = _judge.score_p2_mechanistic_integration
 
     from biodiscoverygym.scoring import EvaluatorV3
 
