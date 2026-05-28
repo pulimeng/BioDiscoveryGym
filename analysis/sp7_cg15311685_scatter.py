@@ -197,8 +197,8 @@ ax = axes[1]
 
 # 2D absolute-value threshold: composite β < 0.60 AND SP7 > 7.0
 # Both cutoffs are absolute measurements — apply to any new patient directly
-BETA_CUT = 0.60
-SP7_CUT  = 7.0
+BETA_CUT = 0.40
+SP7_CUT  = 6.5
 mask_low_meth  = (df["composite"] < BETA_CUT) & (df["sp7_expr"] > SP7_CUT)
 mask_high_meth = (df["composite"] > BETA_CUT) & (df["sp7_expr"] < SP7_CUT)
 # unclassified patients (neither condition) are excluded from KM
@@ -264,8 +264,6 @@ for i, c in enumerate(BOX_ORDER):
     ax.scatter(np.full(len(sub), i) + jitter, sub,
                c=COLOURS[c], s=24, alpha=0.75, zorder=4,
                edgecolors="white", linewidths=0.35)
-    ax.text(i, sub.mean() + 0.027, f"{sub.mean():.3f}",
-            ha="center", va="bottom", fontsize=8.5, fontweight="bold")
 
 ax.axhline(0.5, color="#aaa", lw=1.0, linestyle=":", zorder=1)
 ax.text(len(BOX_ORDER) - 0.05, 0.505, "β = 0.5", color="#aaa",
@@ -295,8 +293,6 @@ for i, c in enumerate(BOX_ORDER):
     ax.scatter(np.full(len(sub), i) + jitter, sub,
                c=COLOURS[c], s=24, alpha=0.75, zorder=4,
                edgecolors="white", linewidths=0.35)
-    ax.text(i, sub.mean() + 0.17, f"{sub.mean():.2f}",
-            ha="center", va="bottom", fontsize=8.5, fontweight="bold")
 
 ax.set_xticks(range(len(BOX_ORDER)))
 ax.set_xticklabels([CLUSTER_MAP[c] for c in BOX_ORDER], rotation=18, ha="right", fontsize=9)

@@ -1,8 +1,9 @@
 """
-ClaudeAgent (gene-anonymized mode): identical tool loop to ClaudeAgent but with
-a system prompt designed for datasets where gene names are replaced with GENE_XXXXX
-identifiers. All reference-database lookups (DepMap, GTEx, MSigDB, STRING) are
-removed — the agent must rely purely on statistical structure and clinical metadata.
+ClaudeAgentCohort: cohort-discovery agent with per-mode system prompts (G0/G1/G2).
+Gene names are replaced with GENE_XXXXX identifiers; the codebook is gated or
+pre-revealed depending on mode. All reference-database lookups (DepMap, GTEx,
+MSigDB, STRING) are removed — the agent must rely on statistical structure and
+clinical metadata.
 """
 
 from __future__ import annotations
@@ -208,7 +209,7 @@ _TOOLS: list[dict] = [
 ]
 
 
-class ClaudeAgentAnon:
+class ClaudeAgentCohort:
     """
     Gene-anonymized variant of ClaudeAgent. Identical tool loop,
     different system prompt — no reference database lookups.
@@ -379,7 +380,7 @@ class ClaudeAgentAnon:
                 f"    GO BP     : data/genesets/msigdb/c5.go.bp.v2023.2.Hs.symbols.gmt\n"
                 f"  GMT format: name, _, *genes = line.strip().split('\\t')"
             )
-            self._log(f"[ClaudeAgentAnon] Pre-revealed gene codebook → namespace['codebook'] + unblocked genesets")
+            self._log(f"[ClaudeAgentCohort] Pre-revealed gene codebook → namespace['codebook'] + unblocked genesets")
 
         if self.mislead_cohort and self.sample_codebook_gate == 0:
             fake_map = self._generate_fake_sample_codebook()
@@ -391,7 +392,7 @@ class ClaudeAgentAnon:
                 f"  — {len(fake_map)} samples, available immediately."
             )
             self._log(
-                f"[ClaudeAgentAnon] Pre-revealed sample codebook ({self.mislead_cohort} barcodes) → namespace['sample_codebook']"
+                f"[ClaudeAgentCohort] Pre-revealed sample codebook ({self.mislead_cohort} barcodes) → namespace['sample_codebook']"
             )
 
         if self.primekg:
@@ -434,10 +435,10 @@ class ClaudeAgentAnon:
                     f"    gd = pd.read_parquet('data/networks/primekg_gene_drug.parquet')\n"
                     f"    gd[gd['x_name'] == 'GENE_A'][['y_name', 'display_relation']]\n"
                 )
-                self._log(f"[ClaudeAgentAnon] PrimeKG enabled → {kg_base}/primekg_*.parquet")
+                self._log(f"[ClaudeAgentCohort] PrimeKG enabled → {kg_base}/primekg_*.parquet")
             else:
                 missing = [k for k, p in kg_files.items() if not p.exists()]
-                self._log(f"[ClaudeAgentAnon] PrimeKG requested but missing splits: {missing} — run scripts/download_primekg.py")
+                self._log(f"[ClaudeAgentCohort] PrimeKG requested but missing splits: {missing} — run scripts/download_primekg.py")
 
         begin_text = "Begin. Work through each stage in order and show your reasoning."
         if pre_reveal_lines:
@@ -464,7 +465,7 @@ class ClaudeAgentAnon:
         usage_log: list[dict] = []
         observations: list[dict] = []
 
-        self._log(f"[ClaudeAgentAnon] Starting episode {episode_id} (model={self.model})")
+        self._log(f"[ClaudeAgentCohort] Starting episode {episode_id} (model={self.model})")
 
         _api_kwargs: dict = dict(
             model=self.model,
@@ -474,7 +475,7 @@ class ClaudeAgentAnon:
         )
         if self.thinking_budget > 0:
             _api_kwargs["thinking"] = {"type": "enabled", "budget_tokens": self.thinking_budget}
-            self._log(f"[ClaudeAgentAnon] Extended thinking enabled (budget={self.thinking_budget})")
+            self._log(f"[ClaudeAgentCohort] Extended thinking enabled (budget={self.thinking_budget})")
 
         while (
             tool_call_count < self.max_tool_calls
@@ -492,10 +493,10 @@ class ClaudeAgentAnon:
                 except Exception as e:
                     if attempt == 2:
                         raise
-                    self._log(f"[ClaudeAgentAnon] Stream error (attempt {attempt+1}/3): {e} — retrying")
+                    self._log(f"[ClaudeAgentCohort] Stream error (attempt {attempt+1}/3): {e} — retrying")
 
             self._log(
-                f"[ClaudeAgentAnon] Turn {tool_call_count + 1}: "
+                f"[ClaudeAgentCohort] Turn {tool_call_count + 1}: "
                 f"stop_reason={response.stop_reason}, "
                 f"blocks={[b.type for b in response.content]}"
             )
@@ -513,13 +514,13 @@ class ClaudeAgentAnon:
 
             if response.stop_reason == "end_turn":
                 if discovery is None:
-                    self._log("[ClaudeAgentAnon] Model stopped naturally — no submission made.")
+                    self._log("[ClaudeAgentCohort] Model stopped naturally — no submission made.")
                 else:
-                    self._log("[ClaudeAgentAnon] Model stopped naturally — using existing submission.")
+                    self._log("[ClaudeAgentCohort] Model stopped naturally — using existing submission.")
                 break
 
             if response.stop_reason == "max_tokens":
-                self._log("[ClaudeAgentAnon] Hit max_tokens — nudging.")
+                self._log("[ClaudeAgentCohort] Hit max_tokens — nudging.")
                 tool_results = [
                     {
                         "type": "tool_result",
@@ -537,7 +538,7 @@ class ClaudeAgentAnon:
                 continue
 
             if response.stop_reason != "tool_use":
-                self._log(f"[ClaudeAgentAnon] Unexpected stop_reason: {response.stop_reason}")
+                self._log(f"[ClaudeAgentCohort] Unexpected stop_reason: {response.stop_reason}")
                 break
 
             tool_results = []
@@ -686,7 +687,7 @@ class ClaudeAgentAnon:
                     if self.commit_phase_prompt and not commit_phase_active and not phase2_active:
                         commit_phase_active = True
                         self._tools.append(_SUBMIT_PRECOMMIT_TOOL)
-                        self._log("[ClaudeAgentAnon] Phase 1 complete — injecting Commit Phase blind sweep")
+                        self._log("[ClaudeAgentCohort] Phase 1 complete — injecting Commit Phase blind sweep")
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
@@ -694,7 +695,7 @@ class ClaudeAgentAnon:
                         })
                     elif self.phase2_questions and not phase2_active:
                         phase2_active = True
-                        self._log("[ClaudeAgentAnon] Commit Phase skipped — injecting Phase 2 questions")
+                        self._log("[ClaudeAgentCohort] Commit Phase skipped — injecting Phase 2 questions")
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
@@ -731,7 +732,7 @@ class ClaudeAgentAnon:
                     commit_phase_active = False
                     if self.phase2_questions:
                         phase2_active = True
-                        self._log("[ClaudeAgentAnon] Commit Phase complete — injecting Phase 2 questions")
+                        self._log("[ClaudeAgentCohort] Commit Phase complete — injecting Phase 2 questions")
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
@@ -759,7 +760,7 @@ class ClaudeAgentAnon:
                 )
                 last = tool_results[-1]
                 last["content"] = str(last.get("content") or "") + warning
-                self._log(f"[ClaudeAgentAnon] Budget warning injected ({remaining} remaining)")
+                self._log(f"[ClaudeAgentCohort] Budget warning injected ({remaining} remaining)")
 
             if tool_results:
                 messages.append({"role": "user", "content": tool_results})
@@ -770,7 +771,7 @@ class ClaudeAgentAnon:
             if commit_phase_active:
                 commit_phase_call_count += 1
                 if commit_phase_call_count >= self.commit_phase_max_calls:
-                    self._log(f"[ClaudeAgentAnon] Commit Phase budget exhausted ({self.commit_phase_max_calls} calls).")
+                    self._log(f"[ClaudeAgentCohort] Commit Phase budget exhausted ({self.commit_phase_max_calls} calls).")
                     commit_phase_active = False
                     if self.phase2_questions and not phase2_active:
                         phase2_active = True
@@ -778,12 +779,12 @@ class ClaudeAgentAnon:
             elif phase2_active:
                 phase2_call_count += 1
                 if phase2_call_count >= self.phase2_max_calls:
-                    self._log(f"[ClaudeAgentAnon] Phase 2 budget exhausted ({self.phase2_max_calls} calls).")
+                    self._log(f"[ClaudeAgentCohort] Phase 2 budget exhausted ({self.phase2_max_calls} calls).")
                     break
 
         # Post-loop: if budget exhausted without a submission, do up to 3 forced turns
         if discovery is None and not commit_phase_active and not phase2_active:
-            self._log("[ClaudeAgentAnon] No submission — attempting forced submission (up to 3 turns).")
+            self._log("[ClaudeAgentCohort] No submission — attempting forced submission (up to 3 turns).")
             discovery = self._force_submit(messages, output_dir)
 
         run_log = {
@@ -819,7 +820,7 @@ class ClaudeAgentAnon:
                 ) as stream:
                     response = stream.get_final_message()
             except Exception as e:
-                self._log(f"[ClaudeAgentAnon] Forced submit error (attempt {attempt+1}): {e}")
+                self._log(f"[ClaudeAgentCohort] Forced submit error (attempt {attempt+1}): {e}")
                 break
 
             messages.append({"role": "assistant", "content": response.content})
@@ -838,7 +839,7 @@ class ClaudeAgentAnon:
                                 discovery["proposed_grouping"] = json.load(f)
                         except Exception:
                             discovery["proposed_grouping"] = {}
-                    self._log(f"[ClaudeAgentAnon] Forced submit received (attempt {attempt+1})")
+                    self._log(f"[ClaudeAgentCohort] Forced submit received (attempt {attempt+1})")
                     results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
@@ -856,7 +857,7 @@ class ClaudeAgentAnon:
             if discovery is not None:
                 return discovery
 
-        self._log("[ClaudeAgentAnon] Forced submission failed — returning empty discovery.")
+        self._log("[ClaudeAgentCohort] Forced submission failed — returning empty discovery.")
         return None
 
     def _generate_fake_sample_codebook(self) -> dict[str, str]:

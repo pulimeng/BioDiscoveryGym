@@ -57,7 +57,7 @@ Episode.run(agent)
 | Agent | When to use |
 |---|---|
 | `ClaudeAgent` | Standard episodes (real gene names throughout) |
-| `ClaudeAgentAnon` | Gene-anonymized episodes; supports mislead codebook gating |
+| `ClaudeAgentCohort` | Gene-anonymized episodes; supports mislead codebook gating |
 
 Both agents support `phase2_questions` and `phase2_max_calls` for Phase 2 injection.
 
@@ -167,7 +167,7 @@ python scripts/run_episode.py --cohort LIHC --model claude-opus-4-7 --save-log o
 | `biodiscoverygym/utils/hidden_context.py` | DataAnonymizer strips leaky clinical columns |
 | `biodiscoverygym/phases/lihc.py` | LIHC Phase 2 questions |
 | `agents/claude_agent.py` | Standard agent (real gene names) |
-| `agents/claude_agent_anon.py` | Gene-anonymized agent with codebook gating |
+| `agents/claude_agent_cohort.py` | Gene-anonymized agent with codebook gating |
 | `scripts/run_episode.py` | CLI runner with all flags |
 | `scripts/download_tcga.py` | Download expression + clinical from GDC |
 | `scripts/download_mutations.py` | Download MAF files from GDC |
@@ -187,7 +187,7 @@ python scripts/run_episode.py --cohort LIHC --model claude-opus-4-7 --save-log o
 ### Near-term
 - [ ] Multi-cohort benchmark runs: all 7 cohorts × 3 seeds × standard mode
 - [ ] Negative controls: shuffled gene labels, shuffled sample labels
-- [ ] `ClaudeAgentAnon` Phase 2: verify codebook is still available in Phase 2 context
+- [ ] `ClaudeAgentCohort` Phase 2: verify codebook is still available in Phase 2 context
 
 ### Future
 - [ ] Other models (GPT-4o, Gemini) for comparison

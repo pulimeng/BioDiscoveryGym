@@ -253,7 +253,7 @@ bash scripts/run_os_multiseed.sh
 | `biodiscoverygym/executor.py` | Stateful Python sandbox for Task A — blocks raw TCGA source files, gene maps, prior results; reference databases (DepMap, GTEx, etc.) are accessible after Stage 5 codebook reveal |
 | `biodiscoverygym/tools/pcst.py` | Prize-Collecting Steiner Tree via networkx KMB approximation |
 | `biodiscoverygym/tools/opentargets.py` | OpenTargets actionability lookup — `get_actionability()`, `batch_actionability()` |
-| `agents/claude_agent_anon.py` | `ClaudeAgentAnon` — anonymization + codebook gating + PrimeKG pre-reveal + OT at Stage 5 |
+| `agents/claude_agent_cohort.py` | `ClaudeAgentCohort` — anonymization + codebook gating + PrimeKG pre-reveal + OT at Stage 5 |
 | `prompts/agent_anon_system.txt` | 7-stage system prompt template |
 | `scripts/run_episode.py` | CLI: `--cohort`, `--explicit-retrieval`, `--gene-codebook-gate`, `--mislead-cohort`, `--seed`, `--primekg` |
 | `scripts/score_episode_v2.py` | Post-hoc v2 scoring |

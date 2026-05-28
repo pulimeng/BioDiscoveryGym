@@ -172,7 +172,7 @@ def main():
     check_env()
 
     from biodiscoverygym.episode import Episode
-    from agents.claude_agent_anon import ClaudeAgentAnon
+    from agents.claude_agent_cohort import ClaudeAgentCohort
 
     print(f"\n{'='*60}")
     print(f"  BioDiscoveryGym Episode")
@@ -226,7 +226,7 @@ def main():
         tcga_dir=EXTERNAL_COHORT_DIRS.get(args.cohort.upper()),
     )
 
-    agent = ClaudeAgentAnon(
+    agent = ClaudeAgentCohort(
         model=args.model,
         max_tool_calls=args.max_tool_calls,
         data_dir=args.data_dir,
