@@ -1,155 +1,186 @@
 #!/usr/bin/env bash
-# Task A — full benchmark runner
-# 67 runs: G0 (7) + G1 (21) + G2 (21) + G3 (18)
-# ~$201 total on claude-sonnet-4-6 at ~$3/ep
+# Task A — full benchmark runner + scorer
+#
+# Runs G0/G1/G2/G3 across all 7 TCGA cohorts, then scores every episode.
+# Resume-safe: skips any run whose JSON already exists under OUT_DIR.
 #
 # Usage:
-#   bash taskA.sh              # run all groups
-#   bash taskA.sh --dry-run    # print commands only, no API calls
-#   bash taskA.sh --group G2   # run one group only (G0 / G1 / G2 / G3)
+#   bash scripts/taskA.sh --tag run5_exam                 # run all + score
+#   bash scripts/taskA.sh --tag run5_exam --group G2      # one group only
+#   bash scripts/taskA.sh --tag run5_exam --score-only    # score existing results
+#   bash scripts/taskA.sh --tag run5_exam --skip-score    # run only, no scoring
+#   bash scripts/taskA.sh --tag run5_exam --dry-run       # print commands only
 #
-# Resume-safe: skips any run whose output file already exists.
-# Logs saved to results/task_a/{group}_{cohort}_{seed}.json
+# Environment overrides:
+#   TASK_A_MODEL=claude-opus-4-7 bash scripts/taskA.sh --tag run6_opus
 
 set -euo pipefail
 
-# ── Config ────────────────────────────────────────────────────────────────────
-SCRIPT="python scripts/run_episode.py"
-MODEL="${TASK_A_MODEL:-claude-sonnet-4-6}"  # override: TASK_A_MODEL=claude-opus-4-7 bash taskA.sh
+# ── Defaults ─────────────────────────────────────────────────────────────────
+TAG=""
+MODEL="${TASK_A_MODEL:-claude-sonnet-4-6}"
 MAX_CALLS=100
-OUT_DIR="results/task_a"
+BASE_DIR="results/task_a"
 COHORTS=(BRCA PRAD UCEC LUAD LIHC LUSC OV)
 SEEDS=(42 7 123)
+G3_PAIRS=("OV:BRCA" "LUAD:LIHC")   # extend when finalized
 
-# G3 mislead pairs: "TRUE_COHORT:MISLEAD_AS"
-# Add remaining 4 pairs here when finalized.
-G3_PAIRS=(
-    "OV:BRCA"
-    "LUAD:LIHC"
-    # "?:?"   TBD
-    # "?:?"   TBD
-    # "?:?"   TBD
-    # "?:?"   TBD
-)
-
-# ── Args ──────────────────────────────────────────────────────────────────────
-DRY_RUN=false
 RUN_GROUP=""
+DRY_RUN=0
+SCORE_ONLY=0
+SKIP_SCORE=0
 
-for arg in "$@"; do
-    case "$arg" in
-        --dry-run) DRY_RUN=true ;;
-        --group) ;;           # handled below with shift
-        G0|G1|G2|G3) RUN_GROUP="$arg" ;;
-    esac
-done
-
-# Re-parse for --group VALUE form
+# ── Argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --group) RUN_GROUP="${2:-}"; shift 2 ;;
-        *) shift ;;
+        --tag)         TAG="$2";         shift 2 ;;
+        --model)       MODEL="$2";       shift 2 ;;
+        --max-calls)   MAX_CALLS="$2";   shift 2 ;;
+        --group)       RUN_GROUP="$2";   shift 2 ;;
+        --dry-run)     DRY_RUN=1;        shift ;;
+        --score-only)  SCORE_ONLY=1;     shift ;;
+        --skip-score)  SKIP_SCORE=1;     shift ;;
+        -h|--help)
+            sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0 ;;
+        *)
+            echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Validation ────────────────────────────────────────────────────────────────
+if [[ -z "$TAG" ]]; then
+    echo "Error: --tag is required (e.g. --tag run5_exam)" >&2
+    exit 1
+fi
+
+if [[ $DRY_RUN -eq 0 && -z "${ANTHROPIC_API_KEY:-}" ]]; then
+    echo "Error: ANTHROPIC_API_KEY is not set." >&2
+    exit 1
+fi
+
+OUT_DIR="${BASE_DIR}/${TAG}"
 mkdir -p "$OUT_DIR"
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+echo ""
+echo "============================================================"
+echo "  Task A Benchmark"
+echo "  Tag      : ${TAG}"
+echo "  Model    : ${MODEL}"
+echo "  Max calls: ${MAX_CALLS} (Phase 1)"
+echo "  Output   : ${OUT_DIR}/<uuid>/"
+echo "  Group    : ${RUN_GROUP:-all}"
+[[ $DRY_RUN    -eq 1 ]] && echo "  Mode     : DRY RUN"
+[[ $SCORE_ONLY -eq 1 ]] && echo "  Mode     : SCORE ONLY"
+[[ $SKIP_SCORE -eq 1 ]] && echo "  Scoring  : skipped"
+echo "============================================================"
+echo ""
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+lower() { echo "$1" | tr '[:upper:]' '[:lower:]'; }
+
+already_run() {
+    local label="$1"
+    # Resume-safe: check for any JSON with this label under OUT_DIR
+    [[ -n "$(find "$OUT_DIR" -name "${label}.json" 2>/dev/null | head -1)" ]]
+}
 
 run_episode() {
     local label="$1"; shift
-    local out="$OUT_DIR/${label}.json"
-
-    if [[ -f "$out" ]]; then
-        echo "  SKIP  $label (already exists)"
+    if already_run "$label"; then
+        echo "  SKIP  $label"
         return
     fi
-
     echo "  RUN   $label"
-    if [[ "$DRY_RUN" == "true" ]]; then
-        echo "        $SCRIPT $* --save-log $out"
-        return
-    fi
-
-    $SCRIPT "$@" --model "$MODEL" --max-tool-calls "$MAX_CALLS" \
-        --quiet --save-log "$out"
-}
-
-check_key() {
-    if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-        echo "Error: ANTHROPIC_API_KEY is not set." >&2
-        exit 1
+    local cmd="python scripts/run_episode.py $* \
+        --model $MODEL \
+        --max-tool-calls $MAX_CALLS \
+        --results-base $OUT_DIR \
+        --quiet \
+        --save-log ${label}.json"
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "        $cmd"
+    else
+        eval "$cmd"
     fi
 }
 
 # ── Groups ────────────────────────────────────────────────────────────────────
-
 run_g0() {
-    echo ""
-    echo "=== G0: Explicit retrieval (7 runs, seed 42 only) ==="
+    echo "=== G0: Explicit retrieval (${#COHORTS[@]} runs, seed 42) ==="
     for cohort in "${COHORTS[@]}"; do
-        run_episode "g0_${cohort,,}_s42" \
+        run_episode "g0_$(lower $cohort)_s42" \
             --cohort "$cohort" --seed 42 --explicit-retrieval
     done
 }
 
 run_g1() {
-    echo ""
-    echo "=== G1: Implicit retrieval — gate=0, cohort hidden (21 runs) ==="
+    echo "=== G1: Implicit retrieval — gene codebook pre-revealed (${#COHORTS[@]}×${#SEEDS[@]} runs) ==="
     for cohort in "${COHORTS[@]}"; do
         for seed in "${SEEDS[@]}"; do
-            run_episode "g1_${cohort,,}_s${seed}" \
+            run_episode "g1_$(lower $cohort)_s${seed}" \
                 --cohort "$cohort" --seed "$seed" --gene-codebook-gate 0
         done
     done
 }
 
 run_g2() {
-    echo ""
-    echo "=== G2: Data-driven — gate=30 (21 runs) ==="
+    echo "=== G2: Data-driven — gene codebook gated at call 25 (${#COHORTS[@]}×${#SEEDS[@]} runs) ==="
     for cohort in "${COHORTS[@]}"; do
         for seed in "${SEEDS[@]}"; do
-            run_episode "g2_${cohort,,}_s${seed}" \
+            run_episode "g2_$(lower $cohort)_s${seed}" \
                 --cohort "$cohort" --seed "$seed"
         done
     done
 }
 
 run_g3() {
-    echo ""
-    echo "=== G3: Mislead — wrong barcodes injected (${#G3_PAIRS[@]} pairs × 3 seeds) ==="
+    echo "=== G3: Mislead — wrong barcodes injected (${#G3_PAIRS[@]} pairs × ${#SEEDS[@]} seeds) ==="
     for pair in "${G3_PAIRS[@]}"; do
         local true_cohort="${pair%%:*}"
         local mislead_cohort="${pair##*:}"
         for seed in "${SEEDS[@]}"; do
-            run_episode "g3_${true_cohort,,}_mislead_${mislead_cohort,,}_s${seed}" \
+            run_episode "g3_$(lower $true_cohort)_mislead_$(lower $mislead_cohort)_s${seed}" \
                 --cohort "$true_cohort" --mislead-cohort "$mislead_cohort" --seed "$seed"
         done
     done
 }
 
-# ── Main ──────────────────────────────────────────────────────────────────────
-[[ "$DRY_RUN" == "false" ]] && check_key
+score_all() {
+    echo ""
+    echo "============================================================"
+    echo "  Scoring all episodes in ${OUT_DIR}"
+    echo "============================================================"
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "  [dry-run] bash scripts/score_all_withMeth.sh ${OUT_DIR}"
+        return
+    fi
+    bash scripts/score_all_withMeth.sh "$OUT_DIR"
+}
 
-echo "Task A benchmark — model: $MODEL | out: $OUT_DIR"
-[[ "$DRY_RUN" == "true" ]] && echo "(dry run — no API calls)"
+# ── Main ─────────────────────────────────────────────────────────────────────
+if [[ $SCORE_ONLY -eq 0 ]]; then
+    case "$RUN_GROUP" in
+        G0) run_g0 ;;
+        G1) run_g1 ;;
+        G2) run_g2 ;;
+        G3) run_g3 ;;
+        "")
+            run_g0; echo ""
+            run_g1; echo ""
+            run_g2; echo ""
+            run_g3
+            ;;
+        *) echo "Unknown group: $RUN_GROUP. Use G0, G1, G2, or G3." >&2; exit 1 ;;
+    esac
+fi
 
-case "$RUN_GROUP" in
-    G0) run_g0 ;;
-    G1) run_g1 ;;
-    G2) run_g2 ;;
-    G3) run_g3 ;;
-    "")
-        run_g0
-        run_g1
-        run_g2
-        run_g3
-        ;;
-    *)
-        echo "Unknown group: $RUN_GROUP. Use G0, G1, G2, or G3." >&2
-        exit 1
-        ;;
-esac
+if [[ $SKIP_SCORE -eq 0 ]]; then
+    score_all
+fi
 
 echo ""
-echo "Done. Score with:"
-echo "  bash scripts/score_all_withMeth.sh $OUT_DIR"
+echo "============================================================"
+echo "  Done. Results: ${OUT_DIR}/"
+echo "============================================================"

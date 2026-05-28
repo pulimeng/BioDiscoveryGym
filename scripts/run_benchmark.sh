@@ -19,6 +19,8 @@
 #                       results/cohort for TCGA cohorts)
 #   --max-tool-calls N  Phase 1 tool call budget (default: 100)
 #   --no-examination    Disable Examination stage (dev/debug only)
+#   --skip-score        Run episodes but skip scoring afterwards
+#   --score-only        Skip running; score existing results in the output folder
 #   --dry-run           Print commands without executing them
 
 set -euo pipefail
@@ -33,6 +35,8 @@ G2_SEEDS="0 1 7 42 123"
 RESULTS_BASE=""
 MAX_TOOL_CALLS=100
 NO_EXAMINATION=0
+SKIP_SCORE=0
+SCORE_ONLY=0
 DRY_RUN=0
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
@@ -46,8 +50,10 @@ while [[ $# -gt 0 ]]; do
         --g2-seeds)       G2_SEEDS="$2";          shift 2 ;;
         --results-base)   RESULTS_BASE="$2";      shift 2 ;;
         --max-tool-calls) MAX_TOOL_CALLS="$2";    shift 2 ;;
-        --no-examination) NO_EXAMINATION=1;        shift ;;
-        --dry-run)        DRY_RUN=1;              shift ;;
+        --no-examination) NO_EXAMINATION=1;  shift ;;
+        --skip-score)     SKIP_SCORE=1;     shift ;;
+        --score-only)     SCORE_ONLY=1;     shift ;;
+        --dry-run)        DRY_RUN=1;        shift ;;
         -h|--help)
             sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
@@ -134,33 +140,44 @@ run_episode() {
     echo ""
 }
 
-# ── G0: explicit retrieval ────────────────────────────────────────────────────
-if [[ -n "$G0_SEEDS" ]]; then
-    echo "=== G0: explicit retrieval (${#G0_SEEDS} seeds) ==="
-    for seed in $G0_SEEDS; do
-        run_episode "g0" "$seed" "--explicit-retrieval"
-    done
+# ── Run episodes ─────────────────────────────────────────────────────────────
+if [[ $SCORE_ONLY -eq 0 ]]; then
+    if [[ -n "$G0_SEEDS" ]]; then
+        echo "=== G0: explicit retrieval ==="
+        for seed in $G0_SEEDS; do
+            run_episode "g0" "$seed" "--explicit-retrieval"
+        done
+    fi
+
+    if [[ -n "$G1_SEEDS" ]]; then
+        echo "=== G1: implicit retrieval (gene codebook pre-revealed) ==="
+        for seed in $G1_SEEDS; do
+            run_episode "g1" "$seed" "--gene-codebook-gate 0"
+        done
+    fi
+
+    if [[ -n "$G2_SEEDS" ]]; then
+        echo "=== G2: data-driven (gene codebook gated at call 25) ==="
+        for seed in $G2_SEEDS; do
+            run_episode "g2" "$seed" ""
+        done
+    fi
 fi
 
-# ── G1: implicit retrieval ────────────────────────────────────────────────────
-if [[ -n "$G1_SEEDS" ]]; then
-    echo "=== G1: implicit retrieval (gene codebook pre-revealed) ==="
-    for seed in $G1_SEEDS; do
-        run_episode "g1" "$seed" "--gene-codebook-gate 0"
-    done
+# ── Score ─────────────────────────────────────────────────────────────────────
+if [[ $SKIP_SCORE -eq 0 ]]; then
+    echo ""
+    echo "============================================================"
+    echo "  Scoring all episodes in ${RESULTS_BASE}"
+    echo "============================================================"
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "  [dry-run] bash scripts/score_all_withMeth.sh ${RESULTS_BASE}"
+    else
+        bash scripts/score_all_withMeth.sh "${RESULTS_BASE}"
+    fi
 fi
 
-# ── G2: data-driven ───────────────────────────────────────────────────────────
-if [[ -n "$G2_SEEDS" ]]; then
-    echo "=== G2: data-driven (gene codebook gated at call 25) ==="
-    for seed in $G2_SEEDS; do
-        run_episode "g2" "$seed" ""
-    done
-fi
-
-# ── Done ──────────────────────────────────────────────────────────────────────
+echo ""
 echo "============================================================"
-echo "  All runs complete."
-echo "  Results : ${RESULTS_BASE}/"
-echo "  Score   : bash scripts/score_all_withMeth.sh ${RESULTS_BASE}"
+echo "  Done. Results: ${RESULTS_BASE}/"
 echo "============================================================"
