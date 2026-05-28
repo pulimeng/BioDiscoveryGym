@@ -20,7 +20,7 @@ set -euo pipefail
 TAG=""
 MODEL="${TASK_A_MODEL:-claude-sonnet-4-6}"
 MAX_CALLS=100
-BASE_DIR="results/task_a"
+BASE_DIR="results"
 COHORTS=(BRCA PRAD UCEC LUAD LIHC LUSC OV)
 SEEDS=(42 7 123)
 G3_PAIRS=("OV:BRCA" "LUAD:LIHC")   # extend when finalized
