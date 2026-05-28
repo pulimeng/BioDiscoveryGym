@@ -16,8 +16,6 @@ import anthropic
 from biodiscoverygym.executor import CodeExecutor
 from biodiscoverygym.utils.prompts import load as _load_prompt
 
-_SYSTEM_PROMPT_TEMPLATE = _load_prompt("agent_anon_system.txt")
-
 _COHORT_FULL_NAMES: dict[str, str] = {
     "BRCA": "Breast Invasive Carcinoma",
     "PRAD": "Prostate Adenocarcinoma",
@@ -26,6 +24,7 @@ _COHORT_FULL_NAMES: dict[str, str] = {
     "LIHC": "Liver Hepatocellular Carcinoma",
     "LUSC": "Lung Squamous Cell Carcinoma",
     "OV":   "Ovarian Serous Cystadenocarcinoma",
+    "OS":   "Osteosarcoma (SGH-OS, Jia et al. 2022)",
 }
 
 _SAMPLE_CODEBOOK_TOOL: dict = {
@@ -252,6 +251,18 @@ class ClaudeAgentAnon:
         self.clinical_codebook = clinical_codebook or {}
         self.thinking_budget = thinking_budget
 
+        # Select system prompt template based on mode:
+        #   G0 — explicit_cohort known, codebook pre-revealed  → agent_g0_system.txt
+        #   G1 — cohort hidden, genes pre-revealed             → agent_g1_system.txt
+        #   G2 — cohort hidden, genes gated                    → agent_g2_system.txt
+        if self.explicit_cohort is not None:
+            _prompt_file = "agent_g0_system.txt"
+        elif codebook_gate == 0:
+            _prompt_file = "agent_g1_system.txt"
+        else:
+            _prompt_file = "agent_g2_system.txt"
+        _system_prompt_template = _load_prompt(_prompt_file)
+
         import httpx
         self.client = anthropic.Anthropic(
             timeout=httpx.Timeout(connect=30, read=600, write=30, pool=30)
@@ -321,15 +332,17 @@ class ClaudeAgentAnon:
 
         if self.explicit_cohort:
             full_name = _COHORT_FULL_NAMES.get(self.explicit_cohort, self.explicit_cohort)
+            # External cohorts (e.g. OS) don't have a TCGA prefix
+            tcga_prefix = "" if self.explicit_cohort in ("OS",) else f"TCGA "
             disease_hint = (
-                f"The cohort: TCGA {self.explicit_cohort} ({full_name}). "
+                f"The cohort: {tcga_prefix}{self.explicit_cohort} ({full_name}). "
                 f"You may draw on your knowledge of {full_name} biology, known subtypes, "
                 f"and established driver genes to guide your analysis."
             )
         else:
             disease_hint = "The disease: redacted. The tissue: undisclosed."
 
-        self._system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
+        self._system_prompt = _system_prompt_template.format(
             max_tool_calls=max_tool_calls,
             force_submit_at=int(max_tool_calls * 0.8),
             codebook_gate=codebook_gate,
