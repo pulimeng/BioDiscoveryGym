@@ -190,7 +190,7 @@ Respond ONLY with valid JSON:
 """
 
 
-def score_p2_experiment_depth(
+def score_exam_experiment_depth(
     phase2_text: str,
     commit_report: str = "",
     model: str = _DEFAULT_MODEL,
@@ -270,7 +270,7 @@ Respond ONLY with valid JSON:
 """
 
 
-def score_p2_mechanistic_integration(
+def score_exam_mechanistic_integration(
     phase2_answers: list[str],
     commit_report: str = "",
     model: str = _DEFAULT_MODEL,

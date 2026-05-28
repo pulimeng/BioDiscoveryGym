@@ -44,11 +44,11 @@ _SAMPLE_CODEBOOK_TOOL: dict = {
     },
 }
 
-_SUBMIT_PRECOMMIT_TOOL: dict = {
-    "name": "submit_precommit",
+_SUBMIT_DATA_LOCK_TOOL: dict = {
+    "name": "submit_data_lock",
     "description": (
-        "Submit your Commit Phase data sweep report. Call once when all required analyses are complete. "
-        "The follow-up questions will be revealed after submission."
+        "Submit your Data Lock report — the blind quantitative sweep required before "
+        "examination questions are revealed. Call once when all required analyses are complete."
     ),
     "input_schema": {
         "type": "object",
@@ -56,8 +56,8 @@ _SUBMIT_PRECOMMIT_TOOL: dict = {
             "report": {
                 "type": "string",
                 "description": (
-                    "Your full structured data report: PC loadings, mutation-survival results, "
-                    "RPPA comparisons, within-subtype structure, and unexpected finding. "
+                    "Your full structured data report: PC loadings, survival by subtype, "
+                    "mutation enrichment, RPPA comparisons, and unexpected finding. "
                     "Data only — no mechanistic conclusions."
                 ),
             }
@@ -226,14 +226,13 @@ class ClaudeAgentCohort:
         codebook_gate: int = 25,
         mislead_cohort: str | None = None,
         sample_codebook_gate: int = 25,
-        phase2_questions: str | None = None,
-        phase2_max_calls: int = 30,
-        commit_phase_prompt: str | None = None,
-        commit_phase_max_calls: int = 15,
         explicit_cohort: str | None = None,
         primekg: bool = False,
         clinical_codebook: dict | None = None,
         thinking_budget: int = 0,
+        no_examination: bool = False,
+        examination_max_calls: int = 30,
+        data_lock_max_calls: int = 15,
     ):
         self.model = model
         self.max_tool_calls = max_tool_calls
@@ -243,14 +242,25 @@ class ClaudeAgentCohort:
         self.codebook_gate = codebook_gate
         self.mislead_cohort = mislead_cohort.upper() if mislead_cohort else None
         self.sample_codebook_gate = sample_codebook_gate
-        self.phase2_questions = phase2_questions
-        self.phase2_max_calls = phase2_max_calls
-        self.commit_phase_prompt = commit_phase_prompt
-        self.commit_phase_max_calls = commit_phase_max_calls
         self.explicit_cohort = explicit_cohort.upper() if explicit_cohort else None
         self.primekg = primekg
         self.clinical_codebook = clinical_codebook or {}
         self.thinking_budget = thinking_budget
+        self.no_examination = no_examination
+        self.examination_max_calls = examination_max_calls
+        self.data_lock_max_calls = data_lock_max_calls
+
+        # Load examination prompts (always-on unless --no-examination)
+        if not no_examination:
+            from biodiscoverygym.examination.generic import (
+                format_data_lock_prompt,
+                format_examination_prompt,
+            )
+            self._data_lock_prompt = format_data_lock_prompt()
+            self._examination_prompt = format_examination_prompt()
+        else:
+            self._data_lock_prompt = None
+            self._examination_prompt = None
 
         # Select system prompt template based on mode:
         #   G0 — explicit_cohort known, codebook pre-revealed  → agent_g0_system.txt
@@ -369,6 +379,7 @@ class ClaudeAgentCohort:
         self._tools = list(_TOOLS) + [_RECORD_OBSERVATION_TOOL]
         if self.mislead_cohort:
             self._tools.append(_SAMPLE_CODEBOOK_TOOL)
+        # submit_data_lock is added dynamically when examination begins
 
     def run(self, episode_id: str, output_dir: Path | None = None) -> tuple[dict[str, Any], list, dict]:
         executor = CodeExecutor(data_dir=self.data_dir, output_dir=output_dir)
@@ -475,11 +486,11 @@ class ClaudeAgentCohort:
         ]
 
         tool_call_count = 0
-        commit_phase_active = False
-        commit_phase_call_count = 0
-        commit_phase_report: str | None = None
-        phase2_active = False
-        phase2_call_count = 0
+        data_lock_active = False
+        data_lock_call_count = 0
+        data_lock_report: str | None = None
+        examination_active = False
+        examination_call_count = 0
         discovery: dict | None = None
         usage_log: list[dict] = []
         observations: list[dict] = []
@@ -498,8 +509,8 @@ class ClaudeAgentCohort:
 
         while (
             tool_call_count < self.max_tool_calls
-            or (commit_phase_active and commit_phase_call_count < self.commit_phase_max_calls)
-            or (phase2_active and phase2_call_count < self.phase2_max_calls)
+            or (data_lock_active and data_lock_call_count < self.data_lock_max_calls)
+            or (examination_active and examination_call_count < self.examination_max_calls)
         ):
             for attempt in range(3):
                 try:
@@ -671,7 +682,7 @@ class ClaudeAgentCohort:
                 elif block.name == "submit_discovery":
                     new_submission = dict(block.input)
                     if discovery is not None:
-                        new_submission["commit_phase_report"] = discovery.get("commit_phase_report", "")
+                        new_submission["data_lock_report"] = discovery.get("data_lock_report", "")
                     discovery = new_submission
                     pg = discovery.get("proposed_grouping")
                     if isinstance(pg, str):
@@ -684,22 +695,29 @@ class ClaudeAgentCohort:
                     self._log(
                         f"[submit_discovery] grouping size={len(discovery.get('proposed_grouping', {}))}"
                     )
-                    if self.commit_phase_prompt and not commit_phase_active and not phase2_active:
-                        commit_phase_active = True
-                        self._tools.append(_SUBMIT_PRECOMMIT_TOOL)
-                        self._log("[ClaudeAgentCohort] Phase 1 complete — injecting Commit Phase blind sweep")
+                    if self._data_lock_prompt and not data_lock_active and not examination_active:
+                        # Inject clinical codebook for G1/G2 at examination start
+                        if not self.explicit_cohort and self.clinical_codebook:
+                            executor.namespace["clinical_codebook"] = dict(self.clinical_codebook)
+                            self._log("[ClaudeAgentCohort] Examination start — injecting clinical_codebook for G1/G2")
+                        data_lock_active = True
+                        self._tools.append(_SUBMIT_DATA_LOCK_TOOL)
+                        self._log("[ClaudeAgentCohort] Discovery submitted — beginning Examination (Data Lock)")
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
-                            "content": self.commit_phase_prompt,
+                            "content": self._data_lock_prompt,
                         })
-                    elif self.phase2_questions and not phase2_active:
-                        phase2_active = True
-                        self._log("[ClaudeAgentCohort] Commit Phase skipped — injecting Phase 2 questions")
+                    elif self._examination_prompt and not examination_active:
+                        # Data lock skipped — go straight to examination questions
+                        if not self.explicit_cohort and self.clinical_codebook:
+                            executor.namespace["clinical_codebook"] = dict(self.clinical_codebook)
+                        examination_active = True
+                        self._log("[ClaudeAgentCohort] Skipping Data Lock — injecting Examination questions")
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
-                            "content": self.phase2_questions,
+                            "content": self._examination_prompt,
                         })
                     else:
                         tool_results.append({
@@ -724,25 +742,25 @@ class ClaudeAgentCohort:
                         ),
                     })
 
-                elif block.name == "submit_precommit":
-                    commit_phase_report = block.input.get("report", "")
-                    self._log(f"[submit_precommit] report length={len(commit_phase_report)}")
+                elif block.name == "submit_data_lock":
+                    data_lock_report = block.input.get("report", "")
+                    self._log(f"[submit_data_lock] report length={len(data_lock_report)}")
                     if discovery is not None:
-                        discovery["commit_phase_report"] = commit_phase_report
-                    commit_phase_active = False
-                    if self.phase2_questions:
-                        phase2_active = True
-                        self._log("[ClaudeAgentCohort] Commit Phase complete — injecting Phase 2 questions")
+                        discovery["data_lock_report"] = data_lock_report
+                    data_lock_active = False
+                    if self._examination_prompt:
+                        examination_active = True
+                        self._log("[ClaudeAgentCohort] Data Lock complete — revealing Examination questions")
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
-                            "content": self.phase2_questions,
+                            "content": self._examination_prompt,
                         })
                     else:
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
-                            "content": "Commit Phase report received.",
+                            "content": "Data Lock report received.",
                         })
 
             # Inject budget warning into the last tool result when running low
@@ -750,8 +768,8 @@ class ClaudeAgentCohort:
             if (
                 0 < remaining <= 5
                 and discovery is None
-                and not commit_phase_active
-                and not phase2_active
+                and not data_lock_active
+                and not examination_active
                 and tool_results
             ):
                 warning = (
@@ -768,22 +786,22 @@ class ClaudeAgentCohort:
             if submitted:
                 break
 
-            if commit_phase_active:
-                commit_phase_call_count += 1
-                if commit_phase_call_count >= self.commit_phase_max_calls:
-                    self._log(f"[ClaudeAgentCohort] Commit Phase budget exhausted ({self.commit_phase_max_calls} calls).")
-                    commit_phase_active = False
-                    if self.phase2_questions and not phase2_active:
-                        phase2_active = True
-                        messages.append({"role": "user", "content": self.phase2_questions})
-            elif phase2_active:
-                phase2_call_count += 1
-                if phase2_call_count >= self.phase2_max_calls:
-                    self._log(f"[ClaudeAgentCohort] Phase 2 budget exhausted ({self.phase2_max_calls} calls).")
+            if data_lock_active:
+                data_lock_call_count += 1
+                if data_lock_call_count >= self.data_lock_max_calls:
+                    self._log(f"[ClaudeAgentCohort] Data Lock budget exhausted ({self.data_lock_max_calls} calls).")
+                    data_lock_active = False
+                    if self._examination_prompt and not examination_active:
+                        examination_active = True
+                        messages.append({"role": "user", "content": self._examination_prompt})
+            elif examination_active:
+                examination_call_count += 1
+                if examination_call_count >= self.examination_max_calls:
+                    self._log(f"[ClaudeAgentCohort] Examination budget exhausted ({self.examination_max_calls} calls).")
                     break
 
         # Post-loop: if budget exhausted without a submission, do up to 3 forced turns
-        if discovery is None and not commit_phase_active and not phase2_active:
+        if discovery is None and not data_lock_active and not examination_active:
             self._log("[ClaudeAgentCohort] No submission — attempting forced submission (up to 3 turns).")
             discovery = self._force_submit(messages, output_dir)
 

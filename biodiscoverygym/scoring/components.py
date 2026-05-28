@@ -473,7 +473,7 @@ def _load_all_genesets(genesets_dir: Path) -> tuple[set[str], dict[str, set[str]
 # Check that the commit report contains all 5 required analysis sections.
 # ──────────────────────────────────────────────────────────────────────────────
 
-def score_p2_commit_quality(commit_report: str) -> tuple[float, dict]:
+def score_exam_data_lock_quality(commit_report: str) -> tuple[float, dict]:
     if not commit_report:
         return 0.0, {"reason": "no commit report submitted"}
 

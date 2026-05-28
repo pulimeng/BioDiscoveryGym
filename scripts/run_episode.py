@@ -106,26 +106,22 @@ def parse_args():
         help="Extended thinking token budget per turn (default: 0 = off; try 2000–4000 for targeted runs)",
     )
     p.add_argument(
-        "--phase2",
-        metavar="COHORT",
-        help="Inject Phase 2 questions after submit_discovery (e.g. --phase2 LIHC)",
+        "--no-examination",
+        action="store_true",
+        help="Skip the Examination stage (Data Lock + Q1-Q4) after submit_discovery. "
+             "Use for cheap dev/debug runs only.",
     )
     p.add_argument(
-        "--phase2-max-calls",
+        "--examination-max-calls",
         type=int,
         default=30,
-        help="Max tool calls for Phase 2 (default: 30)",
+        help="Max tool calls for Examination Q1-Q4 (default: 30)",
     )
     p.add_argument(
-        "--phase2-commit-phase",
-        action="store_true",
-        help="Enable Commit Phase blind data sweep before Phase 2 questions are revealed (requires --phase2)",
-    )
-    p.add_argument(
-        "--phase2-commit-phase-calls",
+        "--data-lock-max-calls",
         type=int,
-        default=20,
-        help="Max tool calls for Commit Phase blind sweep (default: 20)",
+        default=15,
+        help="Max tool calls for Examination Data Lock sweep (default: 15)",
     )
     p.add_argument(
         "--explicit-retrieval",
@@ -197,25 +193,10 @@ def main():
     print(f"  Mode   : {mode}")
     print(f"{'='*60}\n")
 
-    # Load Phase 2 questions if requested
-    phase2_prompt: str | None = None
-    commit_phase_prompt: str | None = None
-    if args.phase2:
-        from biodiscoverygym.phases import lihc as _p2_lihc
-        from biodiscoverygym.phases import generic as _p2_generic
-        _p2_modules = {"LIHC": _p2_lihc}
-        _p2_mod = _p2_modules.get(args.phase2.upper(), _p2_generic)
-        cohort_label = args.phase2.upper()
-        if args.phase2.upper() not in _p2_modules:
-            cohort_label += " (generic)"
-        phase2_prompt = _p2_mod.format_phase2_prompt()
-        if args.phase2_commit_phase:
-            commit_phase_prompt = _p2_mod.format_commit_phase_prompt()
-            print(f"  Phase 2 : {cohort_label} ({len(_p2_mod.QUESTIONS)} questions, "
-                  f"Commit Phase enabled max={args.phase2_commit_phase_calls}, "
-                  f"Stage B max={args.phase2_max_calls} calls)\n")
-        else:
-            print(f"  Phase 2 : {cohort_label} ({len(_p2_mod.QUESTIONS)} questions, max {args.phase2_max_calls} calls)\n")
+    if args.no_examination:
+        print(f"  Examination : DISABLED (--no-examination)\n")
+    else:
+        print(f"  Examination : Data Lock ({args.data_lock_max_calls} calls) + Q1-Q4 ({args.examination_max_calls} calls)\n")
 
     episode = Episode.from_cohort(
         cohort=args.cohort,
@@ -235,14 +216,13 @@ def main():
         codebook_gate=args.gene_codebook_gate,
         mislead_cohort=args.mislead_cohort,
         sample_codebook_gate=args.sample_codebook_gate,
-        phase2_questions=phase2_prompt,
-        phase2_max_calls=args.phase2_max_calls,
-        commit_phase_prompt=commit_phase_prompt,
-        commit_phase_max_calls=args.phase2_commit_phase_calls,
         explicit_cohort=args.cohort if args.explicit_retrieval else None,
         primekg=args.primekg,
         clinical_codebook=episode.dataset.get("clinical_codebook", {}),
         thinking_budget=args.thinking_budget,
+        no_examination=args.no_examination,
+        examination_max_calls=args.examination_max_calls,
+        data_lock_max_calls=args.data_lock_max_calls,
     )
 
     results_base = Path("results") / "cohort" / "external" if args.cohort.upper() in EXTERNAL_COHORT_DIRS else None
@@ -282,10 +262,9 @@ def main():
                 "mislead_cohort": args.mislead_cohort,
                 "sample_codebook_gate": args.sample_codebook_gate,
                 "perturb": args.perturb,
-                "phase2": args.phase2,
-                "phase2_max_calls": args.phase2_max_calls,
-                "phase2_commit_phase": args.phase2_commit_phase,
-                "phase2_commit_phase_calls": args.phase2_commit_phase_calls,
+                "no_examination": args.no_examination,
+                "examination_max_calls": args.examination_max_calls,
+                "data_lock_max_calls": args.data_lock_max_calls,
             },
             "discovery": result.discovery,
             "observations": result.run_log.get("observations", []),

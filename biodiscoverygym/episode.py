@@ -37,7 +37,7 @@ class DiscoveryPackage:
     mechanism_hypothesis: str
     confidence: str                      # "high" | "medium" | "low"
     next_experiment: str
-    commit_phase_report: str = ""
+    data_lock_report: str = ""
     raw: dict = field(default_factory=dict)
 
     @classmethod
@@ -49,7 +49,7 @@ class DiscoveryPackage:
             mechanism_hypothesis=d.get("mechanism_hypothesis", ""),
             confidence=d.get("confidence", "low"),
             next_experiment=d.get("next_experiment", ""),
-            commit_phase_report=d.get("commit_phase_report", ""),
+            data_lock_report=d.get("data_lock_report", d.get("commit_phase_report", "")),
             raw=d,
         )
 

@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from .evaluator_v2 import EvaluatorV2, ScoreReport, Phase2Report
+from .evaluator_v2 import EvaluatorV2, ScoreReport, ExaminationReport
 
 
 # ---------------------------------------------------------------------------
@@ -298,19 +298,19 @@ def trace_episode(messages: list[dict], run_log: dict | None = None) -> TraceRep
 # Phase 2 data extraction
 # ---------------------------------------------------------------------------
 
-def extract_phase2_data(messages: list[dict]) -> tuple[str, list[str]]:
+def extract_examination_data(messages: list[dict]) -> tuple[str, list[str]]:
     """
-    Extract Phase 2 data from the serialized message log.
+    Extract Examination data from the serialized message log.
 
     Returns:
-        commit_report: The text submitted via submit_precommit(report=...).
-                       Empty string if submit_precommit was never called.
-        phase2_answers: All assistant text blocks produced after the commit,
-                        i.e. the Q1-Q4 answers.
+        data_lock_report: Text submitted via submit_data_lock(report=...).
+                          Empty string if submit_data_lock was never called.
+        examination_answers: All assistant text blocks after the data lock,
+                             i.e. the Q1-Q4 answers.
     """
-    commit_report = ""
-    phase2_answers: list[str] = []
-    found_precommit = False
+    data_lock_report = ""
+    examination_answers: list[str] = []
+    found_data_lock = False
 
     for msg in messages:
         role = msg.get("role")
@@ -326,23 +326,21 @@ def extract_phase2_data(messages: list[dict]) -> tuple[str, list[str]]:
                 btype = block.get("type")
                 if btype == "tool_use":
                     name = block.get("name", "")
-                    if name == "submit_precommit":
-                        commit_report = block.get("input", {}).get("report", "")
-                        found_precommit = True
-                    # Flush any text collected before this tool call
-                    if accumulated_text and found_precommit:
-                        phase2_answers.extend(t for t in accumulated_text if t.strip())
+                    if name == "submit_data_lock":
+                        data_lock_report = block.get("input", {}).get("report", "")
+                        found_data_lock = True
+                    if accumulated_text and found_data_lock:
+                        examination_answers.extend(t for t in accumulated_text if t.strip())
                     accumulated_text = []
-                elif btype in ("text", "thinking") and found_precommit:
+                elif btype in ("text", "thinking") and found_data_lock:
                     text = block.get("text") or block.get("thinking") or ""
                     if text.strip():
                         accumulated_text.append(text)
 
-            # Flush text that came after the last tool call in this turn
-            if accumulated_text and found_precommit:
-                phase2_answers.extend(t for t in accumulated_text if t.strip())
+            if accumulated_text and found_data_lock:
+                examination_answers.extend(t for t in accumulated_text if t.strip())
 
-    return commit_report, phase2_answers
+    return data_lock_report, examination_answers
 
 
 # ---------------------------------------------------------------------------
@@ -376,14 +374,13 @@ class EvaluatorV3(EvaluatorV2):
             cohort=cohort,
         )
 
-        # Phase 2: prefer commit_phase_report from discovery dict (captured at runtime);
-        # fall back to extraction from the message log.
-        runtime_commit = discovery.get("commit_phase_report", "")
-        extracted_commit, phase2_answers = extract_phase2_data(messages)
-        commit_report = runtime_commit or extracted_commit
+        # Examination: prefer data_lock_report captured at runtime; fall back to extraction.
+        data_lock_report = discovery.get("data_lock_report", "")
+        extracted_lock, examination_answers = extract_examination_data(messages)
+        data_lock_report = data_lock_report or extracted_lock
 
-        phase2_report = self.score_phase2(commit_report, phase2_answers)
-        score_report.phase2 = phase2_report
+        examination_report = self.score_examination(data_lock_report, examination_answers)
+        score_report.examination = examination_report
 
         trace_report = trace_episode(messages, run_log=run_log)
         return score_report, trace_report
