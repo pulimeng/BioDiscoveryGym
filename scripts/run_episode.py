@@ -74,13 +74,22 @@ def parse_args():
     p.add_argument(
         "--max-tool-calls",
         type=int,
-        default=80,
-        help="Max run_code + submit_discovery calls before forcing termination (default: 120)",
+        default=100,
+        help="Max tool calls for Phase 1 discovery before forcing submission (default: 100)",
     )
     p.add_argument(
         "--data-dir",
         default="data",
         help="Root data directory (default: data)",
+    )
+    p.add_argument(
+        "--results-base",
+        default=None,
+        metavar="DIR",
+        help=(
+            "Root directory for episode output. Episode UUID subdir is created inside it. "
+            "Defaults to results/cohort/external/ for external cohorts, results/cohort/ otherwise."
+        ),
     )
     p.add_argument(
         "--mislead-cohort",
@@ -225,7 +234,12 @@ def main():
         data_lock_max_calls=args.data_lock_max_calls,
     )
 
-    results_base = Path("results") / "cohort" / "external" if args.cohort.upper() in EXTERNAL_COHORT_DIRS else None
+    if args.results_base:
+        results_base = Path(args.results_base)
+    elif args.cohort.upper() in EXTERNAL_COHORT_DIRS:
+        results_base = Path("results") / "cohort" / "external"
+    else:
+        results_base = Path("results") / "cohort"
     result = episode.run(agent, results_base=results_base)
 
     # Print results

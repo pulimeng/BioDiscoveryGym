@@ -15,11 +15,14 @@ G2_SEEDS=(0 1 7 42 123)
 COHORT="OS"
 MODEL="claude-sonnet-4-6"
 RUN_TAG="run5_threePrompt_clinAnon"
+RESULTS_BASE="results/cohort/external/${RUN_TAG}"
 
 if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
     echo "Error: ANTHROPIC_API_KEY is not set." >&2
     exit 1
 fi
+
+echo "Results will be saved to: ${RESULTS_BASE}/<episode-uuid>/"
 
 run_episode() {
     local mode="$1"
@@ -37,6 +40,7 @@ run_episode() {
         --seed "$seed" \
         --model "$MODEL" \
         --quiet \
+        --results-base "$RESULTS_BASE" \
         $extra_args \
         --save-log "${label}.json"
 }
@@ -59,5 +63,6 @@ done
 echo ""
 echo "============================================================"
 echo "  All runs complete."
-echo "  Results in: results/cohort/external/"
+echo "  Results in: ${RESULTS_BASE}/"
+echo "  Score with: bash scripts/score_all_withMeth.sh ${RESULTS_BASE}"
 echo "============================================================"
