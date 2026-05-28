@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# BioDiscoveryGym benchmark runner — runs G0/G1/G2 episodes across seeds.
+# run_cohort.sh — single-cohort benchmark runner + scorer (OS, BRCA, etc.)
+#
+# Runs G0/G1/G2 episodes for one cohort across configurable seeds, then scores.
+# For the full TCGA sweep (7 cohorts), use run_tcga.sh instead.
 #
 # Usage:
-#   bash scripts/run_benchmark.sh --tag run5_clinAnon --cohort OS
-#   bash scripts/run_benchmark.sh --tag run6_opus --cohort OS --model claude-opus-4-7 --g2-seeds "0 1 7"
-#   bash scripts/run_benchmark.sh --tag brca_test --cohort BRCA --g0-seeds "42" --g1-seeds "" --g2-seeds ""
+#   bash scripts/run_cohort.sh --tag run5_clinAnon --cohort OS
+#   bash scripts/run_cohort.sh --tag run6_opus --cohort OS --model claude-opus-4-7 --g2-seeds "0 1 7"
+#   bash scripts/run_cohort.sh --tag brca_test --cohort BRCA --g0-seeds "42" --g1-seeds "" --g2-seeds ""
 #
 # Required:
 #   --tag TAG           Run label, used as results subfolder name (e.g. run5_clinAnon)
@@ -67,7 +70,7 @@ done
 # ── Validation ────────────────────────────────────────────────────────────────
 if [[ -z "$TAG" ]]; then
     echo "Error: --tag is required." >&2
-    echo "Example: bash scripts/run_benchmark.sh --tag run5_clinAnon --cohort OS" >&2
+    echo "Example: bash scripts/run_cohort.sh --tag run5_clinAnon --cohort OS" >&2
     exit 1
 fi
 

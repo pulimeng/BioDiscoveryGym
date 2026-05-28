@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Task A — full benchmark runner + scorer
+# run_tcga.sh — TCGA multi-cohort benchmark runner + scorer
 #
-# Runs G0/G1/G2/G3 across all 7 TCGA cohorts, then scores every episode.
-# Resume-safe: skips any run whose JSON already exists under OUT_DIR.
+# Runs G0/G1/G2/G3 across all 7 TCGA cohorts (BRCA PRAD UCEC LUAD LIHC LUSC OV),
+# then scores every episode. Resume-safe: skips runs whose JSON already exists.
 #
 # Usage:
-#   bash scripts/taskA.sh --tag run5_exam                 # run all + score
-#   bash scripts/taskA.sh --tag run5_exam --group G2      # one group only
-#   bash scripts/taskA.sh --tag run5_exam --score-only    # score existing results
-#   bash scripts/taskA.sh --tag run5_exam --skip-score    # run only, no scoring
-#   bash scripts/taskA.sh --tag run5_exam --dry-run       # print commands only
+#   bash scripts/run_tcga.sh --tag run5_exam                 # run all + score
+#   bash scripts/run_tcga.sh --tag run5_exam --group G2      # one group only
+#   bash scripts/run_tcga.sh --tag run5_exam --score-only    # score existing results
+#   bash scripts/run_tcga.sh --tag run5_exam --skip-score    # run only, no scoring
+#   bash scripts/run_tcga.sh --tag run5_exam --dry-run       # print commands only
 #
 # Environment overrides:
-#   TASK_A_MODEL=claude-opus-4-7 bash scripts/taskA.sh --tag run6_opus
+#   TASK_A_MODEL=claude-opus-4-7 bash scripts/run_tcga.sh --tag run6_opus
 
 set -euo pipefail
 
