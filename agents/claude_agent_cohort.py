@@ -369,12 +369,14 @@ class ClaudeAgentCohort:
             codebook_path = output_dir / "codebook.json"
             codebook_path.write_text(json.dumps(self.gene_map))
             executor.namespace["codebook"] = dict(self.gene_map)
-            executor.namespace["clinical_codebook"] = dict(self.clinical_codebook)
+            # clinical_codebook only pre-revealed for G0 (explicit_cohort known)
+            if self.explicit_cohort and self.clinical_codebook:
+                executor.namespace["clinical_codebook"] = dict(self.clinical_codebook)
             executor.unblock_genesets()
             clin_note = (
                 f"  Clinical column codebook is available as `clinical_codebook`"
                 f"  — {len(self.clinical_codebook)} anonymized columns (CLIN_XX → real name + value map).\n"
-            ) if self.clinical_codebook else ""
+            ) if (self.explicit_cohort and self.clinical_codebook) else ""
             pre_reveal_lines.append(
                 f"Gene codebook (GENE_XXXXX → real symbol) is available as the variable `codebook`"
                 f"  — {len(self.gene_map)} translations, available immediately.\n"
@@ -567,7 +569,6 @@ class ClaudeAgentCohort:
                         codebook_path = output_dir / "codebook.json"
                         codebook_path.write_text(json.dumps(self.gene_map))
                         executor.namespace["codebook"] = dict(self.gene_map)
-                        executor.namespace["clinical_codebook"] = dict(self.clinical_codebook)
                         executor.unblock_genesets()
                         ot_available = (
                             Path("data/opentargets/ot_tractability.parquet").exists()
@@ -587,29 +588,11 @@ class ClaudeAgentCohort:
                             f"    print(get_actionability('EGFR').summary())\n"
                             f"    ranked = batch_actionability(['EGFR','TP53','MYC'])  # DataFrame\n"
                         ) if ot_available else ""
-                        clin_section = ""
-                        if self.clinical_codebook:
-                            clin_lines = [
-                                f"\nClinical column codebook (CLIN_XX → real column name):\n"
-                                f"  clinical_codebook is now available as a variable in your namespace.\n"
-                                f"  Each key is an anonymized column name (CLIN_00, CLIN_01, …).\n"
-                                f"  Each value is a dict with:\n"
-                                f"    'real_name': the original column name\n"
-                                f"    'value_map': {{CAT_X: real_value}} for categorical columns (None for numeric)\n"
-                                f"  Example:\n"
-                                f"    import pandas as pd\n"
-                                f"    for anon_col, info in clinical_codebook.items():\n"
-                                f"        print(anon_col, '->', info['real_name'], info['value_map'])\n"
-                                f"  Use this to reinterpret any CLIN_XX features and CAT_X values\n"
-                                f"  from your earlier analysis stages.\n"
-                            ]
-                            clin_section = "".join(clin_lines)
                         content = (
                             f"Gene codebook is now available as the variable `codebook` in your Python namespace.\n"
                             f"Use it directly in run_code — no file loading needed:\n"
                             f"  real_symbol = codebook['GENE_XXXXX']\n"
                             f"Contains {len(self.gene_map)} gene translations.\n"
-                            f"{clin_section}"
                             f"\n"
                             f"The following reference files are now accessible:\n"
                             f"\n"

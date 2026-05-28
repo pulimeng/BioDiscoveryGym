@@ -27,7 +27,7 @@ Six layers prevent the agent from knowing what it is looking at:
 |-------|--------------------------|
 | `DataAnonymizer._ALWAYS_STRIP` | Cancer-type columns (`primary_diagnosis`, `OncotreePrimaryDisease`, lineage, subtype) |
 | Molecular clustering labels | **Stripped entirely** — precomputed cluster assignments (e.g. `mrna_cluster`) are the paper's answer, not independent data. Keeping them gives the agent the partition for free. |
-| Leaky clinical columns | **Renamed** to `CLIN_00`, `CLIN_01`, … with categorical string values replaced by `CAT_0`, `CAT_1`, … A clinical codebook (CLIN_XX → real name, CAT_X → real value) is kept by the harness and released to the agent alongside the gene codebook. |
+| Leaky clinical columns | **Renamed** to `CLIN_00`, `CLIN_01`, … with categorical string values replaced by `CAT_0`, `CAT_1`, … A clinical codebook (CLIN_XX → real name, CAT_X → real value) is kept by the harness. Release policy is mode-dependent — see group definitions below. |
 | Demographics | `gender`, `race`, `ethnicity` (cohort identity leakage — e.g. LIHC is >50% Asian from HBV-endemic regions) |
 | Sample IDs | TCGA barcodes → `SAMPLE_XXXX` (shuffled with seed) |
 | Gene names | Real symbols → `GENE_XXXXX` (shuffled with seed); real names revealed via codebook at call 25 (G2) or call 0 (G0/G1) |
@@ -64,27 +64,29 @@ The osteosarcoma cohort closes the primary confound of the TCGA set: for well-ch
 
 **67 runs total across 4 groups. 7 cohorts: BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV.**
 
-| Group | Label | Gene names | Cohort name | Codebook gate | Seeds | Runs | Cost (~$3/ep) |
-|-------|-------|------------|-------------|--------------|-------|------|---------------|
-| **G0** | Explicit retrieval | Real from call 0 | **Revealed** | 0 | 42 | 7 × 1 = 7 | ~$21 |
-| **G1** | Implicit retrieval | Real from call 0 | Hidden | 0 | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
-| **G2** | Data-driven | GENE_XXXXX → real at call 25 | Hidden | 25 | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
-| **G3** | Mislead | GENE_XXXXX → real at call 25 | Hidden + wrong barcodes | 25 | 42, 7, 123 | 6 pairs × 3 = 18 | ~$54 |
+| Group | Label | Gene codebook | Clinical codebook | Cohort name | Seeds | Runs | Cost (~$3/ep) |
+|-------|-------|---------------|-------------------|-------------|-------|------|---------------|
+| **G0** | Explicit retrieval | Call 0 | Call 0 | **Revealed** | 42 | 7 × 1 = 7 | ~$21 |
+| **G1** | Implicit retrieval | Call 0 | **Never** | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
+| **G2** | Data-driven | Call 25 | **Never** | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
+| **G3** | Mislead | Call 25 | **Never** | Hidden + wrong barcodes | 42, 7, 123 | 6 pairs × 3 = 18 | ~$54 |
 | **Total** | | | | | | **67** | **~$201** |
 
 ### Group definitions
 
 The three groups form a clean ablation over what recall channels are open:
 
-- **G0 (explicit retrieval) — pure recall baseline.** The agent is told the cancer type upfront (e.g., "You are analyzing an Osteosarcoma cohort"). It can directly recall known subtypes, markers, and biology from training data without looking at the data. G0 measures how much a model *already knows* from pretraining.
+- **G0 (explicit retrieval) — pure recall baseline.** The agent is told the cancer type upfront and receives both the gene codebook and clinical codebook immediately. It can directly recall known subtypes, markers, and biology from training data. G0 measures how much a model *already knows* from pretraining.
 
-- **G1 (implicit retrieval) — gene-biology-mediated recall.** Cohort identity is hidden, but real gene names are available from call 0. The agent can infer the cancer type from gene signatures (e.g., H3F3A → pediatric bone tumor, SP7 → osteoblast) and then recall subtype structure indirectly. G0→G1 isolates the effect of direct cohort identity on recall.
+- **G1 (implicit retrieval) — gene-biology-mediated recall.** Cohort identity is hidden; gene codebook is pre-revealed (call 0); clinical codebook is never revealed. The agent can infer the cancer type from gene signatures (e.g., H3F3A → pediatric bone tumor, SP7 → osteoblast) and then recall subtype structure indirectly. G1 agents characterize CLIN_XX features from their distributions and correlations alone — they never learn the real column names.
 
-- **G2 (data-driven) — data-first discovery.** Genes are anonymized as GENE_XXXXX until call 25; cohort is hidden. The agent must work from expression patterns, correlations, and clustering before any recall context is available. G1→G2 isolates the effect of gene-biology recall.
+- **G2 (data-driven) — data-first discovery.** Genes are anonymized as GENE_XXXXX until call 25; cohort is hidden; clinical codebook is never revealed. The agent must form its grouping from expression patterns, correlations, and clustering before any biological context is available. G1→G2 isolates the effect of gene-biology recall.
 
 - **G3 (mislead):** Same as G2, but sample barcodes suggest the wrong cancer type. Tests whether the agent correctly overrides misleading provenance signals with data evidence.
 
-**What differs between G0 and G1:** only the cohort identity string in the system prompt. All other data (clinical metadata, gene names, codebook reveal timing) is identical. This makes the G0/G1 comparison a clean single-variable test of direct cohort recall.
+**What differs between G0 and G1:** cohort identity in the system prompt AND clinical codebook availability. G0 gets both; G1 gets neither. This means the G0→G1 delta combines direct disease recall with the ability to name clinical features. The G1→G2 delta is a clean single-variable test: gene codebook timing (call 0 vs call 25).
+
+**Phase 2:** After `submit_discovery`, the clinical codebook is revealed to G1 and G2 agents for the mechanistic follow-up analysis. At that point scoring is complete, so there is nothing to game — full context enables richer mechanistic reasoning.
 
 ### G3 cohort pairs
 
