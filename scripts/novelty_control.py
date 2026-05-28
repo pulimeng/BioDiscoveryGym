@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Novelty control: answer Phase 2 questions with no data access.
+Novelty control: answer Examination questions with no data access.
 
-Sends the same Phase 2 questions to Claude without any dataset or code access.
+Sends the same Examination Q1-Q4 to Claude without any dataset or code access.
 Used as a baseline to measure how much of a data-driven answer is literature recall.
 
 Usage:
-    python scripts/novelty_control.py --cohort LIHC --save-log results/novelty_lihc_v2.json
+    python scripts/novelty_control.py --cohort LIHC --save-log results/novelty_lihc.json
+    python scripts/novelty_control.py --cohort OS   --save-log results/novelty_os.json
 """
 import argparse
 import json
@@ -28,20 +29,22 @@ FRAMING = (
     "know without data access, say so explicitly rather than guessing."
 )
 
-_PHASE_MODULES = {
-    "LIHC": "biodiscoverygym.phases.lihc",
+_EXAMINATION_MODULES = {
+    "LIHC": "biodiscoverygym.examination.lihc",
+    "OS":   "biodiscoverygym.examination.os",
 }
 
 
 def run_novelty_control(cohort: str, model: str, save_log: str | None) -> None:
-    mod_name = _PHASE_MODULES.get(cohort.upper())
+    mod_name = _EXAMINATION_MODULES.get(cohort.upper())
     if mod_name is None:
-        print(f"Error: no Phase 2 questions defined for cohort {cohort}.", file=sys.stderr)
+        print(f"Error: no Examination questions defined for cohort {cohort}.", file=sys.stderr)
+        print(f"  Supported: {', '.join(_EXAMINATION_MODULES)}", file=sys.stderr)
         sys.exit(1)
 
     import importlib
     mod = importlib.import_module(mod_name)
-    questions = mod.format_phase2_prompt()
+    questions = mod.format_examination_prompt()
 
     client = anthropic.Anthropic()
     messages = [{"role": "user", "content": f"{FRAMING}\n\n{questions}"}]
@@ -84,7 +87,7 @@ def run_novelty_control(cohort: str, model: str, save_log: str | None) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cohort", default="LIHC", choices=list(_PHASE_MODULES))
+    parser.add_argument("--cohort", default="LIHC", choices=list(_EXAMINATION_MODULES))
     parser.add_argument("--model", default="claude-sonnet-4-6")
     parser.add_argument("--save-log", default=None)
     args = parser.parse_args()

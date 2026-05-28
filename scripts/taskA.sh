@@ -16,7 +16,7 @@ set -euo pipefail
 # ── Config ────────────────────────────────────────────────────────────────────
 SCRIPT="python scripts/run_episode.py"
 MODEL="${TASK_A_MODEL:-claude-sonnet-4-6}"  # override: TASK_A_MODEL=claude-opus-4-7 bash taskA.sh
-MAX_CALLS=80
+MAX_CALLS=100
 OUT_DIR="results/task_a"
 COHORTS=(BRCA PRAD UCEC LUAD LIHC LUSC OV)
 SEEDS=(42 7 123)
@@ -152,5 +152,4 @@ esac
 
 echo ""
 echo "Done. Score with:"
-echo "  for f in $OUT_DIR/*.json; do"
-echo "    python scripts/score_episode_v2.py \"\$f\" --save; done"
+echo "  bash scripts/score_all_withMeth.sh $OUT_DIR"

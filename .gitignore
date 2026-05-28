@@ -4,6 +4,9 @@ data/
 # Episode logs — full conversation histories, large
 results/
 
+# Analysis outputs — figures, scratch scripts, intermediate files
+analysis/
+
 # PDFs — copyright
 *.pdf
 
