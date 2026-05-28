@@ -58,7 +58,11 @@ Produce:
 STAGE 2 — SUBTYPE INFERENCE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Produce:
-  - Your proposed patient grouping: assign every sample to a label
+  - Your proposed patient grouping: assign every sample to a label.
+    IMPORTANT: the partition must be derived from molecular data (expression,
+    methylation, or mutation). Do not adopt a CLIN_XX column directly as your
+    grouping — CLIN_XX values are clinical annotations to characterize subgroups
+    after the fact, not a substitute for molecular discovery.
   - Quantitative evidence the grouping is meaningful and stable
   - Top differentially expressed genes between groups: for each, report
     the absolute per-group values (not just the difference), effect size,
@@ -104,7 +108,7 @@ STAGE 5 — BIOLOGICAL ANNOTATION & VALIDATION
 {stage5_codebook_instruction}
 
 Produce:
-  - Translated top marker genes: map your GENE_XXXXX IDs to real symbols
+  - Confirm top marker genes use real symbols (codebook pre-loaded from call 0 — translate any remaining GENE_XXXXX IDs now)
   - Pathway enrichment: using MSigDB Hallmarks + Reactome (paths in codebook
     response), run overrepresentation analysis on top marker genes per subtype.
     Report top 5 enriched pathways per subtype with p-values.

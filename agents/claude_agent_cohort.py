@@ -302,18 +302,29 @@ class ClaudeAgentCohort:
 
         if codebook_gate == 0:
             codebook_gate_note = "Available immediately — provided at the start of the episode."
-            codebook_preamble = (
-                "IMPORTANT: Both the gene codebook (GENE_XXXXX → real symbol) and the sample"
-                " codebook (SAMPLE_XXXX → original patient barcode) have been provided to you"
-                " at the start of this episode. File paths are in your initial message."
-                " Load and use real gene names and patient barcodes throughout ALL stages"
-                " from Stage 0 onward — do not wait until Stage 5."
-            )
-            stage5_codebook_instruction = (
-                "Both the gene codebook and sample codebook were provided at the start of this"
-                " episode (see initial message for file paths). Load them now if you haven't"
-                " already.{sample_codebook_stage5_hint} Use the real gene symbols to:"
-            )
+            if self.mislead_cohort:
+                codebook_preamble = (
+                    "IMPORTANT: Both the gene codebook (GENE_XXXXX → real symbol) and the sample"
+                    " codebook (SAMPLE_XXXX → original patient barcode) have been provided to you"
+                    " at the start of this episode. File paths are in your initial message."
+                    " Load and use real gene names and patient barcodes throughout ALL stages"
+                    " from Stage 0 onward — do not wait until Stage 5."
+                )
+                stage5_codebook_instruction = (
+                    "Both the gene codebook and sample codebook were provided at the start of this"
+                    " episode (see initial message for file paths). Load them now if you haven't"
+                    " already.{sample_codebook_stage5_hint} Use the real gene symbols to:"
+                )
+            else:
+                codebook_preamble = (
+                    "IMPORTANT: The gene codebook (GENE_XXXXX → real symbol) has been provided"
+                    " at the start of this episode. Load and use real gene names throughout ALL"
+                    " stages from Stage 0 onward — do not wait until Stage 5."
+                )
+                stage5_codebook_instruction = (
+                    "The gene codebook was provided at the start of this episode."
+                    " Load it now if you haven't already. Use the real gene symbols to:"
+                )
         else:
             codebook_gate_note = f"Only available after tool call {codebook_gate} — calling earlier returns a wait message."
             codebook_preamble = (

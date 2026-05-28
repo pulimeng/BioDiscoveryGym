@@ -57,7 +57,11 @@ Produce:
 STAGE 2 — SUBTYPE INFERENCE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Produce:
-  - Your proposed patient grouping: assign every sample to a label
+  - Your proposed patient grouping: assign every sample to a label.
+    IMPORTANT: the partition must be derived from molecular data (expression,
+    methylation, or mutation). Do not adopt a CLIN_XX column directly as your
+    grouping — CLIN_XX values are clinical annotations to characterize subgroups
+    after the fact, not a substitute for molecular discovery.
   - Quantitative evidence the grouping is meaningful and stable
   - Top differentially expressed genes between groups: for each, report
     the absolute per-group values (not just the difference), effect size,
@@ -190,7 +194,7 @@ request_codebook() → str
 {sample_codebook_section}
 submit_discovery(
     proposed_grouping: str,      # path to grouping.json — save first with json.dump
-    top_genes: list[str],        # marker gene IDs (GENE_XXXXX) — required
+    top_genes: list[str],        # marker gene symbols (real names from codebook, NOT GENE_XXXXX IDs) — required
     pathway_evidence: list[str], # one string per pathway, MUST include the exact GMT name
                                  # (e.g. "HALLMARK_TNFA_SIGNALING_VIA_NFKB p=3.2e-5 k=12/200"
                                  #  or "REACTOME_INNATE_IMMUNE_SYSTEM p=4.6e-6 overlap=11/150")
