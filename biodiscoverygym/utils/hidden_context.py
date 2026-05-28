@@ -222,8 +222,9 @@ class HiddenContextBuilder:
 # numeric scores derived from assays). Strip molecular clustering labels entirely —
 # precomputed cluster assignments are the paper's answer, not independent data.
 _CLINICAL_RENAME = {
-    "pathology": True,   # histological subtype — "Osteoblastic"/"Chondroblastic" → CAT_X
-    "hrd_score": False,  # continuous genomic instability score — numeric, rename only
+    "hrd_score":    False,  # continuous genomic instability score — numeric, rename only
+    "mrna_cluster": False,  # iCluster molecular subtype (integers 1-4) — numeric, rename only
+    "pathology":    True,   # histological subtype — "Osteoblastic"/"Chondroblastic" → CAT_X
 }
 
 # Columns that directly reveal cancer type, tissue of origin, or molecular subtype.
@@ -236,9 +237,8 @@ _ALWAYS_STRIP = [
     "lineage", "lineage_subtype", "cancer_type", "tissue_type",
     # mutation labels (DepMap)
     "BRCA1_mut", "BRCA2_mut", "TP53_mut", "KRAS_mut",
-    # subtypes and precomputed molecular cluster assignments
-    # mrna_cluster is stripped entirely — it is the paper's iCluster answer, not a measurement
-    "paper_BRCA_Subtype_PAM50", "molecular_subtype", "subtype", "mrna_cluster",
+    # subtypes (DepMap / TCGA paper annotations)
+    "paper_BRCA_Subtype_PAM50", "molecular_subtype", "subtype",
     # drug sensitivity proxies
     "auc", "ic50", "lfc",
     # TCGA GDC fields that directly reveal histology or tissue of origin

@@ -35,7 +35,7 @@ Six layers prevent the agent from knowing what it is looking at:
 
 **Kept intentionally:** Survival columns (`vital_status`, `days_to_death`, staging) — valid phenotypic anchors. Numeric molecular scores (e.g. `hrd_score` → `CLIN_00`) — a continuous measurement, not a cluster label; the column name is anonymized but values are kept.
 
-**Rule:** Strip anything that *is* the answer (precomputed cluster assignments). Rename/anonymize anything that *informs* clustering but doesn't predetermine it.
+**Rule:** Strip anything that *directly names* the cancer type or paper subtype labels. Rename/anonymize everything else that leaks identity through its column name — both clinical (histological) and molecular (iCluster) features are kept as `CLIN_XX`, since a real analyst would have access to both and the benchmark tests whether the agent discovers additional biology beyond what these features encode.
 
 ---
 
