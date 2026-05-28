@@ -256,7 +256,9 @@ bash scripts/run_os_multiseed.sh
 | `biodiscoverygym/tools/pcst.py` | Prize-Collecting Steiner Tree via networkx KMB approximation |
 | `biodiscoverygym/tools/opentargets.py` | OpenTargets actionability lookup — `get_actionability()`, `batch_actionability()` |
 | `agents/claude_agent_cohort.py` | `ClaudeAgentCohort` — anonymization + codebook gating + PrimeKG pre-reveal + OT at Stage 5 |
-| `prompts/agent_anon_system.txt` | 7-stage system prompt template |
+| `prompts/agent_g0_system.txt` | G0 system prompt — cohort known, both codebooks pre-revealed, recall+validate framing |
+| `prompts/agent_g1_system.txt` | G1 system prompt — cohort hidden, gene codebook pre-revealed, discovery with gene biology |
+| `prompts/agent_g2_system.txt` | G2 system prompt — cohort hidden, gene codebook gated at call 25, data-first discovery |
 | `scripts/run_episode.py` | CLI: `--cohort`, `--explicit-retrieval`, `--gene-codebook-gate`, `--mislead-cohort`, `--seed`, `--primekg` |
 | `scripts/score_episode_v2.py` | Post-hoc v2 scoring |
 | `scripts/run_os_multiseed.sh` | Multi-seed OS benchmark runner |
