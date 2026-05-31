@@ -218,14 +218,17 @@ python scripts/run_episode.py --cohort BRCA --explicit-retrieval --seed 42
 # G1 — implicit retrieval (real gene names from call 0)
 python scripts/run_episode.py --cohort BRCA --gene-codebook-gate 0 --seed 42
 
-# G3 — mislead (wrong barcodes injected)
+# mislead (wrong barcodes injected)
 python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42
 
-# Score any episode
-python scripts/score_episode_v2.py --episode results/{id}/episode.json --cohort BRCA
+# Score a single episode (v3: scores + trace)
+python scripts/score_episode_v3.py results/{id}/episode.json --save
 
-# Multi-seed OS benchmark (3 modes × 3 seeds = 9 runs)
-bash scripts/run_os_multiseed.sh
+# Multi-seed cohort benchmark (G0 × 3 seeds + G1 × 5 seeds + G2 × 5 seeds = 13 runs)
+bash scripts/run_cohort.sh --tag run6_canonical --cohort OS
+
+# Score all episodes in a results folder
+bash scripts/score_all_withMeth.sh results/external/run6_canonical/
 ```
 
 ### Task B — target discovery
