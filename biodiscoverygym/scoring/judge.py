@@ -200,10 +200,13 @@ def score_exam_experiment_depth(
     try:
         client = anthropic.Anthropic()
         commit_summary = f"COMMIT REPORT (first 500 chars):\n{commit_report[:500]}\n\n" if commit_report else ""
+        # Q4 is always the last answer — take the final 6000 chars so the judge
+        # sees the full Q4 block rather than the Q1-Q3 content that precedes it.
+        q4_window = phase2_text[-6000:]
         user_msg = (
             f"{commit_summary}"
             f"Q4 MECHANISTIC FOLLOW-UP EXPERIMENT (extract from Phase 2 answers below):\n"
-            f"{phase2_text[:4000]}"
+            f"{q4_window}"
         )
         response = client.messages.create(
             model=model,
@@ -279,11 +282,17 @@ def score_exam_mechanistic_integration(
         return 0.0, {"reason": "no Phase 2 answers found"}
     try:
         client = anthropic.Anthropic()
+        # Build a window that covers all questions: first 2000 chars (Q1-Q3 start)
+        # + last 6000 chars (Q4 + end of Q3), so the integration judge sees all Qs.
         answers_text = "\n\n---\n\n".join(phase2_answers)
+        if len(answers_text) > 8000:
+            answers_window = answers_text[:2000] + "\n\n[...]\n\n" + answers_text[-6000:]
+        else:
+            answers_window = answers_text
         commit_summary = commit_report[:800] if commit_report else "(not provided)"
         user_msg = (
             f"COMMIT PHASE REPORT:\n{commit_summary}\n\n"
-            f"PHASE 2 Q1-Q4 ANSWERS:\n{answers_text[:4000]}"
+            f"PHASE 2 Q1-Q4 ANSWERS:\n{answers_window}"
         )
         response = client.messages.create(
             model=model,
