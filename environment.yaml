@@ -43,8 +43,11 @@ dependencies:
     # dimensionality reduction
     - umap-learn
 
-    # single-cell (optional modality; harmless now)
+    # single-cell & multi-omics factor analysis
     - scanpy
+    - anndata>=0.10
+    - mofapy2>=0.7
+    - muon>=0.1
 
     # gene annotation lookups (Stage 4 mechanism)
     - gget
