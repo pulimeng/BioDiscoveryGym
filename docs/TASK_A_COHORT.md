@@ -27,27 +27,15 @@ Six layers prevent the agent from knowing what it is looking at:
 |-------|--------------------------|
 | `DataAnonymizer._ALWAYS_STRIP` | Cancer-type columns (`primary_diagnosis`, `OncotreePrimaryDisease`, lineage, subtype) |
 | Molecular clustering labels | **Stripped entirely** — precomputed cluster assignments (e.g. `mrna_cluster`) are the paper's answer, not independent data. Keeping them gives the agent the partition for free. |
-| Leaky clinical columns | **Renamed** to `CLIN_00`, `CLIN_01`, … with categorical string values replaced by `CAT_0`, `CAT_1`, … A clinical codebook (CLIN_XX → real name, CAT_X → real value) is kept by the harness. Release policy is mode-dependent — see group definitions below. |
-| Demographics | `gender`, `race`, `ethnicity` (cohort identity leakage — e.g. LIHC is >50% Asian from HBV-endemic regions) |
+| Staging values | Categorical values that fingerprint a cohort (e.g. Enneking `IIB`/`III` for OS) are remapped to `CAT_0`, `CAT_1`, … in-place — column name kept, values anonymized. Skipped in G0 mode (cohort already known). |
+| Demographics | `race`, `ethnicity` stripped (cohort identity leakage — e.g. LIHC is >50% Asian from HBV-endemic regions). `gender` kept — generic across all cancers. |
 | Sample IDs | TCGA barcodes → `SAMPLE_XXXX` (shuffled with seed) |
 | Gene names | Real symbols → `GENE_XXXXX` (shuffled with seed); real names revealed via codebook at call 25 (G2) or call 0 (G0/G1) |
 | Data path | Served from neutral `data/episode/` path, not `data/tcga/lihc/` |
 
-**Kept intentionally:** Survival columns (`vital_status`, `days_to_death`, staging) — valid phenotypic anchors. Numeric molecular scores (e.g. `hrd_score` → `CLIN_00`) — a continuous measurement, not a cluster label; the column name is anonymized but values are kept.
+**Kept intentionally:** Survival columns (`vital_status`, `days_to_death`, `days_to_last_follow_up`), `tumor_stage`, `metastasis`, `age_at_diagnosis`, `gender` — all generic pan-cancer clinical variables the agent can legitimately use as phenotypic anchors.
 
-**Rule:** Strip anything that *directly names* the cancer type or paper subtype labels. Rename/anonymize everything else that leaks identity through its column name — both clinical (histological) and molecular (iCluster) features are kept as `CLIN_XX`, since a real analyst would have access to both and the benchmark tests whether the agent discovers additional biology beyond what these features encode.
-
-### OS-specific: histological pathology column (CLIN_02)
-
-For the OS cohort, `CLIN_02` encodes traditional histological subtype (Osteoblastic, Fibroblastic, Chondroblastic, Telangiectatic, Mixed), anonymized to `CAT_0`–`CAT_4`.
-
-**Design decision: keep as anonymized CLIN_XX.** Rationale:
-
-- **Weak association with molecular subtypes.** Cramer's V = 0.29 — pathology captures some but not most molecular heterogeneity. Two Osteoblastic tumors can sit in S-IA (immune-activated, good prognosis) or S-MD (MYC-driven, worst prognosis) with completely different biology.
-- **Pathology lacks therapeutic stratification.** The paper's core argument is that multi-omic integration is necessary — S-HRD requires PARPi/cisplatin, S-MD requires anti-MYC, S-IS requires ICI. Histological subtype cannot distinguish these axes; it requires CNA + methylation + mRNA together (iCluster).
-- **Agents cannot decode it without cohort knowledge.** G1/G2 see `CLIN_02 ∈ {CAT_0, CAT_1, CAT_2, CAT_3, CAT_4}` with no disease context — it is just "a 5-level clinical variable." A good molecular analysis will find the V=0.29 association and correctly deprioritize it in favor of stronger expression-driven structure.
-- **G0 caveat.** G0 agents know the cohort is OS. A sophisticated G0 agent might infer CLIN_02 (5 categories) = histological pathology and attempt to anchor on it. This is a known G0-specific leak; if G0 agents systematically collapse to pathology-based groupings in run5, CLIN_02 should be dropped for future OS runs.
-- **Prompt guard.** All three prompts explicitly prohibit adopting CLIN_XX columns directly as the proposed grouping — molecular evidence is required.
+**Rule:** Strip anything that directly names the cancer type, paper subtype labels, or pre-computed assay scores whose presence fingerprints a non-TCGA dataset (`hrd_score`, `tmb`, `icluster`, `pathology` are all stripped for OS). Remap categorical values that are staging-system-specific (Enneking `IIB`/`III` → `CAT_0`/`CAT_1`) while keeping the column name visible.
 
 ---
 
@@ -76,29 +64,27 @@ The osteosarcoma cohort closes the primary confound of the TCGA set: for well-ch
 
 **67 runs total across 4 groups. 7 cohorts: BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV.**
 
-| Group | Label | Gene codebook | Clinical codebook | Cohort name | Seeds | Runs | Cost (~$3/ep) |
-|-------|-------|---------------|-------------------|-------------|-------|------|---------------|
-| **G0** | Explicit retrieval | Call 0 | Call 0 | **Revealed** | 42 | 7 × 1 = 7 | ~$21 |
-| **G1** | Implicit retrieval | Call 0 | **Never** | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
-| **G2** | Data-driven | Call 25 | **Never** | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
-| **G3** | Mislead | Call 25 | **Never** | Hidden + wrong barcodes | 42, 7, 123 | 6 pairs × 3 = 18 | ~$54 |
-| **Total** | | | | | | **67** | **~$201** |
+| Group | Label | Gene codebook | Cohort name | Seeds | Runs | Cost (~$3/ep) |
+|-------|-------|---------------|-------------|-------|------|---------------|
+| **G0** | Explicit retrieval | Call 0 | **Revealed** | 42 | 7 × 1 = 7 | ~$21 |
+| **G1** | Implicit retrieval | Call 0 | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
+| **G2** | Data-driven | Call 25 | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
+| **G3** | Mislead | Call 25 | Hidden + wrong barcodes | 42, 7, 123 | 6 pairs × 3 = 18 | ~$54 |
+| **Total** | | | | | **67** | **~$201** |
 
 ### Group definitions
 
 The three groups form a clean ablation over what recall channels are open:
 
-- **G0 (explicit retrieval) — pure recall baseline.** The agent is told the cancer type upfront and receives both the gene codebook and clinical codebook immediately. It can directly recall known subtypes, markers, and biology from training data. G0 measures how much a model *already knows* from pretraining.
+- **G0 (explicit retrieval) — pure recall baseline.** The agent is told the cancer type upfront and receives the gene codebook immediately (call 0). Clinical metadata uses real column names and real categorical values. G0 measures how much a model *already knows* from pretraining.
 
-- **G1 (implicit retrieval) — gene-biology-mediated recall.** Cohort identity is hidden; gene codebook is pre-revealed (call 0); clinical codebook is never revealed. The agent can infer the cancer type from gene signatures (e.g., H3F3A → pediatric bone tumor, SP7 → osteoblast) and then recall subtype structure indirectly. G1 agents characterize CLIN_XX features from their distributions and correlations alone — they never learn the real column names.
+- **G1 (implicit retrieval) — gene-biology-mediated recall.** Cohort identity is hidden; gene codebook is pre-revealed (call 0). The agent can infer the cancer type from gene signatures (e.g., H3F3A → pediatric bone tumor, SP7 → osteoblast) and recall subtype structure indirectly. Staging values are remapped to CAT_X to prevent Enneking-specific leakage.
 
-- **G2 (data-driven) — data-first discovery.** Genes are anonymized as GENE_XXXXX until call 25; cohort is hidden; clinical codebook is never revealed. The agent must form its grouping from expression patterns, correlations, and clustering before any biological context is available. G1→G2 isolates the effect of gene-biology recall.
+- **G2 (data-driven) — data-first discovery.** Genes are anonymized as GENE_XXXXX until call 25; cohort is hidden. The agent must form its grouping from expression patterns, correlations, and clustering before any biological context is available. G1→G2 isolates the effect of gene-biology recall.
 
 - **G3 (mislead):** Same as G2, but sample barcodes suggest the wrong cancer type. Tests whether the agent correctly overrides misleading provenance signals with data evidence.
 
-**What differs between G0 and G1:** cohort identity in the system prompt AND clinical codebook availability. G0 gets both; G1 gets neither. This means the G0→G1 delta combines direct disease recall with the ability to name clinical features. The G1→G2 delta is a clean single-variable test: gene codebook timing (call 0 vs call 25).
-
-**Phase 2:** After `submit_discovery`, the clinical codebook is revealed to G1 and G2 agents for the mechanistic follow-up analysis. At that point scoring is complete, so there is nothing to game — full context enables richer mechanistic reasoning.
+**What differs between G0 and G1:** cohort identity in the system prompt and clinical value remapping (G0 sees real staging values; G1/G2 see CAT_X). The G1→G2 delta is a clean single-variable test: gene codebook timing (call 0 vs call 25).
 
 ### G3 cohort pairs
 
@@ -292,17 +278,11 @@ bash scripts/run_os_multiseed.sh
 
 ## What's Next
 
-**OS run5 (in progress — tag `run5_threePrompt_clinAnon`):**
-- 13 runs: G0×3 seeds (0,1,7) + G1×5 seeds (0,1,7,42,123) + G2×5 seeds (0,1,7,42,123)
-- First run using per-mode prompts (agent_g0/g1/g2_system.txt) and clinical column anonymization
-- Phase 2 not enabled in run5 — Phase 1-only, Phase 2 scores will be 0
-- Score with: `bash scripts/score_all_withMeth.sh results/cohort/external/run5_threePrompt_clinAnon/`
-- Watch for: G0 anchoring on CLIN_02 (5-category pathology column) — if systematic, drop for run6
-
-**OS run6 (planned):**
-- Add `--phase2 OS --phase2-commit-phase` to enable commit sweep + Q1-Q4 follow-up
-- Consider dropping CLIN_02 (pathology) if run5 shows G0 pathology-anchoring
-- Obtain WES/CNA approval (GSA HRA003260) → re-run without `_noCNA_noSNV` tag
+**OS run6 (next):**
+- Metadata now cleaned: `pathology`, `icluster`, `hrd_score`, `tmb`, `subtype` stripped; `tumor_stage` values remapped to CAT_X in G1/G2; no CLIN_XX column renaming
+- Enable Examination stage (Data Lock → Q1-Q4) with Q4 split fix
+- Obtain WES/CNA approval (GSA HRA003260) → re-run with full multi-omic data
+- Run: `bash scripts/run_cohort.sh --tag run6 --cohort OS`
 
 **TCGA benchmark (future):**
 - Fund and run 67-episode benchmark (~$201 on Sonnet)

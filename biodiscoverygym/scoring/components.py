@@ -481,7 +481,7 @@ def score_exam_data_lock_quality(commit_report: str) -> tuple[float, dict]:
 
     sections = {
         "pc_loadings": bool(re.search(
-            r"pc[\s_]?[23]\b|pc2|pc3|principal component [23]|loading", r
+            r"pc[\s_]?[123]\b|pc1|pc2|pc3|principal component [123]|loading", r
         )),
         "survival": bool(re.search(
             r"median.*survival|survival.*median|log.rank|kaplan|hazard ratio|\bhr\b.*=|\bci\b", r
@@ -489,8 +489,9 @@ def score_exam_data_lock_quality(commit_report: str) -> tuple[float, dict]:
         "mutation": bool(re.search(
             r"mutation|fisher.*exact|odds ratio|mutant|mutation rate|enriched.*gene", r
         )),
-        "rppa": bool(re.search(
-            r"rppa|protein.*diff|phospho|mann.whitn|clinical.*variable", r
+        "cross_modal": bool(re.search(
+            r"rppa|protein.*diff|phospho|mann.whitn|clinical.*variable"
+            r"|methylat|cpg|beta.*value|delta.*beta|differentially.*methylat", r
         )),
         "unexpected": bool(re.search(
             r"unexpected|surprise|surprising|expected instead|contrary|most.*surprise", r

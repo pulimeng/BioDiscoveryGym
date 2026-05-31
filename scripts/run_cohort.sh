@@ -5,7 +5,7 @@
 # For the full TCGA sweep (7 cohorts), use run_tcga.sh instead.
 #
 # Usage:
-#   bash scripts/run_cohort.sh --tag run5_clinAnon --cohort OS
+#   bash scripts/run_cohort.sh --tag run6_canonical --cohort OS
 #   bash scripts/run_cohort.sh --tag run6_opus --cohort OS --model claude-opus-4-7 --g2-seeds "0 1 7"
 #   bash scripts/run_cohort.sh --tag brca_test --cohort BRCA --g0-seeds "42" --g1-seeds "" --g2-seeds ""
 #
@@ -70,7 +70,7 @@ done
 # ── Validation ────────────────────────────────────────────────────────────────
 if [[ -z "$TAG" ]]; then
     echo "Error: --tag is required." >&2
-    echo "Example: bash scripts/run_cohort.sh --tag run5_clinAnon --cohort OS" >&2
+    echo "Example: bash scripts/run_cohort.sh --tag run6_canonical --cohort OS" >&2
     exit 1
 fi
 

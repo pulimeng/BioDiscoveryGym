@@ -1,0 +1,59 @@
+Data Lock complete. Answer Q1–Q3 below, then Q4 will be revealed separately.
+For each question: report all requested numbers first, then interpret.
+Where asked to cite Data Lock values, quote the exact number you locked in.
+Use run_code for any additional analysis needed.
+Budget: aim for 1–2 tool calls per question, ≤6 total for Q1–Q3.
+
+────────────────────────────────────────────────────────────
+Q1 — Survival and Clinical Associations
+
+For each subtype you identified:
+(a) Median overall survival in months and log-rank p-value vs all other subtypes
+    (if survival data available; otherwise, report the strongest clinical variable
+    that differs between subtypes with effect size and p-value).
+(b) Hazard ratio from unadjusted Cox proportional hazards regression.
+(c) Distribution of tumor stage/grade across subtypes (chi-squared p-value).
+Report all numbers first. Then in one sentence, state whether the clinical differences
+between subtypes were expected or unexpected given the molecular profiles you observed.
+Cite your Data Lock values.
+
+────────────────────────────────────────────────────────────
+Q2 — Mutation Landscape by Subtype
+
+If mutation data is available:
+(a) Top 3 most enriched mutations per subtype — gene, mutation rate (mutant/total),
+    Fisher's exact p-value, odds ratio vs all other samples.
+(b) Is there any pair of mutations that is mutually exclusive across subtypes?
+    Report the most striking pair with Fisher's exact p-value.
+(c) Are total mutation burdens different between subtypes? Compute mutations per
+    sample from the mutation matrix; report median per subtype and Mann-Whitney p-value.
+Report all numbers first. Then state in one sentence whether the mutation landscape
+reinforces or contradicts the transcriptional grouping.
+If no mutation data is available, describe instead the top 5 genes most correlated
+with clinical outcome within each subtype (Spearman r, p-value).
+
+────────────────────────────────────────────────────────────
+Q3 — Cross-Modal and Within-Subtype Heterogeneity
+
+(a) Cross-modal anchor — pick whichever modality is available, in priority order:
+    methylation, RPPA, then mutation. Report the single strongest cross-modal finding:
+      - Methylation: the CpG with the largest delta beta between subtypes (mean beta
+        per group, Mann-Whitney p-value). If you can correlate the CpG with expression
+        of any individual gene, report the gene with the strongest negative Pearson r
+        (hypermethylation → silencing). Cite your Data Lock CpG if one was locked.
+      - RPPA: the protein with the largest mean difference (mean ± SD per subtype,
+        Mann-Whitney p-value). Report Spearman correlation of the protein with the
+        dominant transcriptional PC1 (use your Data Lock PC1 loadings).
+      - Mutation fallback: the gene whose mutation status best stratifies survival
+        within the worst-prognosis subtype.
+
+(b) Within-subtype heterogeneity — within the worse-prognosis subtype (or the subtype
+    you find most heterogeneous), split samples at the median of your top marker gene's
+    expression. Do these two halves differ in survival (log-rank p-value), mutation
+    burden (Mann-Whitney p-value), or any available clinical variable?
+
+Report all numbers before any mechanistic interpretation.
+
+────────────────────────────────────────────────────────────
+Answer Q1–Q3 clearly, citing specific data or statistical results.
+Q4 will follow once you have answered these three.

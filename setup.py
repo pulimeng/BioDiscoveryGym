@@ -34,7 +34,7 @@ setup(
             "langchain-community",
             "langgraph==0.3.18",
         ],
-        "bio": ["biopython", "scanpy"],
+        "bio": ["biopython", "scanpy", "mofapy2>=0.7", "muon>=0.1", "anndata>=0.10"],
         "dev": ["pytest>=7.4", "pytest-cov", "jupyter"],
     },
 )

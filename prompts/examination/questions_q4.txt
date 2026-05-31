@@ -1,0 +1,25 @@
+Q4 — Mechanistic Follow-up Experiment
+
+Based on the findings you committed to in `submit_discovery` and your Data Lock report,
+propose ONE experiment that would definitively validate or refute the molecular distinction
+between your subtypes.
+
+Your answer must specify all four of the following — use these exact section headers:
+
+  Model:        which cell line(s), organoid, or animal model — and why this system
+                is appropriate. Cite RPPA, methylation, mutation, or expression evidence
+                from your Data Lock that supports the choice.
+
+  Perturbation: what you would do (knockdown, knockout, overexpression, drug treatment)
+                and the specific target(s). State the expected direction of effect on
+                the readout based on your locked data.
+
+  Readout:      the specific measurable outcome (e.g. cell viability assay, RNA-seq,
+                phosphoprotein level) with the expected magnitude or direction of change
+                if your hypothesis is correct.
+
+  Falsification: what result would cause you to reject your hypothesis? Be specific —
+                "no effect" is not falsification. State a threshold or pattern
+                (e.g. "if pSTAT3 increases <1.5× and viability drops <20%, reject").
+
+Answer Q4 now using the section headers above. This is the final examination question.

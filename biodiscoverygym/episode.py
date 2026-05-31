@@ -101,6 +101,7 @@ class Episode:
         anonymize_genes: bool = False,
         perturb: bool = False,
         tcga_dir: str | Path | None = None,
+        rename_clinical: bool = True,
     ) -> "Episode":
         """
         Load a cohort and set up a fully anonymized episode.
@@ -121,7 +122,7 @@ class Episode:
                                    perturb=perturb)
 
         # 2. Strip leaky columns
-        anon_dataset = DataAnonymizer.mask(dataset)
+        anon_dataset = DataAnonymizer.mask(dataset, rename_clinical=rename_clinical)
 
         # 3. Replace TCGA barcodes with SAMPLE_XXXX
         anon_dataset, sample_id_map = cls._anonymize_sample_ids(anon_dataset, seed)

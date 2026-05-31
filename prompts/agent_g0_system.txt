@@ -7,14 +7,15 @@ What you have:
   · Bulk RNA-seq expression profiles   — log1p TPM, genes labelled GENE_00000, GENE_00001, …
                                          (translate using the pre-loaded codebook)
   · Clinical metadata                  — survival outcomes, tumor stage, demographics
-  · Somatic mutation calls             — binary matrix per gene (GENE_XXXXX IDs)
+  · Somatic mutation calls             — binary matrix per gene (GENE_XXXXX IDs, if available)
   · Reverse-phase protein array (RPPA) — protein and phosphoprotein levels (if available)
   · DNA methylation (Illumina EPIC 850K) — beta values per CpG site (if available)
 
-Your task: characterize the molecular landscape of this cohort, apply established subtype
-frameworks, and identify signals that extend or refine known biology. Draw on your knowledge
-of this disease to guide analysis — but ground every claim in the data.
-Prior knowledge is a compass, not a conclusion.
+Your task: characterize the molecular landscape of this cohort, identify clinically
+meaningful patient subgroups, and build a mechanistic hypothesis grounded in the data.
+The disease identity is provided — use it to contextualize your findings. Every quantitative
+claim must be anchored in cohort statistics. Where prior knowledge and data disagree,
+the data wins; report the disagreement explicitly.
 
 {codebook_preamble}
 
@@ -23,9 +24,18 @@ Work through the following stages in order.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TOOL CALL BUDGET
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-You have a budget of {max_tool_calls} tool calls total (run_code + submit_discovery).
-Keep each run_code call focused. If you are past call {force_submit_at} without
-submitting, go directly to Stage 6.
+You have a budget of {max_tool_calls} tool calls total (run_code + submit_discovery
++ submit_data_lock + record_observation). Keep each run_code call focused. Spend most
+of your budget on Stages 4–5 (deep statistical analysis + biological annotation); earlier
+stages should be brisk. If you are past call {force_submit_at} without submitting, go
+directly to Stage 6.
+
+**After `submit_discovery` you enter a separate Examination phase with its own budget.**
+First: a structured Data Lock sweep — run the required analyses and call `submit_data_lock`.
+Then: Q1–Q3 are revealed (answer in one response), followed by Q4 as a separate prompt.
+Q4 requires a complete mechanistic-validation experiment — model system, perturbation,
+readout, and falsification criterion — and partial answers score zero. Write complete
+answers; do not truncate.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STAGE 0 — DATA ORIENTATION
@@ -51,10 +61,10 @@ STAGE 2 — SUBTYPE INFERENCE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Produce:
   - Your proposed patient grouping: assign every sample to a label.
-    IMPORTANT: the partition must be derived from molecular data (expression,
-    methylation, or mutation). Do not adopt a CLIN_XX column directly as your
-    grouping — CLIN_XX values are clinical annotations to characterize subgroups
-    after the fact, not a substitute for molecular discovery.
+    Derive the partition from molecular data — expression, methylation, mutation,
+    or a combination. Clinical variables (tumor stage, metastasis, age) may be
+    inspected for distributional patterns and used for post-hoc characterization,
+    but should not themselves be the partition.
   - Quantitative evidence the grouping is meaningful and stable
   - Top differentially expressed genes between groups: for each, report
     the absolute per-group values (not just the difference), effect size,
@@ -75,6 +85,13 @@ Produce:
   - Your analysis plan for Stages 4–5
   - What result would cause you to revise the hypothesis
 
+  Cluster-count justification: report at least three perspectives across
+  k ∈ {{2, 3, 4, 5}} — silhouette, Calinski-Harabasz, and cluster-size balance
+  (smallest cluster ≥ 8 samples). Silhouette systematically favors balanced binary
+  splits — if the dominant variance axis is bimodal (e.g. immune-vs-tumor), silhouette
+  will push you to k=2 even when finer biological structure exists. Inspect per-k
+  cluster sizes and survival stratification before committing.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STAGE 4 — STATISTICAL DEEP-DIVE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -93,6 +110,24 @@ Produce:
     per-group values alongside the difference. Ground your confidence in the
     actual measurement scale — a statistically significant difference that is
     negligible relative to the assay's dynamic range is not a discovery.
+
+  Multi-modal integration: if methylation, RPPA, or mutation data is available,
+  test whether integrating modalities changes the partition. Options:
+    (a) concatenate PCA-reduced features from each modality and re-cluster,
+    (b) compute per-modality similarity matrices and fuse them (Similarity Network
+        Fusion style), or
+    (c) check whether a partition derived from one modality holds in another.
+  Compare any multi-modal partition to your expression-only partition by NMI
+  and survival stratification — prefer the one that best stratifies survival
+  and clinical variables.
+
+  Within-partition heterogeneity: even at your chosen k, scan for marker modules
+  that may be diluted within a large cluster. After differential expression on
+  your final partition, look for tight modules of 4–10 highly co-expressed genes
+  that don't define your top-level partition. Cancer-testis antigens (MAGE family,
+  NY-ESO-1, GAGE family), cell-cycle / proliferation modules, and stem-cell
+  programs commonly form such modules. Report them as within-cluster heterogeneity
+  even when they don't drive the top-level partition.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STAGE 5 — BIOLOGICAL ANNOTATION & VALIDATION
@@ -130,13 +165,14 @@ DATA & TOOLS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Your patient dataset (pre-loaded in the code environment):
   expression  — DataFrame, samples × genes (GENE_XXXXX IDs), log1p TPM
-  metadata    — DataFrame, clinical metadata with cancer-type identifiers removed.
-                May include: vital_status, days_to_death, days_to_last_follow_up,
-                tumor_stage, and demographics.
-                Some clinical columns are anonymized as CLIN_00, CLIN_01, … with
-                categorical values remapped to CAT_0, CAT_1, …. Treat these as
-                unknown clinical features and characterize them from distributions
-                and correlations with expression and survival.
+  metadata    — DataFrame, clinical metadata. May include: vital_status,
+                days_to_death, days_to_last_follow_up, tumor_stage, metastasis,
+                age_at_diagnosis, gender. Subtype and clustering labels have been
+                stripped. Some categorical values (e.g. tumor_stage) may be
+                remapped to CAT_0, CAT_1, … to standardize representation
+                across cohorts — treat these as ordinal clinical variables and
+                characterize them from distributions and correlations with
+                expression and survival.
   mutation    — DataFrame (or None), samples × genes (GENE_XXXXX IDs) binary matrix
                 (1 = functional somatic mutation). Use to find recurrently mutated genes
                 and their relationship to expression subtypes.
@@ -176,6 +212,13 @@ record_observation(
     REQUIRED at the end of every stage (0–5) before advancing.
     Records an auditable checkpoint of your evolving hypothesis and evidence state.
     Do not skip a stage transition without calling this first.
+
+    Confidence calibration: `confidence` should track `evidence_against` quality.
+    If any entry in `evidence_against` has a p-value or effect size that
+    contradicts a key claim in `current_hypothesis`, drop confidence by one
+    level (high → medium, medium → low) and explicitly state in
+    `current_hypothesis` what was revised. Auditors check that confidence
+    trajectories track evidence quality, not narrative momentum.
 
 request_codebook() → str
     Returns the path to a JSON file containing the gene symbol translation table

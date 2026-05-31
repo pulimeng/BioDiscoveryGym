@@ -123,14 +123,14 @@ def parse_args():
     p.add_argument(
         "--examination-max-calls",
         type=int,
-        default=30,
-        help="Max tool calls for Examination Q1-Q4 (default: 30)",
+        default=40,
+        help="Max tool calls for Examination Q1-Q4 (default: 40)",
     )
     p.add_argument(
         "--data-lock-max-calls",
         type=int,
-        default=15,
-        help="Max tool calls for Examination Data Lock sweep (default: 15)",
+        default=20,
+        help="Max tool calls for Examination Data Lock sweep (default: 20)",
     )
     p.add_argument(
         "--explicit-retrieval",
@@ -214,6 +214,7 @@ def main():
         anonymize_genes=True,
         perturb=args.perturb,
         tcga_dir=EXTERNAL_COHORT_DIRS.get(args.cohort.upper()),
+        rename_clinical=not args.explicit_retrieval,  # G0: real values; G1/G2: categorical values remapped to CAT_X
     )
 
     agent = ClaudeAgentCohort(

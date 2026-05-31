@@ -215,16 +215,19 @@ class HiddenContextBuilder:
 
 # Clinical columns that leak cohort identity through their name or categorical values,
 # but carry real biological signal — renamed rather than stripped, with a codebook
-# mapping CLIN_XX → real column name and CAT_X → real category value.
-# True = also remap categorical string values; False = numeric, column rename only.
-#
-# Rule: keep columns that represent clinical/histological measurements (pathology subtype,
-# numeric scores derived from assays). Strip molecular clustering labels entirely —
-# precomputed cluster assignments are the paper's answer, not independent data.
-_CLINICAL_RENAME = {
-    "hrd_score": False,  # continuous genomic instability score — numeric, rename only
-    "icluster":  False,  # integrative iCluster (mRNA+methy+CNA), integers 1-4 — numeric, rename only
-    "pathology": True,   # histological subtype — "Osteoblastic"/"Chondroblastic" → CAT_X
+# Rule: keep columns that are raw clinical measurements. Strip all clustering/subtype
+# labels — precomputed assignments are the paper's answer, not independent data.
+# True = also remap categorical string values; False = numeric, rename column only.
+_CLINICAL_RENAME: dict = {
+    # No entries — all retained columns have generic names that don't fingerprint
+    # the cohort. Add here only if both the column name AND values need hiding.
+}
+
+# Columns whose VALUES fingerprint the cohort but whose NAME is generic enough to keep.
+# Categorical values are remapped to CAT_0, CAT_1, … in-place; column name unchanged.
+# Skipped in G0 mode (rename_clinical=False) since the cohort is already known.
+_VALUE_REMAP = {
+    "tumor_stage",   # Enneking IIB/III → CAT_0/CAT_1 (Enneking is bone-tumor-specific)
 }
 
 # Columns that directly reveal cancer type, tissue of origin, or molecular subtype.
@@ -237,16 +240,21 @@ _ALWAYS_STRIP = [
     "lineage", "lineage_subtype", "cancer_type", "tissue_type",
     # mutation labels (DepMap)
     "BRCA1_mut", "BRCA2_mut", "TP53_mut", "KRAS_mut",
-    # subtypes (DepMap / TCGA paper annotations)
-    "paper_BRCA_Subtype_PAM50", "molecular_subtype", "subtype",
+    # subtypes (DepMap / TCGA paper annotations) + integrative cluster labels from papers
+    "paper_BRCA_Subtype_PAM50", "molecular_subtype", "subtype", "icluster",
     # drug sensitivity proxies
     "auc", "ic50", "lfc",
     # TCGA GDC fields that directly reveal histology or tissue of origin
     "primary_diagnosis", "morphology",
     "site_of_resection_or_biopsy", "tissue_or_organ_of_origin",
+    # Histological pathology subtype — "Osteoblastic"/"Chondroblastic"/etc.
+    "pathology",
+    # Non-pan-cancer / pre-computed assay scores — presence fingerprints the
+    # dataset as a specially processed non-TCGA study; computable from raw data anyway.
+    "hrd_score", "tmb",
     # Demographics that can leak cohort identity (e.g. LIHC has high Asian
     # proportion from HBV-endemic regions — a fingerprint that survives mislead)
-    "gender", "race", "ethnicity",
+    "race", "ethnicity",
 ]
 
 
@@ -262,8 +270,8 @@ class DataAnonymizer:
     @staticmethod
     def anonymize_clinical(metadata) -> tuple:
         """
-        Rename leaky clinical columns to CLIN_00, CLIN_01, … and remap
-        categorical string values to CAT_0, CAT_1, … where flagged.
+        Rename leaky clinical columns to CLIN_00, CLIN_01, … and optionally remap
+        categorical string values to CAT_0, CAT_1, ….
 
         Returns (anonymized_df, codebook) where codebook maps:
             CLIN_XX → {"real_name": str, "value_map": {CAT_X: real_val} | None}
@@ -293,12 +301,29 @@ class DataAnonymizer:
         return meta, codebook
 
     @staticmethod
-    def mask(dataset: dict) -> dict:
+    def remap_values(metadata) -> "pd.DataFrame":
+        """
+        Remap categorical values in _VALUE_REMAP columns to CAT_0, CAT_1, …
+        in-place (column name kept as-is).
+        """
+        meta = metadata.copy()
+        for col in _VALUE_REMAP:
+            if col in meta.columns and meta[col].dtype == object:
+                categories = sorted(meta[col].dropna().unique().tolist())
+                inv_map = {cat: f"CAT_{i}" for i, cat in enumerate(categories)}
+                meta[col] = meta[col].map(inv_map)
+        return meta
+
+    @staticmethod
+    def mask(dataset: dict, rename_clinical: bool = True) -> dict:
         """
         Return a shallow-copied, agent-safe version of dataset with:
         - Columns in _ALWAYS_STRIP removed from metadata
         - Columns in _CLINICAL_RENAME renamed to CLIN_XX (values remapped where needed)
-        - 'clinical_codebook' key added with the CLIN_XX → real mapping
+          unless rename_clinical=False (G0 mode: cohort is known, no renaming needed)
+        - Columns in _VALUE_REMAP have categorical values remapped to CAT_X in-place
+          (column name kept, skipped in G0 mode)
+        - 'clinical_codebook' key added (empty if _CLINICAL_RENAME has no entries)
         """
         import copy
 
@@ -308,7 +333,11 @@ class DataAnonymizer:
         if meta is not None:
             cols_to_drop = [c for c in _ALWAYS_STRIP if c in meta.columns]
             meta = meta.drop(columns=cols_to_drop, errors="ignore")
-            meta, clinical_codebook = DataAnonymizer.anonymize_clinical(meta)
+            if rename_clinical:
+                meta, clinical_codebook = DataAnonymizer.anonymize_clinical(meta)
+                meta = DataAnonymizer.remap_values(meta)
+            else:
+                clinical_codebook = {}
             safe["metadata"] = meta
             safe["clinical_codebook"] = clinical_codebook
 

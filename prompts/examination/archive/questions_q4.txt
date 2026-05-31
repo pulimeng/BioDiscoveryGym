@@ -1,0 +1,19 @@
+Q4 — Mechanistic Follow-up Experiment
+
+Based on all your data findings, propose ONE experiment that would definitively
+validate or refute the molecular distinction between your subtypes.
+
+Your answer must specify:
+(a) Model system: which cell line(s), organoid, or animal model — and why this
+    system is appropriate (cite any RPPA, mutation, or expression evidence that
+    supports this choice from the dataset).
+(b) Perturbation: what you would do (knockdown, knockout, overexpression, drug
+    treatment) and the specific target(s). State the expected direction of effect
+    on the readout based on your locked data.
+(c) Primary readout: the specific measurable outcome (e.g., cell viability assay,
+    RNA-seq, phosphoprotein level) with the expected magnitude or direction of
+    change if your hypothesis is correct.
+(d) Falsification criterion: what result would cause you to reject your hypothesis?
+
+Answer Q4 now. Be specific — cite model, perturbation, readout, and falsification
+criterion explicitly. This is the final examination question.

@@ -231,8 +231,8 @@ class ClaudeAgentCohort:
         clinical_codebook: dict | None = None,
         thinking_budget: int = 0,
         no_examination: bool = False,
-        examination_max_calls: int = 30,
-        data_lock_max_calls: int = 15,
+        examination_max_calls: int = 40,
+        data_lock_max_calls: int = 20,
     ):
         self.model = model
         self.max_tool_calls = max_tool_calls
@@ -254,13 +254,16 @@ class ClaudeAgentCohort:
         if not no_examination:
             from biodiscoverygym.examination.generic import (
                 format_data_lock_prompt,
-                format_examination_prompt,
+                format_q1_q3_prompt,
+                format_q4_prompt,
             )
             self._data_lock_prompt = format_data_lock_prompt()
-            self._examination_prompt = format_examination_prompt()
+            self._q1_q3_prompt = format_q1_q3_prompt()
+            self._q4_prompt = format_q4_prompt()
         else:
             self._data_lock_prompt = None
-            self._examination_prompt = None
+            self._q1_q3_prompt = None
+            self._q4_prompt = None
 
         # Select system prompt template based on mode:
         #   G0 — explicit_cohort known, codebook pre-revealed  → agent_g0_system.txt
@@ -391,18 +394,10 @@ class ClaudeAgentCohort:
             codebook_path = output_dir / "codebook.json"
             codebook_path.write_text(json.dumps(self.gene_map))
             executor.namespace["codebook"] = dict(self.gene_map)
-            # clinical_codebook only pre-revealed for G0 (explicit_cohort known)
-            if self.explicit_cohort and self.clinical_codebook:
-                executor.namespace["clinical_codebook"] = dict(self.clinical_codebook)
             executor.unblock_genesets()
-            clin_note = (
-                f"  Clinical column codebook is available as `clinical_codebook`"
-                f"  — {len(self.clinical_codebook)} anonymized columns (CLIN_XX → real name + value map).\n"
-            ) if (self.explicit_cohort and self.clinical_codebook) else ""
             pre_reveal_lines.append(
                 f"Gene codebook (GENE_XXXXX → real symbol) is available as the variable `codebook`"
                 f"  — {len(self.gene_map)} translations, available immediately.\n"
-                f"{clin_note}"
                 f"  Pathway gene sets (MSigDB) are also accessible:\n"
                 f"    Hallmarks : data/genesets/msigdb/h.all.v2023.2.Hs.symbols.gmt\n"
                 f"    Reactome  : data/genesets/msigdb/c2.cp.reactome.v2023.2.Hs.symbols.gmt\n"
@@ -410,7 +405,7 @@ class ClaudeAgentCohort:
                 f"    GO BP     : data/genesets/msigdb/c5.go.bp.v2023.2.Hs.symbols.gmt\n"
                 f"  GMT format: name, _, *genes = line.strip().split('\\t')"
             )
-            self._log(f"[ClaudeAgentCohort] Pre-revealed gene codebook + clinical_codebook → namespace + unblocked genesets")
+            self._log(f"[ClaudeAgentCohort] Pre-revealed gene codebook → namespace + unblocked genesets")
 
         if self.mislead_cohort and self.sample_codebook_gate == 0:
             fake_map = self._generate_fake_sample_codebook()
@@ -491,6 +486,7 @@ class ClaudeAgentCohort:
         data_lock_report: str | None = None
         examination_active = False
         examination_call_count = 0
+        q4_injected = False
         discovery: dict | None = None
         usage_log: list[dict] = []
         observations: list[dict] = []
@@ -543,6 +539,13 @@ class ClaudeAgentCohort:
             messages.append({"role": "assistant", "content": response.content})
 
             if response.stop_reason == "end_turn":
+                # If examination is active and Q4 hasn't been injected yet, inject it now
+                # instead of breaking — this guarantees Q4 gets its own dedicated turn.
+                if examination_active and not q4_injected and self._q4_prompt:
+                    q4_injected = True
+                    self._log("[ClaudeAgentCohort] Q1-Q3 complete — injecting Q4 as separate turn")
+                    messages.append({"role": "user", "content": self._q4_prompt})
+                    continue
                 if discovery is None:
                     self._log("[ClaudeAgentCohort] Model stopped naturally — no submission made.")
                 else:
@@ -708,16 +711,16 @@ class ClaudeAgentCohort:
                             "tool_use_id": block.id,
                             "content": self._data_lock_prompt,
                         })
-                    elif self._examination_prompt and not examination_active:
+                    elif self._q1_q3_prompt and not examination_active:
                         # Data lock skipped — go straight to examination questions
                         if not self.explicit_cohort and self.clinical_codebook:
                             executor.namespace["clinical_codebook"] = dict(self.clinical_codebook)
                         examination_active = True
-                        self._log("[ClaudeAgentCohort] Skipping Data Lock — injecting Examination questions")
+                        self._log("[ClaudeAgentCohort] Skipping Data Lock — injecting Examination questions (Q1-Q3)")
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
-                            "content": self._examination_prompt,
+                            "content": self._q1_q3_prompt,
                         })
                     else:
                         tool_results.append({
@@ -748,13 +751,13 @@ class ClaudeAgentCohort:
                     if discovery is not None:
                         discovery["data_lock_report"] = data_lock_report
                     data_lock_active = False
-                    if self._examination_prompt:
+                    if self._q1_q3_prompt:
                         examination_active = True
-                        self._log("[ClaudeAgentCohort] Data Lock complete — revealing Examination questions")
+                        self._log("[ClaudeAgentCohort] Data Lock complete — revealing Examination questions (Q1-Q3)")
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
-                            "content": self._examination_prompt,
+                            "content": self._q1_q3_prompt,
                         })
                     else:
                         tool_results.append({
@@ -791,9 +794,9 @@ class ClaudeAgentCohort:
                 if data_lock_call_count >= self.data_lock_max_calls:
                     self._log(f"[ClaudeAgentCohort] Data Lock budget exhausted ({self.data_lock_max_calls} calls).")
                     data_lock_active = False
-                    if self._examination_prompt and not examination_active:
+                    if self._q1_q3_prompt and not examination_active:
                         examination_active = True
-                        messages.append({"role": "user", "content": self._examination_prompt})
+                        messages.append({"role": "user", "content": self._q1_q3_prompt})
             elif examination_active:
                 examination_call_count += 1
                 if examination_call_count >= self.examination_max_calls:

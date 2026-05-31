@@ -6,12 +6,16 @@ RULES:
   - Run every analysis listed below even if you expect a null result
   - Do not state mechanistic conclusions — report data only
   - These locked values will be checked against your examination answers
+  - **Aim for 1–2 tool calls total. Keep this report focused — Q1–Q4 follow and need budget.**
 
 Required analyses:
 
-1. PC LOADINGS (PCs 2 and 3)
+1. PC LOADINGS (PCs 1, 2, and 3)
    For each PC: list the top 5 positive and top 5 negative genes with exact Pearson r
-   values. Name the axis from the genes only (no prior expectation).
+   values. Name the axis from the genes only (no prior expectation). PC1 typically
+   captures the dominant variance axis that drives any partition you committed to —
+   locking its loadings here lets the examination check whether your subtype labels
+   actually correspond to this axis.
 
 2. SURVIVAL BY SUBTYPE
    If survival data is available (vital_status, days_to_death, days_to_last_follow_up):
@@ -24,14 +28,24 @@ Required analyses:
    (Fisher's exact p-value, odds ratio, sample counts mutant/total in each group).
    If no mutation data, skip.
 
-4. CROSS-MODAL (RPPA)
-   If RPPA data is available: for your subtype groups, report top 5 most significantly
-   different proteins (mean ± SD per group, Mann-Whitney p-value). Report all 5 even
-   if non-significant. If no RPPA data, report top clinical variable associations instead.
+4. CROSS-MODAL (methylation)
+   If methylation data is available: for your subtype groups, report the top 5 most
+   differentially methylated CpGs — mean beta per group, delta beta, Mann-Whitney
+   p-value, FDR-corrected p-value. For each, note whether expression of any nearby
+   gene (within ±50 kb, or by name match if you have a CpG-to-gene mapping) is
+   correlated with the CpG (Pearson r across all samples). These are your locked
+   cross-modal anchors. If no methylation data, skip.
 
-5. UNEXPECTED FINDING
-   The single result above that most surprised you. Quote the specific number
-   and state what you expected instead.
+5. CROSS-MODAL (RPPA)
+   If RPPA data is available: for your subtype groups, report top 5 most significantly
+   different proteins (mean ± SD per group, Mann-Whitney p-value).
+   If no RPPA data, report top clinical variable associations instead.
+
+6. UNEXPECTED FINDING
+   The single computed result that most surprised you. Quote the exact number,
+   then state explicitly what you expected instead and **why you expected it**
+   (prior reasoning, related biology, comparison to a reference cohort, etc.).
+   The stated prior is what makes this auditable — without it, "unexpected" is rhetoric.
 
 When done, call submit_data_lock(report=<your full structured report as a string>).
 The examination questions will be revealed after you submit.
