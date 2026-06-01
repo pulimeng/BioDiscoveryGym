@@ -105,8 +105,8 @@ def parse_args():
     p.add_argument(
         "--gene-codebook-gate",
         type=int,
-        default=25,
-        help="Tool calls before the gene codebook is released (default: 25; use 0 to pre-reveal at start)",
+        default=8,
+        help="run_code calls before gene codebook is auto-injected for G2 (default: 8; use 0 to pre-reveal at start for G1)",
     )
     p.add_argument(
         "--thinking-budget",
@@ -187,13 +187,12 @@ def main():
     if args.explicit_retrieval:
         args.gene_codebook_gate = 0
 
-    gene_gate_str = "pre-reveal" if args.gene_codebook_gate == 0 else f"gate={args.gene_codebook_gate}"
     if args.explicit_retrieval:
-        mode = "explicit-retrieval(cohort+genes revealed)"
+        mode = "G0 explicit-retrieval (cohort+genes revealed)"
     elif args.gene_codebook_gate == 0:
-        mode = "implicit-retrieval"
+        mode = "G1 implicit-retrieval (genes pre-revealed)"
     else:
-        mode = f"data-driven({gene_gate_str})"
+        mode = f"G2 data-driven (codebook after run_code #{args.gene_codebook_gate})"
     if args.mislead_cohort:
         sc_gate_str = "pre-reveal" if args.sample_codebook_gate == 0 else f"gate={args.sample_codebook_gate}"
         mode += f" + mislead({args.mislead_cohort}, {sc_gate_str})"

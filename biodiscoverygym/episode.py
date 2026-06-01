@@ -237,7 +237,15 @@ class Episode:
         if expr is None:
             return dataset, {}
 
-        original_genes = expr.columns.tolist()
+        # Build rename map from the union of all modality column sets that will be renamed.
+        # Using expression columns only leaves mutation-only genes unrenamed (real symbols leak).
+        expr_genes = expr.columns.tolist()
+        mutation = dataset.get("mutation")
+        mut_only_genes: list[str] = []
+        if mutation is not None and isinstance(mutation, pd.DataFrame):
+            mut_only_genes = sorted(set(mutation.columns) - set(expr_genes))
+        original_genes = expr_genes + mut_only_genes  # expression order first, then mut-only sorted
+
         shuffled = original_genes.copy()
         rng.shuffle(shuffled)
         anon_genes = [f"GENE_{i:05d}" for i in range(len(shuffled))]
@@ -261,6 +269,11 @@ class Episode:
                 anon_dataset[key] = val
             else:
                 anon_dataset[key] = val
+
+        # Verify complete anonymization — any real symbol passing through is a bug
+        if "mutation" in anon_dataset and anon_dataset["mutation"] is not None:
+            leaked = [c for c in anon_dataset["mutation"].columns if not c.startswith("GENE_")]
+            assert not leaked, f"Gene anonymization leak in mutation matrix: {leaked}"
 
         return anon_dataset, gene_map
 
