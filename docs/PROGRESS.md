@@ -1,6 +1,6 @@
 # BioDiscoveryGym — Status
 
-**Last updated:** 2026-05-19
+**Last updated:** 2026-06-01
 
 ---
 
@@ -9,10 +9,12 @@
 | Area | Status |
 |------|--------|
 | Task A infrastructure | Complete |
-| Task A OS benchmark | **Complete** — 9 runs (3 modes × 3 seeds), results in `results/cohort/external/` |
+| Task A OS benchmark | run6 complete (bugs found + fixed); **run7 ready** |
 | Task A TCGA benchmark | Designed (67 runs); awaiting budget (~$201 on Sonnet) |
 | Task B target discovery | v1+v2 implemented; not yet run systematically |
-| v2 scorer | Complete — 9 components, 18 pts, 3-axis LLM judge |
+| v3 scorer | Complete — 9 components, 18 pts, 3-axis LLM judge |
+| Unified prompt | `agent_system.txt` replaces g0/g1/g2_system.txt; codebook auto-injected |
+| multimodal_cluster() | Pre-loaded in executor namespace (MOFA+/SNF/concat_pca) |
 | PrimeKG + PCST | Integrated — `--primekg` flag, PCST via networkx steiner_tree |
 | OpenTargets | Downloaded and integrated — 1,227 genes, revealed at Stage 5 |
 
@@ -61,6 +63,23 @@ Key findings:
 ### OS subtypes added to reference
 - Added 91 OS rows to `data/subtypes/pancan_subtypes.tsv` → `reference_concordance` now non-zero (NMI = 0.135, weighted = 0.271)
 - _noCNA_noSNV tag on OS run names = CNA and full SNV data absent (pending controlled access)
+
+### run6 → run7 infrastructure changes (2026-06-01)
+
+**Unified system prompt:** `prompts/agent_system.txt` replaces three mode-specific files. All G0/G1/G2 differences handled by 5 format vars. `request_codebook` tool removed; codebook is now auto-injected into the conversation as a narrative.
+
+**Codebook reveal redesign:**
+- G0/G1: injected into the first user message at episode start
+- G2: injected into the 8th `run_code` tool result (deterministic, no RO compliance required)
+
+**multimodal_cluster() pre-loaded** in executor namespace — agents call it directly (MOFA+/SNF/concat_pca).
+
+**Bug fixes:**
+- H3F3A anonymization leak: rename map now covers expression∪mutation columns; assertion added
+- G2 codebook never fired: `_ro_count >= 5` → `_run_code_count >= 8` in run_code handler
+- `data/external` unblocked: added to `_BLOCKED_SUBSTRINGS` (was fully readable, bypassing anonymization)
+
+**Smoke test:** `bash scripts/run_cohort.sh --smoke-test --cohort OS` → G0/G1/G2 × seed=42, 15 calls, results in `results/external/dry-run/`
 
 ---
 
@@ -112,10 +131,14 @@ python scripts/run_episode.py --cohort BRCA --gene-codebook-gate 0 --seed 42
 python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42
 
 # Score any episode
-python scripts/score_episode_v2.py --episode results/{id}/episode.json --cohort BRCA
+python scripts/score_episode_v3.py results/{id}/<label>.json --cohort OS --save
+bash scripts/score_all_withMeth.sh results/external/run7_unified/
 
-# OS multi-seed (3 modes × 3 seeds)
-bash scripts/run_os_multiseed.sh
+# OS smoke test (1 seed/mode, fast verify)
+bash scripts/run_cohort.sh --smoke-test --cohort OS
+
+# OS full benchmark run (3 modes × 3 seeds)
+bash scripts/run_cohort.sh --tag run7_unified --cohort OS
 
 # Task B
 python scripts/run_target_discovery_v2.py --indication "Acute Myeloid Leukemia" --save-log results/aml.json
@@ -125,7 +148,7 @@ python scripts/run_target_discovery_v2.py --indication "Acute Myeloid Leukemia" 
 
 ## Next Steps
 
-1. **TCGA benchmark** — fund and run 67 episodes (G0×7, G1×21, G2×21, G3×18) on Sonnet (~$201)
-2. **PrimeKG evaluation** — run 2 matched episodes (with/without `--primekg`) on same seed/cohort; compare `mechanistic_logic` scores
+1. **run7** — smoke test first, then full 9-run OS benchmark with all fixes applied
+2. **TCGA benchmark** — fund and run 67 episodes (G0×7, G1×21, G2×21, G3×18) on Sonnet (~$201)
 3. **OS with WES/CNA** — re-run once GSA HRA003260 access granted; expect `genomic_coherence_drivers` to become non-zero
 4. **Task B systematic runs** — run target discovery pipeline on 3+ indications

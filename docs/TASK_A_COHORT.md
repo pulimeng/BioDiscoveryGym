@@ -1,7 +1,7 @@
 # Task A — Cohort-Based Analysis
 
 **Part of:** BioDiscoveryGym → Part 2 (Benchmark)
-**Last updated:** 2026-05-28
+**Last updated:** 2026-06-01
 **Status:** Infrastructure complete. OS 9-run benchmark complete. TCGA 67-run benchmark planned (awaiting budget).
 
 ---
@@ -30,7 +30,7 @@ Six layers prevent the agent from knowing what it is looking at:
 | Staging values | Categorical values that fingerprint a cohort (e.g. Enneking `IIB`/`III` for OS) are remapped to `CAT_0`, `CAT_1`, … in-place — column name kept, values anonymized. Skipped in G0 mode (cohort already known). |
 | Demographics | `race`, `ethnicity` stripped (cohort identity leakage — e.g. LIHC is >50% Asian from HBV-endemic regions). `gender` kept — generic across all cancers. |
 | Sample IDs | TCGA barcodes → `SAMPLE_XXXX` (shuffled with seed) |
-| Gene names | Real symbols → `GENE_XXXXX` (shuffled with seed); real names revealed via codebook at call 25 (G2) or call 0 (G0/G1) |
+| Gene names | Real symbols → `GENE_XXXXX` (shuffled with seed, union of expression+mutation columns); codebook auto-injected into the 8th `run_code` result (G2) or at episode start (G0/G1) — no tool call required |
 | Data path | Served from neutral `data/episode/` path, not `data/tcga/lihc/` |
 
 **Kept intentionally:** Survival columns (`vital_status`, `days_to_death`, `days_to_last_follow_up`), `tumor_stage`, `metastasis`, `age_at_diagnosis`, `gender` — all generic pan-cancer clinical variables the agent can legitimately use as phenotypic anchors.
@@ -66,10 +66,10 @@ The osteosarcoma cohort closes the primary confound of the TCGA set: for well-ch
 
 | Group | Label | Gene codebook | Cohort name | Seeds | Runs | Cost (~$3/ep) |
 |-------|-------|---------------|-------------|-------|------|---------------|
-| **G0** | Explicit retrieval | Call 0 | **Revealed** | 42 | 7 × 1 = 7 | ~$21 |
-| **G1** | Implicit retrieval | Call 0 | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
-| **G2** | Data-driven | Call 25 | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
-| **G3** | Mislead | Call 25 | Hidden + wrong barcodes | 42, 7, 123 | 6 pairs × 3 = 18 | ~$54 |
+| **G0** | Explicit retrieval | Episode start | **Revealed** | 42 | 7 × 1 = 7 | ~$21 |
+| **G1** | Implicit retrieval | Episode start | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
+| **G2** | Data-driven | run_code #8 | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
+| **G3** | Mislead | run_code #8 | Hidden + wrong barcodes | 42, 7, 123 | 6 pairs × 3 = 18 | ~$54 |
 | **Total** | | | | | **67** | **~$201** |
 
 ### Group definitions
@@ -80,7 +80,7 @@ The three groups form a clean ablation over what recall channels are open:
 
 - **G1 (implicit retrieval) — gene-biology-mediated recall.** Cohort identity is hidden; gene codebook is pre-revealed (call 0). The agent can infer the cancer type from gene signatures (e.g., H3F3A → pediatric bone tumor, SP7 → osteoblast) and recall subtype structure indirectly. Staging values are remapped to CAT_X to prevent Enneking-specific leakage.
 
-- **G2 (data-driven) — data-first discovery.** Genes are anonymized as GENE_XXXXX until call 25; cohort is hidden. The agent must form its grouping from expression patterns, correlations, and clustering before any biological context is available. G1→G2 isolates the effect of gene-biology recall.
+- **G2 (data-driven) — data-first discovery.** Genes are anonymized as GENE_XXXXX until the 8th `run_code` call; cohort is hidden. The codebook is auto-injected into that run_code result — no tool call needed. The agent must form its grouping from expression patterns, correlations, and clustering before any biological context is available. G1→G2 isolates the effect of gene-biology recall.
 
 - **G3 (mislead):** Same as G2, but sample barcodes suggest the wrong cancer type. Tests whether the agent correctly overrides misleading provenance signals with data evidence.
 
@@ -143,7 +143,7 @@ Score 4 on `mechanistic_logic` requires direction at every step and named molecu
 ### Cohort
 
 **SGH-OS** — Jia et al. 2022, *Nat Commun*. 91 patients, Shanghai General Hospital.
-- Data available to agent: mRNA expression (18,869 genes) + sparse mutation panel (41 genes)
+- Data available to agent: mRNA expression (18,869 genes) + methylation + sparse mutation panel (41 genes, all now anonymized to GENE_XXXXX — see bug fix below)
 - Paper used: mRNA + CNA + DNA methylation (iCluster integrative)
 - Tag: `_noCNA_noSNV` — full WES somatic calls and CNA pending controlled-access approval (GSA HRA003260)
 
@@ -189,6 +189,16 @@ Achievable max = **15 / 18 points** — `genomic_coherence_drivers` (2 pts) and 
 
 Full report: `results/cohort/external/run4_clinAnon_obsTrack/`
 
+### Bug findings (run6 — unified prompt + examination phase)
+
+Three structural bugs identified from run6 traces, all fixed before run7:
+
+1. **H3F3A anonymization leak** — `_anonymize_gene_ids` built the rename map from expression columns only; mutation-only genes passed through as real symbols. H3F3A appeared in G2's mutation matrix, immediately identified by the agent and used to infer osteosarcoma. Fixed: rename map now covers the union of expression + mutation columns; assertion added.
+
+2. **G2 codebook never injected** — Trigger was `_ro_count >= 5`; agents call `record_observation` 1–2 times in practice, never reaching the threshold. G2 submitted with 19/20 GENE_XXXXX placeholders. Fixed: trigger moved to `_run_code_count >= 8` in the `run_code` handler — deterministic, RO-compliance-independent.
+
+3. **`data/external` unblocked** — Raw source files (`data/external/os_jia2022/expression.parquet` etc.) were readable from agent code, completely bypassing anonymization. Fixed: added `"data/external"` to `_BLOCKED_SUBSTRINGS`.
+
 Full report: `results/cohort/external/os_benchmark_summary.md`
 
 ---
@@ -229,26 +239,22 @@ Same Phase 2 questions sent with no data, only cohort framing (n=371, Metabolic 
 cd /Users/lpu/myprojects/BioDiscovery
 conda activate biodiscoverygym
 
-# G0 — explicit retrieval
-python scripts/run_episode.py --cohort BRCA --explicit-retrieval --seed 42
+# Smoke test — runs G0/G1/G2 once each (seed=42, 15 calls, no exam) → results/external/dry-run/
+bash scripts/run_cohort.sh --smoke-test --cohort OS
 
-# G1 — implicit retrieval
-python scripts/run_episode.py --cohort BRCA --gene-codebook-gate 0 --seed 42
+# Full OS benchmark run (3 modes × 3 seeds)
+bash scripts/run_cohort.sh --tag run7_unified --cohort OS
 
-# G2 — data-driven (default)
-python scripts/run_episode.py --cohort BRCA --seed 42
-
-# G2 + PrimeKG (PCST + path-finding for mechanistic reasoning)
-python scripts/run_episode.py --cohort BRCA --seed 42 --primekg
-
-# G3 — mislead
-python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42
+# Single episodes
+python scripts/run_episode.py --cohort OS --explicit-retrieval --seed 42           # G0
+python scripts/run_episode.py --cohort OS --gene-codebook-gate 0 --seed 42         # G1
+python scripts/run_episode.py --cohort OS --seed 42                                 # G2 (codebook at run_code #8)
+python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42           # G3
+python scripts/run_episode.py --cohort OS --seed 42 --primekg                       # G2 + PrimeKG
 
 # Score
-python scripts/score_episode_v2.py --episode results/{id}/episode.json --cohort BRCA
-
-# OS multi-seed (9 runs: 3 modes × 3 seeds)
-bash scripts/run_os_multiseed.sh
+python scripts/score_episode_v3.py results/external/run7_unified/<uuid>/<label>.json --cohort OS --save
+bash scripts/score_all_withMeth.sh results/external/run7_unified/
 ```
 
 ---
@@ -257,19 +263,19 @@ bash scripts/run_os_multiseed.sh
 
 | File | Purpose |
 |------|---------|
-| `biodiscoverygym/episode.py` | `Episode.from_cohort()`, 5-layer anonymization, `--perturb` support |
-| `biodiscoverygym/scoring/evaluator_v2.py` | 9-component v2 scorer |
+| `biodiscoverygym/episode.py` | `Episode.from_cohort()`, 6-layer anonymization (expression+mutation union), `--perturb` support |
+| `biodiscoverygym/scoring/evaluator_v3.py` | 9-component v3 scorer |
 | `biodiscoverygym/scoring/judge.py` | LLM judge (Sonnet) — 3-axis mechanism_grounding (coherence + data_grounding + mechanistic_logic) |
-| `biodiscoverygym/executor.py` | Stateful Python sandbox for Task A — blocks raw TCGA source files, gene maps, prior results; reference databases (DepMap, GTEx, etc.) are accessible after Stage 5 codebook reveal |
+| `biodiscoverygym/executor.py` | Stateful Python sandbox — blocks `data/tcga`, `data/external`, `data/subtypes`, gene maps, prior results; genesets blocked pre-codebook |
+| `biodiscoverygym/tools/multimodal.py` | `multimodal_cluster()` — MOFA+/SNF/concat_pca, pre-loaded in namespace |
 | `biodiscoverygym/tools/pcst.py` | Prize-Collecting Steiner Tree via networkx KMB approximation |
 | `biodiscoverygym/tools/opentargets.py` | OpenTargets actionability lookup — `get_actionability()`, `batch_actionability()` |
-| `agents/claude_agent_cohort.py` | `ClaudeAgentCohort` — anonymization + codebook gating + PrimeKG pre-reveal + OT at Stage 5 |
-| `prompts/agent_g0_system.txt` | G0 system prompt — cohort known, both codebooks pre-revealed, recall+validate framing |
-| `prompts/agent_g1_system.txt` | G1 system prompt — cohort hidden, gene codebook pre-revealed, discovery with gene biology |
-| `prompts/agent_g2_system.txt` | G2 system prompt — cohort hidden, gene codebook gated at call 25, data-first discovery |
-| `scripts/run_episode.py` | CLI: `--cohort`, `--explicit-retrieval`, `--gene-codebook-gate`, `--mislead-cohort`, `--seed`, `--primekg` |
-| `scripts/score_episode_v2.py` | Post-hoc v2 scoring |
-| `scripts/run_os_multiseed.sh` | Multi-seed OS benchmark runner |
+| `agents/claude_agent_cohort.py` | `ClaudeAgentCohort` — G0/G1/G2 unified; codebook auto-injected (episode start for G0/G1, run_code #8 for G2) |
+| `prompts/agent_system.txt` | Unified system prompt for all modes (G0/G1/G2) — 5 format vars |
+| `scripts/run_episode.py` | CLI: `--cohort`, `--explicit-retrieval`, `--gene-codebook-gate` (default 8), `--mislead-cohort`, `--seed`, `--primekg` |
+| `scripts/run_cohort.sh` | Multi-seed benchmark runner: `--tag`, `--cohort`, `--g0/g1/g2-seeds`, `--smoke-test` |
+| `scripts/score_episode_v3.py` | Post-hoc v3 scoring |
+| `scripts/score_all_withMeth.sh` | Batch scorer for all episodes in a results directory |
 | `scripts/download_primekg.py` | PrimeKG download + split (Harvard Dataverse) |
 | `scripts/download_opentargets.py` | OpenTargets download via GraphQL API (no auth) |
 | `data/subtypes/pancan_subtypes.tsv` | Reference subtypes — TCGA pancan + 91 OS samples (S-IA/S-IS/S-HRD/S-MD) |
@@ -278,11 +284,15 @@ bash scripts/run_os_multiseed.sh
 
 ## What's Next
 
-**OS run6 (next):**
-- Metadata now cleaned: `pathology`, `icluster`, `hrd_score`, `tmb`, `subtype` stripped; `tumor_stage` values remapped to CAT_X in G1/G2; no CLIN_XX column renaming
-- Enable Examination stage (Data Lock → Q1-Q4) with Q4 split fix
+**OS run7 (next):**
+- All three bugs from run6 fixed: H3F3A leak, G2 codebook trigger, `data/external` block
+- Unified prompt (`agent_system.txt`), multimodal_cluster tool, HR+CI in survival
+- Smoke test first: `bash scripts/run_cohort.sh --smoke-test --cohort OS`
+- Full run: `bash scripts/run_cohort.sh --tag run7_unified --cohort OS`
+
+**Pending:**
 - Obtain WES/CNA approval (GSA HRA003260) → re-run with full multi-omic data
-- Run: `bash scripts/run_cohort.sh --tag run6 --cohort OS`
+- Stage 3/4 retrofit guard (hold off — revisit if run7 still shows retconning)
 
 **TCGA benchmark (future):**
 - Fund and run 67-episode benchmark (~$201 on Sonnet)
