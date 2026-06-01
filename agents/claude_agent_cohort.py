@@ -118,19 +118,6 @@ _RECORD_OBSERVATION_TOOL: dict = {
 
 _TOOLS: list[dict] = [
     {
-        "name": "request_codebook",
-        "description": (
-            "Returns the gene symbol translation table (GENE_XXXXX → real gene symbol) "
-            "as a JSON string. Only available after a minimum number of tool calls — "
-            "calling too early returns a wait message. Call at the start of Stage 5."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
-    },
-    {
         "name": "run_code",
         "description": (
             "Execute Python code in the analysis environment. "
@@ -265,17 +252,7 @@ class ClaudeAgentCohort:
             self._q1_q3_prompt = None
             self._q4_prompt = None
 
-        # Select system prompt template based on mode:
-        #   G0 — explicit_cohort known, codebook pre-revealed  → agent_g0_system.txt
-        #   G1 — cohort hidden, genes pre-revealed             → agent_g1_system.txt
-        #   G2 — cohort hidden, genes gated                    → agent_g2_system.txt
-        if self.explicit_cohort is not None:
-            _prompt_file = "agent_g0_system.txt"
-        elif codebook_gate == 0:
-            _prompt_file = "agent_g1_system.txt"
-        else:
-            _prompt_file = "agent_g2_system.txt"
-        _system_prompt_template = _load_prompt(_prompt_file)
+        _system_prompt_template = _load_prompt("agent_system.txt")
 
         import httpx
         self.client = anthropic.Anthropic(
@@ -303,7 +280,7 @@ class ClaudeAgentCohort:
                     f"    translation table (SAMPLE_XXXXX → original patient barcode).\n"
                     f"    Load it in run_code with json.load(open(path)).\n"
                     f"    Only available after tool call {sample_codebook_gate} — calling earlier returns a wait message.\n"
-                    f"    Call this at Stage 5 alongside request_codebook() to identify the patient cohort.\n"
+                    f"    Call this at Stage 5 to identify the patient cohort.\n"
                 )
                 sample_codebook_stage5_hint = (
                     " Also call request_sample_codebook() to retrieve the original patient barcodes"
@@ -313,70 +290,17 @@ class ClaudeAgentCohort:
             sample_codebook_section = ""
             sample_codebook_stage5_hint = ""
 
-        if codebook_gate == 0:
-            codebook_gate_note = "Available immediately — provided at the start of the episode."
-            if self.mislead_cohort:
-                codebook_preamble = (
-                    "IMPORTANT: Both the gene codebook (GENE_XXXXX → real symbol) and the sample"
-                    " codebook (SAMPLE_XXXX → original patient barcode) have been provided to you"
-                    " at the start of this episode. File paths are in your initial message."
-                    " Load and use real gene names and patient barcodes throughout ALL stages"
-                    " from Stage 0 onward — do not wait until Stage 5."
-                )
-                stage5_codebook_instruction = (
-                    "Both the gene codebook and sample codebook were provided at the start of this"
-                    " episode (see initial message for file paths). Load them now if you haven't"
-                    " already.{sample_codebook_stage5_hint} Use the real gene symbols to:"
-                )
-            else:
-                codebook_preamble = (
-                    "IMPORTANT: The gene codebook (GENE_XXXXX → real symbol) has been provided"
-                    " at the start of this episode. Load and use real gene names throughout ALL"
-                    " stages from Stage 0 onward — do not wait until Stage 5."
-                )
-                stage5_codebook_instruction = (
-                    "The gene codebook was provided at the start of this episode."
-                    " Load it now if you haven't already. Use the real gene symbols to:"
-                )
-        else:
-            codebook_gate_note = f"Only available after tool call {codebook_gate} — calling earlier returns a wait message."
-            codebook_preamble = (
-                "Your goal is to conduct a rigorous molecular discovery analysis on this cohort"
-                " using only the statistical structure of the expression data and any available"
-                " clinical metadata. You cannot use gene names to infer biology — all conclusions"
-                " must come from the data itself."
-            )
-            stage5_codebook_instruction = (
-                "At the start of Stage 5, call request_codebook() to receive the real gene"
-                " symbols for all GENE_XXXXX identifiers.{sample_codebook_stage5_hint} Use these to:"
-            )
-
-        stage5_codebook_instruction = stage5_codebook_instruction.format(
-            sample_codebook_stage5_hint=sample_codebook_stage5_hint
-        )
-
         if self.explicit_cohort:
-            full_name = _COHORT_FULL_NAMES.get(self.explicit_cohort, self.explicit_cohort)
-            # External cohorts (e.g. OS) don't have a TCGA prefix
-            tcga_prefix = "" if self.explicit_cohort in ("OS",) else f"TCGA "
-            disease_hint = (
-                f"The cohort: {tcga_prefix}{self.explicit_cohort} ({full_name}). "
-                f"You may draw on your knowledge of {full_name} biology, known subtypes, "
-                f"and established driver genes to guide your analysis."
-            )
+            disease_hint = "\n"  # blank line; cohort identity delivered via pre_reveal_narrative
         else:
-            disease_hint = "The disease: redacted. The tissue: undisclosed."
+            disease_hint = "The disease: redacted. The tissue: undisclosed.\n\n"
 
         self._system_prompt = _system_prompt_template.format(
             max_tool_calls=max_tool_calls,
             force_submit_at=int(max_tool_calls * 0.8),
-            codebook_gate=codebook_gate,
-            codebook_gate_note=codebook_gate_note,
-            codebook_preamble=codebook_preamble,
-            stage5_codebook_instruction=stage5_codebook_instruction,
+            disease_hint=disease_hint,
             sample_codebook_section=sample_codebook_section,
             sample_codebook_stage5_hint=sample_codebook_stage5_hint,
-            disease_hint=disease_hint,
         )
 
         self._tools = list(_TOOLS) + [_RECORD_OBSERVATION_TOOL]
@@ -387,25 +311,24 @@ class ClaudeAgentCohort:
     def run(self, episode_id: str, output_dir: Path | None = None) -> tuple[dict[str, Any], list, dict]:
         executor = CodeExecutor(data_dir=self.data_dir, output_dir=output_dir)
 
-        # Pre-reveal codebooks at start when gates are 0
+        # Pre-reveal codebook for G0 (explicit cohort) and G1 (codebook_gate == 0)
+        pre_reveal_narrative = ""
         pre_reveal_lines: list[str] = []
 
         if self.gene_map and self.codebook_gate == 0:
-            codebook_path = output_dir / "codebook.json"
-            codebook_path.write_text(json.dumps(self.gene_map))
-            executor.namespace["codebook"] = dict(self.gene_map)
-            executor.unblock_genesets()
-            pre_reveal_lines.append(
-                f"Gene codebook (GENE_XXXXX → real symbol) is available as the variable `codebook`"
-                f"  — {len(self.gene_map)} translations, available immediately.\n"
-                f"  Pathway gene sets (MSigDB) are also accessible:\n"
-                f"    Hallmarks : data/genesets/msigdb/h.all.v2023.2.Hs.symbols.gmt\n"
-                f"    Reactome  : data/genesets/msigdb/c2.cp.reactome.v2023.2.Hs.symbols.gmt\n"
-                f"    KEGG      : data/genesets/msigdb/c2.cp.kegg_medicus.v2023.2.Hs.symbols.gmt\n"
-                f"    GO BP     : data/genesets/msigdb/c5.go.bp.v2023.2.Hs.symbols.gmt\n"
-                f"  GMT format: name, _, *genes = line.strip().split('\\t')"
-            )
-            self._log(f"[ClaudeAgentCohort] Pre-revealed gene codebook → namespace + unblocked genesets")
+            codebook_narrative = self._do_reveal_codebook(output_dir, executor)
+            if self.explicit_cohort:
+                full_name = _COHORT_FULL_NAMES.get(self.explicit_cohort, self.explicit_cohort)
+                tcga_prefix = "" if self.explicit_cohort in ("OS",) else "TCGA "
+                pre_reveal_narrative = (
+                    f"Your assistant has identified: this is "
+                    f"{tcga_prefix}{self.explicit_cohort} ({full_name}).\n\n"
+                    + codebook_narrative
+                )
+                self._log(f"[ClaudeAgentCohort] Pre-revealed disease identity + gene codebook (G0)")
+            else:
+                pre_reveal_narrative = codebook_narrative
+                self._log(f"[ClaudeAgentCohort] Pre-revealed gene codebook (G1)")
 
         if self.mislead_cohort and self.sample_codebook_gate == 0:
             fake_map = self._generate_fake_sample_codebook()
@@ -466,11 +389,12 @@ class ClaudeAgentCohort:
                 self._log(f"[ClaudeAgentCohort] PrimeKG requested but missing splits: {missing} — run scripts/download_primekg.py")
 
         begin_text = "Begin. Work through each stage in order and show your reasoning."
+        if pre_reveal_narrative:
+            begin_text += f"\n\n{pre_reveal_narrative}"
         if pre_reveal_lines:
             begin_text += (
-                "\n\nThe following reference files have been provided at the start of this episode:\n"
-                + "\n".join(f"  • {line}" for line in pre_reveal_lines)
-                + "\n\nLoad them in run_code with: json.load(open('<path>'))"
+                "\n\nAdditional resources available at the start of this episode:\n"
+                + "\n\n".join(pre_reveal_lines)
             )
 
         messages: list[dict] = [
@@ -490,6 +414,8 @@ class ClaudeAgentCohort:
         discovery: dict | None = None
         usage_log: list[dict] = []
         observations: list[dict] = []
+        _ro_count = 0
+        _codebook_injected = self.codebook_gate == 0  # already revealed for G0/G1
 
         self._log(f"[ClaudeAgentCohort] Starting episode {episode_id} (model={self.model})")
 
@@ -582,68 +508,7 @@ class ClaudeAgentCohort:
 
                 tool_call_count += 1
 
-                if block.name == "request_codebook":
-                    if tool_call_count < self.codebook_gate:
-                        remaining = self.codebook_gate - tool_call_count
-                        content = (
-                            f"Codebook not yet available — complete Stage 4 first "
-                            f"({remaining} more tool calls required)."
-                        )
-                        self._log(f"[request_codebook] Gated — {remaining} calls remaining")
-                    else:
-                        codebook_path = output_dir / "codebook.json"
-                        codebook_path.write_text(json.dumps(self.gene_map))
-                        executor.namespace["codebook"] = dict(self.gene_map)
-                        executor.unblock_genesets()
-                        ot_available = (
-                            Path("data/opentargets/ot_tractability.parquet").exists()
-                            and Path("data/opentargets/ot_known_drugs.parquet").exists()
-                        )
-                        ot_section = (
-                            f"\nOpenTargets actionability (tractability + approved/clinical drugs):\n"
-                            f"  data/opentargets/ot_tractability.parquet\n"
-                            f"    columns: gene_symbol, modality (SM/AB/PR/OC), bucket_label,\n"
-                            f"             value (bool), has_approved_drug, has_clinical_drug\n"
-                            f"  data/opentargets/ot_known_drugs.parquet\n"
-                            f"    columns: gene_symbol, drug_id, drug_name, drug_type,\n"
-                            f"             max_phase_str (e.g. PHASE_3 / APPROVAL), max_phase_num (1-4),\n"
-                            f"             is_approved, disease_id, disease_name\n"
-                            f"  Quick lookup:\n"
-                            f"    from biodiscoverygym.tools.opentargets import get_actionability, batch_actionability\n"
-                            f"    print(get_actionability('EGFR').summary())\n"
-                            f"    ranked = batch_actionability(['EGFR','TP53','MYC'])  # DataFrame\n"
-                        ) if ot_available else ""
-                        content = (
-                            f"Gene codebook is now available as the variable `codebook` in your Python namespace.\n"
-                            f"Use it directly in run_code — no file loading needed:\n"
-                            f"  real_symbol = codebook['GENE_XXXXX']\n"
-                            f"Contains {len(self.gene_map)} gene translations.\n"
-                            f"\n"
-                            f"The following reference files are now accessible:\n"
-                            f"\n"
-                            f"Pathway gene sets (MSigDB):\n"
-                            f"  Hallmarks  : data/genesets/msigdb/h.all.v2023.2.Hs.symbols.gmt\n"
-                            f"  Reactome   : data/genesets/msigdb/c2.cp.reactome.v2023.2.Hs.symbols.gmt\n"
-                            f"  KEGG       : data/genesets/msigdb/c2.cp.kegg_medicus.v2023.2.Hs.symbols.gmt\n"
-                            f"  GO BP      : data/genesets/msigdb/c5.go.bp.v2023.2.Hs.symbols.gmt\n"
-                            f"  GMT format: name, _, *genes = line.strip().split('\\t')\n"
-                            f"\n"
-                            f"Protein interaction network (STRING, high-confidence):\n"
-                            f"  PPI edges  : data/genesets/stringdb/human_ppi_high_conf.tsv\n"
-                            f"               columns: gene1, gene2, combined_score (700–1000)\n"
-                            f"  Annotations: data/genesets/stringdb/9606.protein.info.v12.0.txt.gz\n"
-                            f"               columns: preferred_name, annotation\n"
-                            f"\n"
-                            f"Cancer gene list (OncoKB):\n"
-                            f"  data/cancer_genes/oncokb_cancer_gene_list.tsv\n"
-                            f"{ot_section}"
-                        )
-                        self._log(f"[request_codebook] Released → {codebook_path} (genesets unblocked)")
-                    tool_results.append(
-                        {"type": "tool_result", "tool_use_id": block.id, "content": content}
-                    )
-
-                elif block.name == "request_sample_codebook":
+                if block.name == "request_sample_codebook":
                     if tool_call_count < self.sample_codebook_gate:
                         remaining = self.sample_codebook_gate - tool_call_count
                         content = (
@@ -734,15 +599,23 @@ class ClaudeAgentCohort:
                     obs = dict(block.input)
                     obs["call_num"] = tool_call_count
                     observations.append(obs)
+                    _ro_count += 1
                     hyp_preview = obs.get("current_hypothesis", "")[:80]
-                    self._log(f"[record_observation] call={tool_call_count} conf={obs.get('confidence')} hyp={hyp_preview!r}")
+                    self._log(f"[record_observation] call={tool_call_count} ro={_ro_count} conf={obs.get('confidence')} hyp={hyp_preview!r}")
+                    ro_content = (
+                        f"Observation recorded (checkpoint {len(observations)}). "
+                        f"Next: {obs.get('next_action', 'proceed')}"
+                    )
+                    # G2 auto-inject: reveal codebook after 5th record_observation (end of Stage 4)
+                    if not _codebook_injected and _ro_count >= 5 and self.gene_map:
+                        codebook_narrative = self._do_reveal_codebook(output_dir, executor)
+                        ro_content += f"\n\n{codebook_narrative}"
+                        _codebook_injected = True
+                        self._log(f"[ClaudeAgentCohort] Stage 5 reached — auto-injected gene codebook (G2)")
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
-                        "content": (
-                            f"Observation recorded (checkpoint {len(observations)}). "
-                            f"Next: {obs.get('next_action', 'proceed')}"
-                        ),
+                        "content": ro_content,
                     })
 
                 elif block.name == "submit_data_lock":
@@ -880,6 +753,57 @@ class ClaudeAgentCohort:
 
         self._log("[ClaudeAgentCohort] Forced submission failed — returning empty discovery.")
         return None
+
+    def _do_reveal_codebook(self, output_dir: Path, executor) -> str:
+        """Write codebook to disk, inject into namespace, unblock genesets. Returns narrative."""
+        codebook_path = output_dir / "codebook.json"
+        codebook_path.write_text(json.dumps(self.gene_map))
+        executor.namespace["codebook"] = dict(self.gene_map)
+        executor.unblock_genesets()
+
+        ot_available = (
+            Path("data/opentargets/ot_tractability.parquet").exists()
+            and Path("data/opentargets/ot_known_drugs.parquet").exists()
+        )
+        ot_section = (
+            f"\nOpenTargets actionability (tractability + approved/clinical drugs):\n"
+            f"  data/opentargets/ot_tractability.parquet\n"
+            f"    columns: gene_symbol, modality (SM/AB/PR/OC), bucket_label,\n"
+            f"             value (bool), has_approved_drug, has_clinical_drug\n"
+            f"  data/opentargets/ot_known_drugs.parquet\n"
+            f"    columns: gene_symbol, drug_id, drug_name, drug_type,\n"
+            f"             max_phase_str (e.g. PHASE_3 / APPROVAL), max_phase_num (1-4),\n"
+            f"             is_approved, disease_id, disease_name\n"
+            f"  Quick lookup:\n"
+            f"    from biodiscoverygym.tools.opentargets import get_actionability, batch_actionability\n"
+            f"    print(get_actionability('EGFR').summary())\n"
+            f"    ranked = batch_actionability(['EGFR','TP53','MYC'])  # DataFrame\n"
+        ) if ot_available else ""
+
+        return (
+            f"Your assistant has identified the gene codebook — {len(self.gene_map)} translations loaded.\n"
+            f"`codebook` is now available in your Python namespace:\n"
+            f"  real_symbol = codebook['GENE_XXXXX']\n"
+            f"\n"
+            f"Reference files now accessible:\n"
+            f"\n"
+            f"Pathway gene sets (MSigDB):\n"
+            f"  Hallmarks  : data/genesets/msigdb/h.all.v2023.2.Hs.symbols.gmt\n"
+            f"  Reactome   : data/genesets/msigdb/c2.cp.reactome.v2023.2.Hs.symbols.gmt\n"
+            f"  KEGG       : data/genesets/msigdb/c2.cp.kegg_medicus.v2023.2.Hs.symbols.gmt\n"
+            f"  GO BP      : data/genesets/msigdb/c5.go.bp.v2023.2.Hs.symbols.gmt\n"
+            f"  GMT format: name, _, *genes = line.strip().split('\\t')\n"
+            f"\n"
+            f"Protein interaction network (STRING, high-confidence):\n"
+            f"  PPI edges  : data/genesets/stringdb/human_ppi_high_conf.tsv\n"
+            f"               columns: gene1, gene2, combined_score (700–1000)\n"
+            f"  Annotations: data/genesets/stringdb/9606.protein.info.v12.0.txt.gz\n"
+            f"               columns: preferred_name, annotation\n"
+            f"\n"
+            f"Cancer gene list (OncoKB):\n"
+            f"  data/cancer_genes/oncokb_cancer_gene_list.tsv\n"
+            f"{ot_section}"
+        )
 
     def _generate_fake_sample_codebook(self) -> dict[str, str]:
         """Return {SAMPLE_XXXX: TCGA-{mislead_cohort}-XXXX} by reading the episode parquet index."""

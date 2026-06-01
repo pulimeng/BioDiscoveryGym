@@ -25,6 +25,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from biodiscoverygym.tools.multimodal import multimodal_cluster
+
 
 # Paths the Task A cohort agent must not read.
 # data/tcga — raw source files contain real sample barcodes and could reveal cohort identity.
@@ -179,6 +181,8 @@ class CodeExecutor:
             "np": np,
             "plt": plt,
             "matplotlib": matplotlib,
+            # Multi-modal integrative clustering tool (MOFA+ / SNF / concat_pca)
+            "multimodal_cluster": multimodal_cluster,
             # builtins available implicitly via exec — no need to re-add
         }
         return ns
