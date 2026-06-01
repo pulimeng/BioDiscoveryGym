@@ -266,8 +266,6 @@ class EvaluatorV2:
         if not data_lock_report and not examination_answers:
             return report
 
-        examination_text = "\n\n".join(examination_answers)
-
         def _record(key: str, score: float, diag: dict):
             w = EXAMINATION_WEIGHTS[key]
             report.raw_scores[key] = score
@@ -278,8 +276,9 @@ class EvaluatorV2:
         s, d = score_exam_data_lock_quality(data_lock_report)
         _record("exam_data_lock_quality", s, d)
 
-        # 2. Experiment depth (LLM judge on Q4)
-        s, d = score_exam_experiment_depth(examination_text, data_lock_report, model=self.llm_model)
+        # 2. Experiment depth (LLM judge on Q4 only — always the last answer block)
+        q4_text = examination_answers[-1] if examination_answers else ""
+        s, d = score_exam_experiment_depth(q4_text, data_lock_report, model=self.llm_model)
         _record("exam_experiment_depth", s, d)
 
         # 3. Mechanistic integration (LLM judge on Q1-Q4)
