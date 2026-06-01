@@ -8,9 +8,10 @@
 #   bash scripts/run_cohort.sh --tag run6_canonical --cohort OS
 #   bash scripts/run_cohort.sh --tag run6_opus --cohort OS --model claude-opus-4-7 --g2-seeds "0 1 7"
 #   bash scripts/run_cohort.sh --tag brca_test --cohort BRCA --g0-seeds "42" --g1-seeds "" --g2-seeds ""
+#   bash scripts/run_cohort.sh --smoke-test --cohort OS          # one seed per mode, fast verify
 #
-# Required:
-#   --tag TAG           Run label, used as results subfolder name (e.g. run5_clinAnon)
+# Required (unless --smoke-test):
+#   --tag TAG           Run label, used as results subfolder name (e.g. run6_canonical)
 #
 # Optional:
 #   --cohort COHORT     Cancer cohort (default: OS)
@@ -25,6 +26,8 @@
 #   --skip-score        Run episodes but skip scoring afterwards
 #   --score-only        Skip running; score existing results in the output folder
 #   --dry-run           Print commands without executing them
+#   --smoke-test        Quick pipeline check: one seed per mode (seed=42), max-tool-calls=15,
+#                       no examination, output to results/[external/]dry-run/
 
 set -euo pipefail
 
@@ -41,6 +44,7 @@ NO_EXAMINATION=0
 SKIP_SCORE=0
 SCORE_ONLY=0
 DRY_RUN=0
+SMOKE_TEST=0
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -57,8 +61,9 @@ while [[ $# -gt 0 ]]; do
         --skip-score)     SKIP_SCORE=1;     shift ;;
         --score-only)     SCORE_ONLY=1;     shift ;;
         --dry-run)        DRY_RUN=1;        shift ;;
+        --smoke-test)     SMOKE_TEST=1;     shift ;;
         -h|--help)
-            sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         *)
             echo "Unknown argument: $1" >&2
@@ -67,10 +72,20 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# ── Smoke-test overrides ──────────────────────────────────────────────────────
+if [[ $SMOKE_TEST -eq 1 ]]; then
+    [[ -z "$TAG" ]] && TAG="dry-run"
+    G0_SEEDS="42"
+    G1_SEEDS="42"
+    G2_SEEDS="42"
+    [[ $MAX_TOOL_CALLS -gt 15 ]] && MAX_TOOL_CALLS=15
+    NO_EXAMINATION=1
+fi
+
 # ── Validation ────────────────────────────────────────────────────────────────
 if [[ -z "$TAG" ]]; then
-    echo "Error: --tag is required." >&2
-    echo "Example: bash scripts/run_cohort.sh --tag run6_canonical --cohort OS" >&2
+    echo "Error: --tag is required (or use --smoke-test to default to 'dry-run')." >&2
+    echo "Example: bash scripts/run_cohort.sh --tag run7_unified --cohort OS" >&2
     exit 1
 fi
 
@@ -98,7 +113,11 @@ EXTRA_FLAGS="--max-tool-calls ${MAX_TOOL_CALLS}"
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo "============================================================"
+if [[ $SMOKE_TEST -eq 1 ]]; then
+echo "  BioDiscoveryGym  *** SMOKE TEST (dry-run) ***"
+else
 echo "  BioDiscoveryGym Benchmark Run"
+fi
 echo "  Tag     : ${TAG}"
 echo "  Cohort  : ${COHORT}"
 echo "  Model   : ${MODEL}"
@@ -107,8 +126,9 @@ echo "  G1 seeds: ${G1_SEEDS:-"(none)"}"
 echo "  G2 seeds: ${G2_SEEDS:-"(none)"}"
 echo "  Max calls: ${MAX_TOOL_CALLS} (Phase 1)"
 echo "  Exam    : $([ $NO_EXAMINATION -eq 1 ] && echo disabled || echo enabled)"
-echo "  Output  : ${RESULTS_BASE}/<uuid>/"
-[[ $DRY_RUN -eq 1 ]] && echo "  Mode    : DRY RUN — no episodes will run"
+echo "  Output  : ${RESULTS_BASE}/"
+[[ $DRY_RUN -eq 1 ]]    && echo "  Mode    : ECHO ONLY — no episodes will run"
+[[ $SMOKE_TEST -eq 1 ]] && echo "  Mode    : SMOKE TEST — quick pipeline check (1 seed/mode, budget=15, no exam)"
 echo "============================================================"
 echo ""
 
