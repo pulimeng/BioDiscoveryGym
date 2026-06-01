@@ -29,7 +29,8 @@ from biodiscoverygym.tools.multimodal import multimodal_cluster
 
 
 # Paths the Task A cohort agent must not read.
-# data/tcga — raw source files contain real sample barcodes and could reveal cohort identity.
+# data/tcga, data/external — raw source files contain real gene/sample names and could
+#   reveal cohort identity or bypass anonymization entirely.
 # results/ and _evaluation — block traversal to prior scored episodes and gene maps.
 # Geneset paths are gated (see _GENESET_BLOCKS below) and lifted at Stage 5 codebook reveal.
 # Reference databases (depmap, gtex, gnomad, etc.) are NOT blocked here — Task A agents
@@ -40,6 +41,7 @@ _BLOCKED_SUBSTRINGS = (
     ".biodiscoverygym/vault",
     "episode_key",
     "data/tcga",
+    "data/external",  # raw source files (e.g. os_jia2022/) with real gene/sample names
     "data/subtypes",
     "data/genesets",
     "data/cancer_genes",
