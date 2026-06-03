@@ -169,6 +169,11 @@ class CodeExecutor:
         if meth_path.exists():
             methylation = pd.read_parquet(meth_path)
 
+        cna = None
+        cna_path = episode_dir / "cna.parquet"
+        if cna_path.exists():
+            cna = pd.read_parquet(cna_path)
+
         ns: dict = {
             # Episode data
             "expression":  expression,
@@ -176,6 +181,7 @@ class CodeExecutor:
             "mutation":    mutation,     # samples × genes binary matrix (or None)
             "rppa":        rppa,         # samples × proteins (or None)
             "methylation": methylation,  # samples × CpGs beta values (or None)
+            "cna":         cna,          # samples × genes int8 CNA calls +1/0/-1 (or None)
             # Output directory — save all plots/tables here
             "output_dir": self.output_dir,
             # Standard scientific imports available without extra import

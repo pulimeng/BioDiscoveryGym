@@ -6,6 +6,8 @@ What you have:
   · Clinical metadata                  — survival outcomes, tumor stage, demographics
   · Somatic mutation calls             — binary matrix per gene (if available)
   · DNA methylation (Illumina EPIC 850K) — beta values per CpG site (if available)
+  · Copy number alterations (GISTIC2)  — focal amp/del calls per gene (if available;
+                                         note partial sample coverage — see cna below)
 
 Your task: find the signal. These patients have different fates — the molecular data
 contains the explanation. Identify the groups, characterize what separates them, and
@@ -25,9 +27,17 @@ directly to Stage 6.
 **After `submit_discovery` you enter a separate Examination phase with its own budget.**
 First: a structured Data Lock sweep — run the required analyses and call `submit_data_lock`.
 Then: Q1–Q3 are revealed (answer in one response), followed by Q4 as a separate prompt.
-Q4 requires a complete mechanistic-validation experiment — model system, perturbation,
-readout, and falsification criterion — and partial answers score zero. Write complete
-answers; do not truncate.
+Q4 requires a complete mechanistic-validation experiment with five mandatory parts —
+partial answers score zero:
+  (a) specific named model system + numeric dataset evidence justifying the choice
+  (b) specific perturbation target + method + expected direction
+  (c) specific assay + quantitative expected change (fold-change, p-value, IC50, etc.)
+  (d) falsification criterion: a specific measurable result that REJECTS the hypothesis
+      (naming variable, direction, and threshold — not just "if the effect is absent")
+  (e) orthogonal modality prediction: a testable prediction about a non-expression modality
+      (mutation enrichment, DNA methylation change at a named locus, CNA event, or protein
+      level) with gene/locus named and direction/threshold stated
+Write complete answers; do not truncate.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STAGE 0 — DATA ORIENTATION
@@ -64,11 +74,14 @@ Produce:
   - Top differentially expressed genes between groups: for each, report
     the absolute per-group values (not just the difference), effect size,
     and p-value. This applies to all data modalities — expression, methylation
-    beta values, RPPA z-scores, mutation frequencies. Statistical significance
-    is necessary but not sufficient: a delta that is tiny relative to the
-    measurement range of this dataset is not a discovery regardless of p-value.
-    Explicitly assess whether the absolute values and effect sizes are
-    meaningful in the context of what this assay can actually detect.
+    beta values, RPPA z-scores, mutation frequencies, CNA focal amp/del rates.
+    Statistical significance is necessary but not sufficient: a delta that is
+    tiny relative to the measurement range of this dataset is not a discovery
+    regardless of p-value. Explicitly assess whether the absolute values and
+    effect sizes are meaningful in the context of what this assay can actually
+    detect. For CNA: report per-subtype amp and del rates separately; note that
+    samples without array coverage contribute zeros — compute rates over
+    CNA-covered samples using (cna != 0).any(axis=1) as the coverage mask.
   - Confidence in the grouping
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -83,9 +96,9 @@ Produce:
   Cluster-count justification: report at least three perspectives across
   k ∈ {{2, 3, 4, 5}} — silhouette, Calinski-Harabasz, and cluster-size balance
   (smallest cluster ≥ 8 samples). Silhouette systematically favors balanced binary
-  splits — if the dominant variance axis is bimodal (e.g. immune-vs-tumor), silhouette
-  will push you to k=2 even when finer biological structure exists. Inspect per-k
-  cluster sizes and survival stratification before committing.
+  splits — if a dominant variance axis drives k=2, finer biological structure may
+  still exist within each half. Inspect per-k cluster sizes and survival
+  stratification before committing.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STAGE 4 — STATISTICAL DEEP-DIVE
@@ -101,16 +114,23 @@ Produce:
   - Predictability: can you build a minimal classifier from top marker genes?
     (leave-one-out or cross-validated accuracy)
   - Effect size characterization: for every reported feature across all
-    modalities (expression, methylation, RPPA, mutation), report the absolute
+    modalities (expression, methylation, RPPA, mutation, CNA), report the absolute
     per-group values alongside the difference. Ground your confidence in the
     actual measurement scale — a statistically significant difference that is
     negligible relative to the assay's dynamic range is not a discovery.
 
-  Multi-modal integration: if methylation, RPPA, or mutation data is available,
+  CNA analysis: if cna is not None, run the following:
+    covered = cna[(cna != 0).any(axis=1)]   # samples with any CNA call
+    # Identify genes recurrently amplified or deleted in the cohort; check whether
+    # subtype enrichment is significant (Fisher exact vs other subtypes). Look for
+    # genes hit by both SNV and CNA within the same subtype — convergent two-hit
+    # evidence is a strong mechanistic signal.
+
+  Multi-modal integration: if methylation, RPPA, mutation, or CNA data is available,
   use the pre-loaded multimodal_cluster() function to integrate modalities:
 
     result = multimodal_cluster(
-        {{"expression": expression, "methylation": methylation, "rppa": rppa}},
+        {{"expression": expression, "methylation": methylation, "rppa": rppa, "cna": cna}},
         k=3, method="mofa",   # or "snf" or "concat_pca"
     )
     labels  = result["labels"]            # pd.Series, sample → "C0"/"C1"/...
@@ -127,10 +147,14 @@ Produce:
   Within-partition heterogeneity: even at your chosen k, scan for marker modules
   that may be diluted within a large cluster. After differential expression on
   your final partition, look for tight modules of 4–10 highly co-expressed genes
-  that don't define your top-level partition. Cancer-testis antigens (MAGE family,
-  NY-ESO-1, GAGE family), cell-cycle / proliferation modules, and stem-cell
-  programs commonly form such modules. Report them as within-cluster heterogeneity
-  even when they don't drive the top-level partition.
+  that don't define your top-level partition. These often reflect biological
+  sub-programs (lineage state, immune infiltration, cell cycle, antigen expression)
+  diluted by the broader heterogeneity. If CNA data is available, also look for
+  CNA events accompanied by concordant expression of the same gene (focal amp +
+  overexpression, or focal del + underexpression) — this is the canonical
+  signature of a somatic driver and distinguishes biologically meaningful CNA
+  from passenger events. Report all such modules as within-cluster findings even
+  when they don't drive the top-level split.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STAGE 5 — BIOLOGICAL ANNOTATION & VALIDATION
@@ -195,8 +219,19 @@ Your patient dataset (pre-loaded in the code environment):
                 (cg######) — opaque identifiers, NOT gene symbols. Cross-correlate with
                 expression to find epigenetically silenced genes (promoter hypermethylation
                 → low expression). Pre-filtered to the top most-variable CpGs across samples.
+  cna         — DataFrame (or None), samples × genes (GENE_XXXXX IDs), integer copy number
+                alteration calls: +1 = focal amplification, -1 = focal deletion, 0 = neutral.
+                Derived from GISTIC2 focal CNA peaks. Only samples with array CNA data are
+                non-zero; samples without array coverage have all-zero rows (0 ≠ no alteration,
+                it means no data). Always compute rates over covered samples only:
+                    covered_mask = (cna != 0).any(axis=1)
+                    cna_covered  = cna[covered_mask]   # subset with actual data
+                    amp_rate = (cna_covered == 1).mean()   # fraction of covered samples
+                Use to find recurrently amplified/deleted genes and their subtype enrichment
+                (Fisher test). Cross-reference with mutation for converging genomic evidence
+                (same gene hit by both SNV and CNA in the same subtype).
   output_dir  — Path, save all plots and tables here
-  Check availability: print(mutation is not None), print(rppa is not None), print(methylation is not None)
+  Check availability: print(mutation is not None), print(rppa is not None), print(methylation is not None), print(cna is not None)
   codebook — dict, GENE_XXXXX → real symbol (available when revealed; check: 'codebook' in dir())
 
 run_code(code: str) → str

@@ -238,13 +238,16 @@ class Episode:
             return dataset, {}
 
         # Build rename map from the union of all modality column sets that will be renamed.
-        # Using expression columns only leaves mutation-only genes unrenamed (real symbols leak).
+        # Using expression columns only leaves mutation-only or CNA-only genes unrenamed (real symbols leak).
         expr_genes = expr.columns.tolist()
         mutation = dataset.get("mutation")
-        mut_only_genes: list[str] = []
+        cna = dataset.get("cna")
+        extra_genes: set[str] = set()
         if mutation is not None and isinstance(mutation, pd.DataFrame):
-            mut_only_genes = sorted(set(mutation.columns) - set(expr_genes))
-        original_genes = expr_genes + mut_only_genes  # expression order first, then mut-only sorted
+            extra_genes.update(set(mutation.columns) - set(expr_genes))
+        if cna is not None and isinstance(cna, pd.DataFrame):
+            extra_genes.update(set(cna.columns) - set(expr_genes))
+        original_genes = expr_genes + sorted(extra_genes)  # expression order first, then extras sorted
 
         shuffled = original_genes.copy()
         rng.shuffle(shuffled)
@@ -257,7 +260,7 @@ class Episode:
         for key, val in dataset.items():
             if not isinstance(val, pd.DataFrame) or val is None:
                 anon_dataset[key] = val
-            elif key in ("expression", "mutation"):
+            elif key in ("expression", "mutation", "cna"):
                 # Columns are gene symbols — rename directly
                 anon_dataset[key] = val.rename(columns=symbol_to_anon)
             elif key == "rppa":
@@ -271,9 +274,10 @@ class Episode:
                 anon_dataset[key] = val
 
         # Verify complete anonymization — any real symbol passing through is a bug
-        if "mutation" in anon_dataset and anon_dataset["mutation"] is not None:
-            leaked = [c for c in anon_dataset["mutation"].columns if not c.startswith("GENE_")]
-            assert not leaked, f"Gene anonymization leak in mutation matrix: {leaked}"
+        for _check_key in ("mutation", "cna"):
+            if _check_key in anon_dataset and anon_dataset[_check_key] is not None:
+                leaked = [c for c in anon_dataset[_check_key].columns if not c.startswith("GENE_")]
+                assert not leaked, f"Gene anonymization leak in {_check_key} matrix: {leaked}"
 
         return anon_dataset, gene_map
 
@@ -306,6 +310,11 @@ class Episode:
         if meth is not None:
             meth.to_parquet(self.episode_data_dir / "methylation.parquet")
             written.append(f"methylation({meth.shape[0]}×{meth.shape[1]})")
+
+        cna = self.dataset.get("cna")
+        if cna is not None:
+            cna.to_parquet(self.episode_data_dir / "cna.parquet")
+            written.append(f"cna({cna.shape[0]}×{cna.shape[1]})")
 
         print(f"[Episode {self.episode_id}] Data → {self.episode_data_dir}/ [{', '.join(written)}]")
 

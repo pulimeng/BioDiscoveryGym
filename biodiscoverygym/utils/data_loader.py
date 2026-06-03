@@ -263,10 +263,12 @@ class DataLoader:
             )
 
         methylation_path = d / "methylation.parquet"
+        cna_path         = d / "cna.parquet"
 
         mutation    = pd.read_parquet(mutation_path).reindex(expression.index)    if mutation_path.exists()    else None
         rppa        = pd.read_parquet(rppa_path).reindex(expression.index)         if rppa_path.exists()        else None
         methylation = pd.read_parquet(methylation_path).reindex(expression.index) if methylation_path.exists() else None
+        cna         = pd.read_parquet(cna_path).reindex(expression.index)          if cna_path.exists()         else None
 
         if mutation is not None:
             print(f"[TCGA {cohort}] Loaded mutations: {mutation.shape}")
@@ -274,6 +276,8 @@ class DataLoader:
             print(f"[TCGA {cohort}] Loaded RPPA: {rppa.shape}")
         if methylation is not None:
             print(f"[TCGA {cohort}] Loaded methylation: {methylation.shape}")
+        if cna is not None:
+            print(f"[TCGA {cohort}] Loaded CNA: {cna.shape}")
 
         return {
             "expression":  expression,
@@ -281,6 +285,7 @@ class DataLoader:
             "mutation":    mutation,
             "rppa":        rppa,
             "methylation": methylation,
+            "cna":         cna,
             "cnv":         None,
             "crispr":      None,
             "drug_response": None,

@@ -156,27 +156,40 @@ def _parse_json(text: str) -> dict:
 # ──────────────────────────────────────────────────────────────────────────────
 
 _P2_EXPERIMENT_SYSTEM = """\
-You are evaluating the quality of a mechanistic follow-up experiment proposed after
-a molecular discovery analysis. The agent answered Q4, which requires 4 mandatory
-sub-parts. Score each 0 or 1 (no partial credit).
+You are an adversarial evaluator of mechanistic follow-up experiments proposed after
+a molecular discovery analysis. Your job is to find reasons to WITHHOLD credit, not
+to be charitable. The agent answered Q4, which requires 5 sub-parts. Score each 0 or 1.
 
-(a) model_with_evidence — Names a SPECIFIC model system (cell line, organoid, PDX,
-    or animal model — not generic "cancer cells" or "mouse model") AND cites evidence
-    from the dataset (expression, mutation rate, RPPA, or survival) to justify the choice.
-    Score 1 only if BOTH: specific model named AND dataset evidence explicitly cited.
+(a) model_with_evidence — Names a SPECIFIC model system (named cell line, organoid, PDX,
+    or animal model — NOT generic "cancer cells", "OS cell line", or "mouse model") AND
+    cites at least one numeric value from the dataset (expression level, mutation rate,
+    survival HR, or effect size) to justify the choice. Generic justifications like
+    "because it is a well-established model" score 0. Score 1 only if BOTH: named model
+    AND dataset-derived numeric evidence.
 
-(b) perturbation_with_direction — Names a specific genetic or pharmacological target
-    (gene + method: "CRISPR KO of X", "treat with inhibitor Y at Z µM") AND states the
-    expected direction of effect on the readout. Score 1 only if BOTH: specific target
-    named AND expected direction stated.
+(b) perturbation_with_direction — Names a specific genetic or pharmacological target with
+    method (e.g. "CRISPR KO of SP7", "treat with MDM2 inhibitor RG7112 at 1 µM") AND
+    states the expected direction of effect on the PRIMARY readout. Score 0 if target is
+    named without direction, or if the method is vague ("inhibit the pathway").
 
-(c) readout_with_magnitude — Names a specific measurable assay or readout, AND states
-    an expected magnitude or direction of change (e.g. "≥2-fold decrease", "p<0.05",
-    "IC50 <1 µM"). Score 1 only if BOTH: assay named AND expected change stated.
+(c) readout_with_magnitude — Names a specific measurable assay (not just "cell viability"
+    or "gene expression") AND states an expected quantitative magnitude OR threshold (e.g.
+    "≥2-fold decrease in SP7 mRNA", "IC50 <0.5 µM", "p<0.01 by log-rank"). Score 0 if
+    magnitude is absent or stated only qualitatively ("significant decrease").
 
-(d) falsification_criterion — States a concrete result that would REJECT the hypothesis.
-    Must be a specific measurable condition. "If the experiment fails" is not sufficient.
-    Score 1 if an explicit falsification criterion is stated.
+(d) falsification_criterion — States a SPECIFIC measurable result that would REJECT the
+    hypothesis — not merely the absence of the expected effect. Must name the variable,
+    direction, and threshold (e.g. "if SP7 knockdown does not reduce invasion by ≥30%
+    the differentiation model is rejected"). "If the experiment fails" or "if we see no
+    effect" scores 0. The falsification condition must be distinct from the expected
+    positive result in (c).
+
+(e) orthogonal_modality — The proposed experiment or its interpretation makes a specific
+    testable prediction about a NON-expression modality: mutation enrichment, DNA
+    methylation change (specific CpG or locus), copy-number event, or protein level.
+    Must name the modality, the specific gene or locus, and the expected direction/threshold.
+    Generic references ("check mutations") score 0. Score 1 only if a concrete orthogonal
+    prediction is stated.
 
 Respond ONLY with valid JSON:
 {
@@ -184,8 +197,9 @@ Respond ONLY with valid JSON:
   "perturbation_with_direction": <0 or 1>,
   "readout_with_magnitude": <0 or 1>,
   "falsification_criterion": <0 or 1>,
-  "total": <sum 0-4>,
-  "notes": "<one sentence identifying the weakest sub-part>"
+  "orthogonal_modality": <0 or 1>,
+  "total": <sum 0-5>,
+  "notes": "<one sentence on the weakest sub-part and why it lost the point>"
 }
 """
 
@@ -200,7 +214,6 @@ def score_exam_experiment_depth(
     try:
         client = anthropic.Anthropic()
         commit_summary = f"COMMIT REPORT (first 500 chars):\n{commit_report[:500]}\n\n" if commit_report else ""
-        # Caller should pass only the Q4 answer block; cap at 8000 chars to be safe.
         q4_window = phase2_text[:8000]
         user_msg = (
             f"{commit_summary}"
@@ -215,7 +228,7 @@ def score_exam_experiment_depth(
         )
         result = _parse_json(response.content[0].text)
         raw = float(result.get("total", 0))
-        return float(raw / 4.0), result
+        return float(raw / 5.0), result
     except Exception as e:
         return 0.0, {"error": str(e)}
 
@@ -227,37 +240,40 @@ def score_exam_experiment_depth(
 # ──────────────────────────────────────────────────────────────────────────────
 
 _P2_INTEGRATION_SYSTEM = """\
-You are evaluating how well a molecular discovery agent integrates multi-modal evidence
-into a mechanistic narrative across Phase 2 follow-up questions (Q1 survival,
-Q2 mutations, Q3 cross-modal, Q4 experiment).
+You are an adversarial evaluator of multi-modal mechanistic reasoning. Your role is to
+find gaps and weaknesses, not to be charitable. Score across three axes (0–4 each).
 
-Score on three axes (0–4 each):
+1. cross_modal_consistency (0–4): Does the mechanistic narrative integrate findings from
+   MULTIPLE MODALITIES into a single directed causal model — not just list them separately?
+   4 = At least THREE distinct modalities (e.g. expression + mutation + methylation/CNA)
+       are each cited with a specific finding AND shown to mutually reinforce ONE causal chain.
+       The integration must be explicit: "X drives Y because both gene expression (fold-change)
+       AND mutation frequency AND methylation data converge on this conclusion."
+   3 = Two modalities integrated into one causal chain; a third mentioned but not woven in
+   2 = Two modalities mentioned with a common conclusion stated but no explicit mechanistic link
+   1 = Modalities listed separately ("Q1 showed..., Q2 showed...") with no integration
+   0 = Single modality, or modalities named but conclusions contradict each other
+   STRICT: Naming all modalities in separate paragraphs is NOT integration — score ≤1.
 
-1. cross_modal_consistency (0–4): Does the mechanistic story weave findings from
-   multiple modalities into a single coherent model?
-   4 = All four modalities (survival, mutations, RPPA/cross-modal, within-subtype)
-       explicitly cited and logically connected in one causal narrative
-   3 = Three modalities cited and connected
-   2 = Two modalities connected; others mentioned but not integrated
-   1 = Modalities listed separately with no integration
-   0 = Single modality only, or modalities contradict each other
+2. quantitative_grounding (0–4): Are specific numbers from the data-lock commit cited
+   with source attribution, demonstrating the narrative is anchored to committed data?
+   4 = ≥6 specific values cited (median OS, HR, p-values, fold-changes, mutation frequencies,
+       beta differences) each with explicit attribution to committed sweep results
+   3 = 4–5 values cited with commit-phase attribution
+   2 = 2–3 values cited; remaining claims qualitative
+   1 = Numbers appear but are not clearly from the commit sweep (could be hallucinated)
+   0 = Purely qualitative; no numeric values cited
+   STRICT: "significantly higher" or "p<0.05" without the actual value scores ≤1.
 
-2. quantitative_grounding (0–4): Are specific numbers from the commit phase cited
-   in Q1-Q4, demonstrating that the narrative is data-anchored?
-   4 = ≥4 specific numeric values cited (e.g. median OS, log-rank p, OR, RPPA p)
-       with explicit reference to committed data
-   3 = 2-3 numbers cited with some commit-phase cross-referencing
-   2 = 1-2 numbers cited; most answers are qualitative
-   1 = Numbers present but not tied to the committed data sweep
-   0 = No quantitative values cited
-
-3. causal_coherence (0–4): Is the mechanistic picture a directed causal chain
-   (A → B → C → phenotype), not just a list of associated findings?
-   4 = Full directed chain with specific molecular actors, consistent across Q1-Q4
-   3 = Directional relationships stated between most steps; one link vague
-   2 = Two endpoints named with a mechanism implied but chain not traced
-   1 = Pathway names cited without causal steps (e.g. "Wnt is activated")
-   0 = Correlations stated as mechanism (e.g. "X correlates with poor survival")
+3. causal_coherence (0–4): Is the mechanistic picture a COMPLETE directed causal chain
+   (A → B → C → phenotype) with specific molecular actors at every step?
+   4 = Full chain: every link names the molecular mechanism (phosphorylation, transcriptional
+       activation, epigenetic silencing, etc.) and connects to a clinical endpoint.
+       Chain is consistent across Q1-Q4 (no contradictions between answers).
+   3 = Chain has ≥3 explicit mechanistic links; one step vague or inconsistently stated
+   2 = Two endpoints named with one intermediate mechanism; clinical connection implied
+   1 = Pathway name invoked without stating the causal steps within it
+   0 = Correlations stated as mechanism, or chain contradicts itself across Q1-Q4
 
 Respond ONLY with valid JSON:
 {
@@ -265,9 +281,9 @@ Respond ONLY with valid JSON:
   "quantitative_grounding": <int 0-4>,
   "causal_coherence": <int 0-4>,
   "total": <sum 0-12>,
-  "consistency_note": "<one sentence>",
-  "grounding_note": "<one sentence>",
-  "coherence_note": "<one sentence>"
+  "consistency_note": "<one sentence on integration quality — be specific about what was missing>",
+  "grounding_note": "<one sentence on numeric attribution — cite what was or wasn't committed>",
+  "coherence_note": "<one sentence on chain completeness — name the weakest link>"
 }
 """
 
