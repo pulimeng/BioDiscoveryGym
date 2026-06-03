@@ -4,27 +4,80 @@ A benchmark for evaluating LLM agents on open-ended cancer biology discovery tas
 
 ---
 
-## Overview
+## What it measures
 
-BioDiscoveryGym tests whether frontier language models can perform **genuine data-driven biological discovery** — or whether correct answers are produced primarily by recalling training knowledge. It does this by controlling how much identity information is available to the agent and measuring whether reasoning quality degrades when recall is blocked.
+BioDiscoveryGym tests whether LLM agents can perform **genuine data-driven biological discovery** — or whether they produce correct answers primarily by recalling training knowledge.
 
-Two benchmark tasks:
+The core instrument is a **three-group blinding experiment**:
 
-| Task | Description |
-|------|-------------|
-| **Task A: Cohort Analysis** | Given an anonymized patient cohort (expression ± mutations ± RPPA), discover molecular subtypes without being told the cancer type, number of groups, or scoring criteria |
-| **Task B: Target Discovery** | Given population-scale cancer dependency and normal tissue data, reason to a computationally supported therapeutic target without being told what criteria define a good target |
+| Group | Data shown | Identity visible | Tests |
+|-------|-----------|-----------------|-------|
+| G0 — explicit retrieval | real gene names + cancer type declared | yes | recall ceiling |
+| G1 — implicit retrieval | real gene names, cancer type withheld | partial | implicit recall |
+| G2 — data-driven blind  | anonymized genes (`GENE_XXXXX`) + cancer type withheld | no | pure reasoning |
+
+If G2 scores near G0, the agent is reasoning from data. If G2 degrades sharply, recall is carrying most of the load.
+
+**Identity blinding layers** (G2): cancer-type columns stripped, sample IDs → `SAMPLE_XXXX`, gene symbols → `GENE_XXXXX` (shuffled per episode), data served from a neutral path with no cohort-identifying filenames.
 
 ---
 
-## Key Design Features
+## Tasks
 
-- **5-layer identity blinding** — cancer-type columns stripped, demographics removed, sample IDs → `SAMPLE_XXXX`, gene symbols → `GENE_XXXXX`, data served from neutral path
-- **4 experimental groups** — G0 (explicit retrieval ceiling), G1 (implicit retrieval), G2 (data-driven blind phase), G3 (mislead — wrong barcodes injected)
-- **Post-hoc v2 scoring** — 9 components, 18 points max; quantitative + LLM judge (3 axes including mechanistic logic); agent never sees scoring criteria
-- **Multi-model** — designed to run across Claude, GPT, and Gemini model families
-- **Knowledge graph integration** — PrimeKG (gene-gene PPI, drug-gene, gene-disease, gene-pathway) + Prize-Collecting Steiner Tree for mechanistic reasoning (optional `--primekg` flag)
-- **Actionability data** — OpenTargets tractability and known drugs for 1,200+ cancer genes (revealed to agent at Stage 5 alongside codebook)
+### Task A — Cohort Analysis
+
+Given an anonymized patient cohort, discover molecular subtypes without being told the cancer type, number of groups, or scoring criteria.
+
+**Available modalities per cohort:**
+
+| Modality | Variable | Format |
+|----------|----------|--------|
+| Gene expression | `expression` | samples × genes, log1p TPM |
+| Somatic mutations | `mutation` | samples × genes, binary (any functional variant) |
+| Copy-number alterations | `cna` | samples × genes, GISTIC calls (0/1/2 for amp, 0/-1 for del) |
+| DNA methylation | `methylation` | samples × CpG probes, beta values |
+| Protein expression (RPPA) | `rppa` | samples × proteins |
+| Clinical metadata | `metadata` | survival, age, staging (remapped to `CAT_X`) |
+
+Not all modalities are present for every cohort; the agent must check for `None` and adapt.
+
+### Task B — Target Discovery
+
+Given population-scale cancer dependency and normal tissue data, reason to a computationally supported therapeutic target without being told what criteria define a good target.
+
+The chain it should construct: CRISPR selective dependency → cancer specificity → normal tissue tolerance (GTEx) → human tolerability (gnomAD pLI) → mechanism (STRING/pathway DBs) → patient frequency (TCGA) → evidence gaps stated → experimental roadmap.
+
+---
+
+## Scoring
+
+Two phases, scored independently.
+
+### Phase 1 — Discovery (18 pts max)
+
+| Component | Weight | What it measures |
+|-----------|--------|-----------------|
+| `structure_validity` | 2 | Bootstrap-stable silhouette + ARI vs k-means re-cluster |
+| `clinical_signal` | 3 | ΔC-index over null Cox + log HR between extreme-survival subtypes |
+| `genomic_coherence_drivers` | 2 | Driver gene enrichment in the submitted subtype grouping |
+| `genomic_coherence_rppa` | 2 | RPPA protein concordance with expression subtypes |
+| `reference_concordance` | 2 | Overlap of submitted markers with curated subtype signatures |
+| `marker_evidence` | 2 | OvR AUC of submitted top genes for their claimed subtype |
+| `pathway_validity` | 1 | GSEA enrichment of submitted pathways in top DE genes |
+| `mechanism_grounding` | 2 | LLM judge (3 axes: coherence, data grounding, mechanistic logic) |
+| `experiment_quality` | 2 | LLM judge: is the proposed experiment specific and falsifiable? |
+
+### Phase 2 — Examination (5 pts max)
+
+Triggered after data lock. Agent answers Q1–Q4 (mechanistic deep-dive) and is scored on:
+
+| Component | Weight | What it measures |
+|-----------|--------|-----------------|
+| `exam_data_lock_quality` | 1 | Completeness of committed sweep results |
+| `exam_experiment_depth` | 2 | 5-part Q4 rubric: named model + numeric justification, perturbation with direction, assay with magnitude threshold, falsification criterion, orthogonal-modality prediction |
+| `exam_mechanistic_integration` | 2 | Cross-modal consistency, quantitative grounding, causal chain completeness |
+
+Phase 2 uses an adversarial judge stance — partial answers that omit direction, magnitude, or specific cell line identifiers are scored 0, not charitably.
 
 ---
 
@@ -35,80 +88,106 @@ conda env create -f environment.yaml
 conda activate biodiscoverygym
 pip install -e .
 export ANTHROPIC_API_KEY="sk-..."
-
-# Download data (~50 GB total)
-bash scripts/download_all.sh
 ```
 
-See [SETUP.md](SETUP.md) for detailed data setup instructions.
+### OS cohort data (SGH-OS, Jia et al. 2022)
 
----
-
-## Running Benchmarks
+Raw data from GSA accession HRA003260. After downloading, preprocess:
 
 ```bash
-# Task A — single episode (G2 default, data-driven)
-python scripts/run_episode.py --cohort BRCA --seed 42 --save-log results/ep.json
+python scripts/process_os_jia2022.py \
+    --raw-dir data/os_jia2022/raw \
+    --out-dir data/os_jia2022 \
+    --min-vaf 0.05
+```
 
-# With PrimeKG knowledge graph (PCST + path-finding tools)
-python scripts/run_episode.py --cohort BRCA --seed 42 --primekg --save-log results/ep.json
+This produces:
+- `expression.parquet` — 91 × ~20k genes, log1p TPM
+- `mutations.parquet` — 91 × 3779 genes, binary functional variants (VAF ≥ 0.05)
+- `cna.parquet` — 91 × 1618 genes, GISTIC focal calls (cytoband-aligned, DUX/OR artifacts blacklisted)
+- `OS_clinical.tsv` — survival, grade, histology
 
-# G0 — explicit retrieval ceiling
-python scripts/run_episode.py --cohort BRCA --explicit-retrieval --seed 42
+For other TCGA cohorts, see `scripts/download_tcga.py` and `scripts/process_tcga.py`.
 
-# G1 — implicit retrieval
-python scripts/run_episode.py --cohort BRCA --gene-codebook-gate 0 --seed 42
+---
 
-# Score an episode
-python scripts/score_episode_v2.py results/{id}/episode.json --cohort BRCA
+## Running
 
-# Multi-seed OS benchmark (3 seeds × 3 modes)
+```bash
+# Single episode — G2 (blind, data-driven)
+python scripts/run_episode.py \
+    --cohort OS --seed 42 \
+    --save-log results/ep.json
+
+# G0 ceiling
+python scripts/run_episode.py --cohort OS --seed 42 --mode g0
+
+# G1 implicit retrieval
+python scripts/run_episode.py --cohort OS --seed 42 --mode g1
+
+# Score a completed episode
+python scripts/score_episode_v3.py results/ep.json --cohort OS
+
+# Full 3-mode × 3-seed OS benchmark
 bash scripts/run_os_multiseed.sh
 
-# Task B — target discovery
-python scripts/run_target_discovery.py --indication "Acute Myeloid Leukemia" --save-log results/aml.json
+# Post-hoc modality attribution (which data types did the agent actually use?)
+python scripts/modality_attribution.py
 ```
 
 ---
 
-## Completed Results
+## Results
 
-### OS Benchmark (SGH-OS, Jia et al. 2022) — 9 runs complete
+### OS Benchmark — run7 (SGH-OS, Jia et al. 2022)
 
-91-sample osteosarcoma cohort (mRNA + sparse mutation panel). 3 modes × 3 seeds each.
+91-sample osteosarcoma cohort. mRNA expression + sparse mutation panel (limited panel, no WES). 3 modes × 3 seeds.
 
-| Group | Mean score (/15 achievable) | Normalized | Notes |
-|-------|--------------------------:|-----------|-------|
-| G0 — explicit retrieval | 7.93 | 0.529 | Best mean, tightest spread |
-| G1 — implicit retrieval | 7.59 | 0.506 | Most variable (SD = 0.40) |
-| G2 — data-driven        | 7.69 | 0.513 | Most stable (SD = 0.06) |
+| Group | Mean score (/18 pts) | Normalized | Notes |
+|-------|--------------------:|-----------|-------|
+| G0 — explicit retrieval | ~8.0 | ~0.44 | Best mean, tightest spread |
+| G1 — implicit retrieval | ~7.6 | ~0.42 | Most variable |
+| G2 — data-driven | ~7.7 | ~0.43 | Most stable (low seed variance) |
 
-All 9 runs recover the same 4-cluster partition (25/25/21/20 vs paper 25/22/23/21). Mode differences are smaller than G1 seed-to-seed variance — no mode effect detected. Full WES/CNA pending GSA HRA003260 approval.
+All 9 runs recover the same 4-cluster partition (25/25/21/20 vs paper's 25/22/23/21). Mode differences are smaller than G1 seed-to-seed variance — no mode effect detected under run7 conditions.
 
-Results: [`results/cohort/external/os_benchmark_summary.md`](results/cohort/external/os_benchmark_summary.md)
+**run8 is pending** with the full WES mutation matrix and GISTIC CNA matrix (now processed), updated agent prompt (CNA modality added, biology hints stripped), and hardened Phase 2 rubric (5-part Q4).
 
----
-
-## Models
-
-| Model | Family | API ID |
-|-------|--------|--------|
-| Claude Sonnet 4.6 | Claude | `claude-sonnet-4-6` |
-| Claude Opus 4.7 | Claude | `claude-opus-4-7` |
-| GPT-5.4 | OpenAI | `gpt-5.4-2026-03-05` |
-| GPT-5.5 | OpenAI | `gpt-5.5-2026-04-23` |
-| Gemini 3.1 Pro | Google | `gemini-3.1-pro` |
-
-Override model: `TASK_A_MODEL=claude-opus-4-7 bash taskA.sh`
+Full run7 results: `results/cohort/external/os_benchmark_summary.md`
 
 ---
 
-## Docs
+## Repository layout
 
-- [`docs/GRAND_DESIGN.md`](docs/GRAND_DESIGN.md) — architecture overview
-- [`docs/TASK_A_COHORT.md`](docs/TASK_A_COHORT.md) — Task A full design and empirical findings
-- [`docs/BENCHMARK_PLAN.md`](docs/BENCHMARK_PLAN.md) — multi-model benchmark plan and budget
-- [`docs/PROGRESS.md`](docs/PROGRESS.md) — current status and resume commands
+```
+biodiscoverygym/
+  episode.py          — episode lifecycle: anonymization, data write, phase transitions
+  executor.py         — sandboxed code execution, injects data into agent namespace
+  scoring/
+    components.py     — quantitative scorers (structure, survival, genomic coherence, …)
+    judge.py          — LLM judge scorers (mechanism grounding, experiment quality, exam)
+    evaluator_v2.py   — orchestrator: applies weights, returns ScoreReport
+    evaluator_v3.py   — adds TraceReport (per-call reasoning + token attribution)
+  utils/
+    data_loader.py    — loads DepMap / TCGA / synthetic datasets
+    hidden_context.py — manages blinding: what the agent can and cannot see
+
+prompts/
+  agent_system.txt    — unified agent system prompt (G0/G1/G2, all modalities)
+  examination/        — Phase 2 examination question sets
+  archive/            — superseded per-mode prompts (g0/g1/g2 pre-unification)
+
+scripts/
+  run_episode.py              — run a single Task A episode
+  run_os_multiseed.sh         — 3-mode × 3-seed OS benchmark
+  process_os_jia2022.py       — preprocess SGH-OS raw data → parquet
+  score_episode_v3.py         — score + trace a completed episode
+  modality_attribution.py     — post-hoc: which modalities did the agent use?
+
+docs/
+  GRAND_DESIGN.md     — three-part architecture (Skills Library + Benchmark + Evaluator)
+  TASK_A_COHORT.md    — Task A full design, blinding implementation, empirical findings
+```
 
 ---
 
