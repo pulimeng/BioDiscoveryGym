@@ -131,14 +131,14 @@ Produce:
 
     result = multimodal_cluster(
         {{"expression": expression, "methylation": methylation, "rppa": rppa, "cna": cna}},
-        k=3, method="snf",    # or "concat_pca"; "mofa" is experimental (falls back to snf)
+        k=3, method="mofa",   # or "snf" or "concat_pca"; mofa falls back to snf on failure
     )
     labels  = result["labels"]            # pd.Series, sample → "C0"/"C1"/...
     factors = result["factors"]           # pd.DataFrame, samples × latent dims
     nmi     = result["nmi_vs_expr_only"]  # float — NMI vs expression-only k-means
     print(result["method"])               # actual method used
 
-  Try snf and concat_pca and compare:
+  Try mofa, snf, and concat_pca and compare:
     - NMI between each multi-modal partition and expression-only partition
     - Survival log-rank p-value for each partition
   Prefer the partition that best stratifies survival and clinical variables.

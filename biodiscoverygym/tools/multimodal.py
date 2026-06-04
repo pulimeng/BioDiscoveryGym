@@ -3,16 +3,16 @@ multimodal_cluster() — pre-loaded into the agent run_code namespace.
 
 Wraps three multi-modal integrative clustering methods:
 
+  mofa       — MOFA+ latent factor model via mofapy2 (recommended; falls back
+               to snf on failure)
   snf        — Similarity Network Fusion, built-in pure-numpy implementation
-               (recommended default; no extra dependencies)
+               (no extra dependencies)
   concat_pca — PCA per modality + concatenate top PCs (fast baseline)
-  mofa       — MOFA+ latent factor model (experimental; requires mofapy2 and
-               may fail at runtime — falls back to snf automatically)
 
 Usage in run_code:
     result = multimodal_cluster(
         {"expression": expression, "methylation": methylation},
-        k=3, method="snf",
+        k=3, method="mofa",
     )
     labels  = result["labels"]     # pd.Series, sample → "C0" / "C1" / ...
     factors = result["factors"]    # pd.DataFrame, samples × latent dims
@@ -35,7 +35,7 @@ from sklearn.preprocessing import StandardScaler
 def multimodal_cluster(
     modalities: dict[str, pd.DataFrame | None],
     k: int = 3,
-    method: str = "snf",
+    method: str = "mofa",
     n_factors: int = 10,
     seed: int = 42,
     max_iter: int = 500,
@@ -53,14 +53,13 @@ def multimodal_cluster(
     k : int
         Number of clusters.
     method : str
+        "mofa"       — MOFA+ variational inference via mofapy2.  Recommended.
+                       Falls back to snf on any runtime failure.
         "snf"        — Similarity Network Fusion (built-in, no extra deps).
                        Spectral clustering on the fused affinity matrix; returns
-                       spectral embedding as factors.  Recommended default.
+                       spectral embedding as factors.
         "concat_pca" — StandardScaler + PCA per modality, concatenate top
                        n_factors PCs per view, k-means.  Fast baseline.
-        "mofa"       — MOFA+ variational inference via mofapy2.  Experimental:
-                       falls back to snf on any runtime failure (including
-                       missing dependency).
     n_factors : int
         MOFA: number of latent factors.
         concat_pca: PCs per modality before concatenation.
@@ -183,26 +182,44 @@ def _run_mofa(
 
     samples = list(list(aligned.values())[0].index)
 
-    data_dict: dict[str, list] = {}
-    features_names: dict[str, list] = {}
-    for name, df in aligned.items():
+    # MOFA+ expects data as nested list: data[view_idx][group_idx] = (samples × features) array.
+    # Single-group case: each view has one inner element.
+    # MOFA+ also enforces that feature names are globally unique across views — but gene
+    # symbols (RUNX2, SP7, …) appear in both expression and CNA matrices for this benchmark.
+    # Prefix each feature with its view name to guarantee uniqueness; this is internal-only
+    # (the agent only sees Z factors / labels, not feature names).
+    view_names = list(aligned.keys())
+    data_list: list[list[np.ndarray]] = []
+    features_names: list[list] = []
+    for name in view_names:
+        df = aligned[name]
         arr = df.fillna(df.mean()).values.astype(float)
-        data_dict[name] = [arr]  # list of groups (single group)
-        features_names[name] = list(df.columns)
+        data_list.append([arr])              # one group per view
+        features_names.append([f"{name}::{c}" for c in df.columns])
 
     ent = entry_point()
     ent.set_data_options(scale_groups=False, scale_views=True)
+    # MUST set_data_matrix BEFORE set_model_options — this call populates
+    # self.dimensionalities["G"] which set_model_options reads at L1256.
+    # Force gaussian likelihood on all views. MOFA's auto-detection treats integer-valued
+    # CNA ({-1,0,1}) as poisson, which fails because poisson requires non-negative counts.
+    # All our modalities (log-CPM expression, beta methylation, integer CNA) are real-valued
+    # latent factors are best modeled gaussian.
+    likelihoods = ["gaussian"] * len(view_names)
+    ent.set_data_matrix(
+        data=data_list,
+        likelihoods=likelihoods,
+        views_names=view_names,
+        groups_names=["group0"],
+        samples_names=[samples],
+        features_names=features_names,
+    )
     ent.set_model_options(factors=n_factors)
     ent.set_train_options(
         seed=seed,
         verbose=verbose,
-        maxiter=max_iter,
+        iter=max_iter,
         convergence_mode="fast",
-    )
-    ent.set_data_dict(
-        data=data_dict,
-        samples_names=[samples],
-        features_names=features_names,
     )
     ent.build()
     ent.run()
