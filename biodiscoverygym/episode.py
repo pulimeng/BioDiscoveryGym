@@ -274,7 +274,7 @@ class Episode:
                 anon_dataset[key] = val
 
         # Verify complete anonymization — any real symbol passing through is a bug
-        for _check_key in ("mutation", "cna"):
+        for _check_key in ("expression", "mutation", "cna"):
             if _check_key in anon_dataset and anon_dataset[_check_key] is not None:
                 leaked = [c for c in anon_dataset[_check_key].columns if not c.startswith("GENE_")]
                 assert not leaked, f"Gene anonymization leak in {_check_key} matrix: {leaked}"
