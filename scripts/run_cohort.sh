@@ -5,13 +5,13 @@
 # For the full TCGA sweep (7 cohorts), use run_tcga.sh instead.
 #
 # Usage:
-#   bash scripts/run_cohort.sh --tag run6_canonical --cohort OS
-#   bash scripts/run_cohort.sh --tag run6_opus --cohort OS --model claude-opus-4-7 --g2-seeds "0 1 7"
+#   bash scripts/run_cohort.sh --tag run8 --cohort OS
+#   bash scripts/run_cohort.sh --tag run8_opus --cohort OS --model claude-opus-4-7 --g2-seeds "0 1 7"
 #   bash scripts/run_cohort.sh --tag brca_test --cohort BRCA --g0-seeds "42" --g1-seeds "" --g2-seeds ""
-#   bash scripts/run_cohort.sh --smoke-test --cohort OS          # one seed per mode, fast verify
+#   bash scripts/run_cohort.sh --smoke-test --cohort OS          # pipeline check: 1 seed/mode, 15 calls
 #
 # Required (unless --smoke-test):
-#   --tag TAG           Run label, used as results subfolder name (e.g. run6_canonical)
+#   --tag TAG           Run label, used as results subfolder name (e.g. run8)
 #
 # Optional:
 #   --cohort COHORT     Cancer cohort (default: OS)
@@ -19,15 +19,14 @@
 #   --g0-seeds SEEDS    Space-separated seed list for G0 (default: "0 1 7")
 #   --g1-seeds SEEDS    Space-separated seed list for G1 (default: "0 1 7 42 123")
 #   --g2-seeds SEEDS    Space-separated seed list for G2 (default: "0 1 7 42 123")
-#   --results-base DIR  Root output directory (default: results/cohort/external for OS,
-#                       results/cohort for TCGA cohorts)
+#   --results-base DIR  Root output directory (default: results/external/ for OS,
+#                       results/ for TCGA cohorts)
 #   --max-tool-calls N  Phase 1 tool call budget (default: 100)
 #   --no-examination    Disable Examination stage (dev/debug only)
 #   --skip-score        Run episodes but skip scoring afterwards
 #   --score-only        Skip running; score existing results in the output folder
-#   --dry-run           Print commands without executing them
-#   --smoke-test        Quick pipeline check: one seed per mode (seed=42), max-tool-calls=15,
-#                       no examination, output to results/[external/]dry-run/
+#   --smoke-test        Pipeline check: 1 seed/mode (seed=42), max-tool-calls=15,
+#                       no examination, output to results/[external/]smoke-test/
 
 set -euo pipefail
 
@@ -43,7 +42,6 @@ MAX_TOOL_CALLS=100
 NO_EXAMINATION=0
 SKIP_SCORE=0
 SCORE_ONLY=0
-DRY_RUN=0
 SMOKE_TEST=0
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
@@ -60,7 +58,6 @@ while [[ $# -gt 0 ]]; do
         --no-examination) NO_EXAMINATION=1;  shift ;;
         --skip-score)     SKIP_SCORE=1;     shift ;;
         --score-only)     SCORE_ONLY=1;     shift ;;
-        --dry-run)        DRY_RUN=1;        shift ;;
         --smoke-test)     SMOKE_TEST=1;     shift ;;
         -h|--help)
             sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
@@ -74,7 +71,7 @@ done
 
 # ── Smoke-test overrides ──────────────────────────────────────────────────────
 if [[ $SMOKE_TEST -eq 1 ]]; then
-    [[ -z "$TAG" ]] && TAG="dry-run"
+    [[ -z "$TAG" ]] && TAG="smoke-test"
     G0_SEEDS="42"
     G1_SEEDS="42"
     G2_SEEDS="42"
@@ -114,7 +111,7 @@ EXTRA_FLAGS="--max-tool-calls ${MAX_TOOL_CALLS}"
 echo ""
 echo "============================================================"
 if [[ $SMOKE_TEST -eq 1 ]]; then
-echo "  BioDiscoveryGym  *** SMOKE TEST (dry-run) ***"
+echo "  BioDiscoveryGym  *** SMOKE TEST ***"
 else
 echo "  BioDiscoveryGym Benchmark Run"
 fi
@@ -127,8 +124,7 @@ echo "  G2 seeds: ${G2_SEEDS:-"(none)"}"
 echo "  Max calls: ${MAX_TOOL_CALLS} (Phase 1)"
 echo "  Exam    : $([ $NO_EXAMINATION -eq 1 ] && echo disabled || echo enabled)"
 echo "  Output  : ${RESULTS_BASE}/"
-[[ $DRY_RUN -eq 1 ]]    && echo "  Mode    : ECHO ONLY — no episodes will run"
-[[ $SMOKE_TEST -eq 1 ]] && echo "  Mode    : SMOKE TEST — quick pipeline check (1 seed/mode, budget=15, no exam)"
+[[ $SMOKE_TEST -eq 1 ]] && echo "  Mode    : SMOKE TEST — 1 seed/mode, budget=15, no exam"
 echo "============================================================"
 echo ""
 
@@ -155,11 +151,7 @@ run_episode() {
         ${mode_args} \
         --save-log ${label}.json"
 
-    if [[ $DRY_RUN -eq 1 ]]; then
-        echo "  [dry-run] $cmd"
-    else
-        eval "$cmd"
-    fi
+    eval "$cmd"
     echo ""
 }
 
@@ -193,11 +185,7 @@ if [[ $SKIP_SCORE -eq 0 ]]; then
     echo "============================================================"
     echo "  Scoring all episodes in ${RESULTS_BASE}"
     echo "============================================================"
-    if [[ $DRY_RUN -eq 1 ]]; then
-        echo "  [dry-run] bash scripts/score_all_withMeth.sh ${RESULTS_BASE}"
-    else
-        bash scripts/score_all_withMeth.sh "${RESULTS_BASE}"
-    fi
+    bash scripts/score_all_withMeth.sh "${RESULTS_BASE}"
 fi
 
 echo ""

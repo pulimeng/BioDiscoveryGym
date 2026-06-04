@@ -128,6 +128,9 @@ python scripts/run_episode.py --cohort OS --seed 42 --mode g1
 # Score a completed episode
 python scripts/score_episode_v3.py results/ep.json --cohort OS
 
+# Pipeline smoke test (1 seed/mode, 15 calls, no exam — ~$1, ~15 min)
+bash scripts/run_cohort.sh --smoke-test --cohort OS
+
 # Full 3-mode × 3-seed OS benchmark
 bash scripts/run_os_multiseed.sh
 
