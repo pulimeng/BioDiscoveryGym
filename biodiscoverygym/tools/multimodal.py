@@ -3,16 +3,16 @@ multimodal_cluster() — pre-loaded into the agent run_code namespace.
 
 Wraps three multi-modal integrative clustering methods:
 
-  mofa       — MOFA+ latent factor model (requires mofapy2; falls back to
-               concat_pca if not installed)
   snf        — Similarity Network Fusion, built-in pure-numpy implementation
-               (no extra dependencies)
-  concat_pca — PCA per modality + concatenate top PCs (ad-hoc baseline)
+               (recommended default; no extra dependencies)
+  concat_pca — PCA per modality + concatenate top PCs (fast baseline)
+  mofa       — MOFA+ latent factor model (experimental; requires mofapy2 and
+               may fail at runtime — falls back to snf automatically)
 
 Usage in run_code:
     result = multimodal_cluster(
         {"expression": expression, "methylation": methylation},
-        k=3, method="mofa",
+        k=3, method="snf",
     )
     labels  = result["labels"]     # pd.Series, sample → "C0" / "C1" / ...
     factors = result["factors"]    # pd.DataFrame, samples × latent dims
@@ -35,7 +35,7 @@ from sklearn.preprocessing import StandardScaler
 def multimodal_cluster(
     modalities: dict[str, pd.DataFrame | None],
     k: int = 3,
-    method: str = "mofa",
+    method: str = "snf",
     n_factors: int = 10,
     seed: int = 42,
     max_iter: int = 500,
@@ -53,14 +53,14 @@ def multimodal_cluster(
     k : int
         Number of clusters.
     method : str
-        "mofa"       — MOFA+ variational inference via mofapy2.  Falls back to
-                       concat_pca if mofapy2 is not installed.
         "snf"        — Similarity Network Fusion (built-in, no extra deps).
                        Spectral clustering on the fused affinity matrix; returns
-                       spectral embedding as factors.
+                       spectral embedding as factors.  Recommended default.
         "concat_pca" — StandardScaler + PCA per modality, concatenate top
-                       n_factors PCs per view, k-means.  Equivalent to the
-                       ad-hoc approach agents write manually.
+                       n_factors PCs per view, k-means.  Fast baseline.
+        "mofa"       — MOFA+ variational inference via mofapy2.  Experimental:
+                       falls back to snf on any runtime failure (including
+                       missing dependency).
     n_factors : int
         MOFA: number of latent factors.
         concat_pca: PCs per modality before concatenation.
@@ -113,13 +113,12 @@ def multimodal_cluster(
                 aligned, n_factors=n_factors, seed=seed,
                 max_iter=max_iter, verbose=verbose,
             )
-        except ImportError:
+        except Exception as _mofa_err:
             warnings.warn(
-                "mofapy2 not installed — falling back to concat_pca. "
-                "Install with: pip install mofapy2",
+                f"MOFA+ failed ({_mofa_err!r}) — falling back to snf.",
                 stacklevel=2,
             )
-            factors_arr, method_used = _run_concat_pca(aligned, n_factors=n_factors, seed=seed)
+            factors_arr, method_used, raw_labels = _run_snf(aligned, k=k, seed=seed)
     elif method == "snf":
         factors_arr, method_used, raw_labels = _run_snf(aligned, k=k, seed=seed)
     elif method == "concat_pca":
@@ -127,7 +126,7 @@ def multimodal_cluster(
     else:
         raise ValueError(f"method must be 'mofa', 'snf', or 'concat_pca', got {method!r}")
 
-    # Cluster (SNF already clustered internally)
+    # Cluster (SNF already clustered internally via raw_labels)
     if method_used == "snf":
         raw_labels_final = raw_labels
     else:
