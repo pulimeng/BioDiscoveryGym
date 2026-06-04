@@ -1,23 +1,20 @@
 """
 multimodal_cluster() — pre-loaded into the agent run_code namespace.
 
-Wraps three multi-modal integrative clustering methods:
+Methods:
+  mofa       — MOFA+ latent factor model via mofapy2 (recommended; falls back to snf)
+  snf        — Similarity Network Fusion, pure-numpy (no extra dependencies)
+  concat_pca — PCA per modality + concatenated top PCs (fast baseline)
 
-  mofa       — MOFA+ latent factor model via mofapy2 (recommended; falls back
-               to snf on failure)
-  snf        — Similarity Network Fusion, built-in pure-numpy implementation
-               (no extra dependencies)
-  concat_pca — PCA per modality + concatenate top PCs (fast baseline)
-
-Usage in run_code:
+Usage:
     result = multimodal_cluster(
         {"expression": expression, "methylation": methylation},
         k=3, method="mofa",
     )
-    labels  = result["labels"]     # pd.Series, sample → "C0" / "C1" / ...
-    factors = result["factors"]    # pd.DataFrame, samples × latent dims
+    labels  = result["labels"]            # pd.Series, sample → "C0" / "C1" / ...
+    factors = result["factors"]           # pd.DataFrame, samples × latent dims
     nmi     = result["nmi_vs_expr_only"]  # float
-    print(result["method"])        # actual method used (may differ if fallback)
+    print(result["method"])               # actual method used (may differ if fallback)
 """
 from __future__ import annotations
 
@@ -49,44 +46,34 @@ def multimodal_cluster(
     modalities : dict[str, DataFrame | None]
         Named data matrices, each samples × features with a shared sample index.
         None values are silently skipped.
-        E.g. {"expression": expression, "methylation": methylation, "rppa": rppa}
     k : int
         Number of clusters.
     method : str
-        "mofa"       — MOFA+ variational inference via mofapy2.  Recommended.
-                       Falls back to snf on any runtime failure.
-        "snf"        — Similarity Network Fusion (built-in, no extra deps).
-                       Spectral clustering on the fused affinity matrix; returns
-                       spectral embedding as factors.
-        "concat_pca" — StandardScaler + PCA per modality, concatenate top
-                       n_factors PCs per view, k-means.  Fast baseline.
+        "mofa"       — MOFA+ variational inference via mofapy2. Falls back to snf on failure.
+        "snf"        — Similarity Network Fusion (built-in). Spectral clustering on fused
+                       affinity matrix; returns spectral embedding as factors.
+        "concat_pca" — PCA per modality, concatenate top n_factors PCs, k-means.
     n_factors : int
-        MOFA: number of latent factors.
-        concat_pca: PCs per modality before concatenation.
-        SNF: ignored (spectral embedding dimension fixed to min(k+3, n-1)).
+        MOFA/concat_pca: latent dims / PCs per view. SNF: ignored.
     seed : int
-        Random seed for k-means / MOFA / spectral clustering.
+        Random seed.
     max_iter : int
-        Maximum MOFA training iterations.
+        MOFA training iterations.
     verbose : bool
-        Print MOFA training progress.
+        MOFA training progress.
 
     Returns
     -------
-    dict with keys
-        "labels"           : pd.Series — sample → "C0", "C1", ...
-        "method"           : str — method actually used (may differ if fallback)
-        "factors"          : pd.DataFrame — samples × latent dims
-                             (latent factors for mofa/concat_pca;
-                              spectral embedding for snf)
-        "nmi_vs_expr_only" : float — NMI between this partition and k-means on
-                             expression alone (nan if expression not in modalities)
-        "modalities_used"  : list[str] — view names actually included
+    dict:
+        "labels"           — pd.Series, sample → "C0", "C1", ...
+        "method"           — str, method actually used
+        "factors"          — pd.DataFrame, samples × latent dims
+        "nmi_vs_expr_only" — float, NMI vs expression-only k-means (nan if no expression)
+        "modalities_used"  — list[str]
     """
     if not modalities:
         raise ValueError("modalities dict is empty")
 
-    # Drop None entries and intersect sample indices
     aligned = {name: df for name, df in modalities.items() if df is not None}
     if len(aligned) < 2:
         raise ValueError(f"Need at least 2 non-None modalities, got {len(aligned)}")
@@ -100,23 +87,18 @@ def multimodal_cluster(
     common = sorted(common)
     aligned = {name: df.loc[common].copy() for name, df in aligned.items()}
 
-    # Expression-only baseline for NMI
     expr_km_labels = None
     if "expression" in aligned:
         expr_km_labels = _expr_only_kmeans(aligned["expression"], k=k, seed=seed)
 
-    # Dispatch
     if method == "mofa":
         try:
             factors_arr, method_used = _run_mofa(
                 aligned, n_factors=n_factors, seed=seed,
                 max_iter=max_iter, verbose=verbose,
             )
-        except Exception as _mofa_err:
-            warnings.warn(
-                f"MOFA+ failed ({_mofa_err!r}) — falling back to snf.",
-                stacklevel=2,
-            )
+        except Exception as e:
+            warnings.warn(f"MOFA+ failed ({e!r}) — falling back to snf.", stacklevel=2)
             factors_arr, method_used, raw_labels = _run_snf(aligned, k=k, seed=seed)
     elif method == "snf":
         factors_arr, method_used, raw_labels = _run_snf(aligned, k=k, seed=seed)
@@ -125,29 +107,24 @@ def multimodal_cluster(
     else:
         raise ValueError(f"method must be 'mofa', 'snf', or 'concat_pca', got {method!r}")
 
-    # Cluster (SNF already clustered internally via raw_labels)
     if method_used == "snf":
         raw_labels_final = raw_labels
     else:
-        km = KMeans(n_clusters=k, random_state=seed, n_init=20)
-        raw_labels_final = km.fit_predict(factors_arr)
+        raw_labels_final = KMeans(n_clusters=k, random_state=seed, n_init=20).fit_predict(factors_arr)
 
     labels = pd.Series(
         [f"C{l}" for l in raw_labels_final],
         index=common,
         name="multimodal_cluster",
     )
-
     factors_df = pd.DataFrame(
         factors_arr,
         index=common,
         columns=[f"F{i + 1}" for i in range(factors_arr.shape[1])],
     )
-
     nmi = (
         float(normalized_mutual_info_score(expr_km_labels, raw_labels_final))
-        if expr_km_labels is not None
-        else float("nan")
+        if expr_km_labels is not None else float("nan")
     )
 
     return {
@@ -177,54 +154,41 @@ def _run_mofa(
     max_iter: int,
     verbose: bool,
 ) -> tuple[np.ndarray, str]:
-    """MOFA+ via mofapy2. Raises ImportError if not installed."""
-    from mofapy2.run.entry_point import entry_point  # guarded import
+    import io, sys
+    from mofapy2.run.entry_point import entry_point
 
     samples = list(list(aligned.values())[0].index)
-
-    # MOFA+ expects data as nested list: data[view_idx][group_idx] = (samples × features) array.
-    # Single-group case: each view has one inner element.
-    # MOFA+ also enforces that feature names are globally unique across views — but gene
-    # symbols (RUNX2, SP7, …) appear in both expression and CNA matrices for this benchmark.
-    # Prefix each feature with its view name to guarantee uniqueness; this is internal-only
-    # (the agent only sees Z factors / labels, not feature names).
     view_names = list(aligned.keys())
+
     data_list: list[list[np.ndarray]] = []
     features_names: list[list] = []
     for name in view_names:
         df = aligned[name]
-        arr = df.fillna(df.mean()).values.astype(float)
-        data_list.append([arr])              # one group per view
+        data_list.append([df.fillna(df.mean()).values.astype(float)])
         features_names.append([f"{name}::{c}" for c in df.columns])
 
-    ent = entry_point()
-    ent.set_data_options(scale_groups=False, scale_views=True)
-    # MUST set_data_matrix BEFORE set_model_options — this call populates
-    # self.dimensionalities["G"] which set_model_options reads at L1256.
-    # Force gaussian likelihood on all views. MOFA's auto-detection treats integer-valued
-    # CNA ({-1,0,1}) as poisson, which fails because poisson requires non-negative counts.
-    # All our modalities (log-CPM expression, beta methylation, integer CNA) are real-valued
-    # latent factors are best modeled gaussian.
-    likelihoods = ["gaussian"] * len(view_names)
-    ent.set_data_matrix(
-        data=data_list,
-        likelihoods=likelihoods,
-        views_names=view_names,
-        groups_names=["group0"],
-        samples_names=[samples],
-        features_names=features_names,
-    )
-    ent.set_model_options(factors=n_factors)
-    ent.set_train_options(
-        seed=seed,
-        verbose=verbose,
-        iter=max_iter,
-        convergence_mode="fast",
-    )
-    ent.build()
-    ent.run()
+    if not verbose:
+        _real, sys.stdout = sys.stdout, io.StringIO()
+    try:
+        ent = entry_point()
+        ent.set_data_options(scale_groups=False, scale_views=True)
+        ent.set_data_matrix(
+            data=data_list,
+            likelihoods=["gaussian"] * len(view_names),
+            views_names=view_names,
+            groups_names=["group0"],
+            samples_names=[samples],
+            features_names=features_names,
+        )
+        ent.set_model_options(factors=n_factors)
+        ent.set_train_options(seed=seed, verbose=verbose, iter=max_iter, convergence_mode="fast")
+        ent.build()
+        ent.run()
+    finally:
+        if not verbose:
+            sys.stdout = _real
 
-    Z = ent.model.nodes["Z"].getExpectations()["E"]  # samples × factors
+    Z = ent.model.nodes["Z"].getExpectations()["E"]
     return np.array(Z), "mofa"
 
 
@@ -234,38 +198,27 @@ def _run_snf(
     seed: int,
     n_snf_iter: int = 20,
 ) -> tuple[np.ndarray, str, np.ndarray]:
-    """
-    Similarity Network Fusion (Wang et al. 2014).
-
-    Pure numpy/scipy — no snfpy dependency.
-    Returns (spectral_embedding, "snf", cluster_labels).
-    """
     n = len(list(aligned.values())[0])
-    K = max(5, min(int(np.sqrt(n)), n // 5))  # KNN parameter
-    mu = 0.5  # bandwidth scaling
+    K = max(5, min(int(np.sqrt(n)), n // 5))
+    mu = 0.5
 
     def _full_affinity(X_scaled: np.ndarray) -> np.ndarray:
         dists = np.sum((X_scaled[:, None, :] - X_scaled[None, :, :]) ** 2, axis=2)
         np.fill_diagonal(dists, np.inf)
-        knn_dists = np.sort(dists, axis=1)[:, :K]
-        row_sigma = knn_dists.mean(axis=1)
+        row_sigma = np.sort(dists, axis=1)[:, :K].mean(axis=1)
         sigma = (row_sigma[:, None] + row_sigma[None, :]) / 2 + 1e-10
         np.fill_diagonal(dists, 0.0)
         W = np.exp(-dists / (mu * sigma))
         np.fill_diagonal(W, 0.0)
-        row_sum = W.sum(axis=1, keepdims=True) + 1e-10
-        return W / row_sum
+        return W / (W.sum(axis=1, keepdims=True) + 1e-10)
 
     def _knn_affinity(W_full: np.ndarray) -> np.ndarray:
-        """Keep only K nearest neighbors per row; row-normalize."""
         W_knn = np.zeros_like(W_full)
         for i in range(n):
             top_k = np.argpartition(W_full[i], -K)[-K:]
             W_knn[i, top_k] = W_full[i, top_k]
-        row_sum = W_knn.sum(axis=1, keepdims=True) + 1e-10
-        return W_knn / row_sum
+        return W_knn / (W_knn.sum(axis=1, keepdims=True) + 1e-10)
 
-    # Build per-modality full and KNN affinity matrices
     Ws, Ps = [], []
     for df in aligned.values():
         X = StandardScaler().fit_transform(df.fillna(df.mean()).values.astype(float))
@@ -274,38 +227,28 @@ def _run_snf(
         Ps.append(_knn_affinity(W))
 
     m = len(Ps)
-
-    # SNF diffusion iterations
     for _ in range(n_snf_iter):
         P_new = []
         for i in range(m):
             others = sum(Ps[j] for j in range(m) if j != i)
             Pt = Ws[i] @ (others / (m - 1)) @ Ws[i].T
-            row_sum = Pt.sum(axis=1, keepdims=True) + 1e-10
-            P_new.append(Pt / row_sum)
+            P_new.append(Pt / (Pt.sum(axis=1, keepdims=True) + 1e-10))
         Ps = P_new
 
-    # Fused network: average of updated KNN affinities
     fused = sum(Ps) / m
-    fused = (fused + fused.T) / 2  # symmetrize
+    fused = (fused + fused.T) / 2
 
-    # Spectral clustering on fused affinity
     n_components = min(k + 3, n - 1)
-    sc = SpectralClustering(
-        n_clusters=k,
-        affinity="precomputed",
-        n_components=n_components,
-        random_state=seed,
-        n_init=10,
-    )
-    raw_labels = sc.fit_predict(fused)
+    raw_labels = SpectralClustering(
+        n_clusters=k, affinity="precomputed", n_components=n_components,
+        random_state=seed, n_init=10,
+    ).fit_predict(fused)
 
-    # Spectral embedding for visualization (eigenvectors of normalized Laplacian)
     d = fused.sum(axis=1)
     d_inv_sqrt = np.where(d > 0, d ** -0.5, 0.0)
     L_sym = (fused * d_inv_sqrt[:, None]) * d_inv_sqrt[None, :]
     _, vecs = np.linalg.eigh(L_sym)
-    embed = vecs[:, -(n_components):][: , ::-1]  # top eigenvectors, descending
+    embed = vecs[:, -n_components:][:, ::-1]
 
     return embed, "snf", raw_labels
 
@@ -315,7 +258,6 @@ def _run_concat_pca(
     n_factors: int,
     seed: int,
 ) -> tuple[np.ndarray, str]:
-    """PCA per modality, concatenate, return stacked PCs."""
     pcs_list = []
     for df in aligned.values():
         n_pc = min(n_factors, df.shape[1], df.shape[0] - 1)
