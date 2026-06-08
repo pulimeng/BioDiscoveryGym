@@ -433,7 +433,6 @@ class ClaudeAgentCohort:
         usage_log: list[dict] = []
         observations: list[dict] = []
         _ro_count = 0
-        _run_code_count = 0
         _codebook_injected = self.codebook_gate == 0  # already revealed for G0/G1
 
         self._log(f"[ClaudeAgentCohort] Starting episode {episode_id} (model={self.model})")
@@ -558,15 +557,6 @@ class ClaudeAgentCohort:
                     self._log(f"[run_code #{tool_call_count}] {code[:120].strip()!r}")
                     output = executor.execute(code)
                     self._log(f"  → {output[:200].strip()!r}")
-                    _run_code_count += 1
-                    # Time-based gate (TCGA/default): reveal after Nth run_code call
-                    if not self.action_based_gate and not _codebook_injected and _run_code_count >= self.codebook_gate and self.gene_map:
-                        codebook_narrative = self._do_reveal_codebook(output_dir, executor)
-                        output += f"\n\n{codebook_narrative}"
-                        _codebook_injected = True
-                        self._log(
-                            f"[ClaudeAgentCohort] Codebook auto-injected after run_code #{_run_code_count} (G2 time-based, gate={self.codebook_gate})"
-                        )
                     tool_results.append(
                         {
                             "type": "tool_result",
@@ -634,7 +624,7 @@ class ClaudeAgentCohort:
                         f"Observation recorded (checkpoint {len(observations)}). "
                         f"Next: {obs.get('next_action', 'proceed')}"
                     )
-                    # Action-based gate (OS): reveal codebook on Nth record_observation
+                    # G2: reveal codebook on Nth record_observation (Stage 2 partition commit)
                     if self.action_based_gate and not _codebook_injected and _ro_count >= self.codebook_gate and self.gene_map:
                         codebook_narrative = self._do_reveal_codebook(output_dir, executor)
                         ro_content += f"\n\n{codebook_narrative}"

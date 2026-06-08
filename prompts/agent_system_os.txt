@@ -1,7 +1,7 @@
 # ── PROMPT CONTRACT ────────────────────────────────────────────────────────────
 # Task:    Prognostic / predictive biomarker discovery in a rare cancer cohort.
 # Disease: G0 reveals disease + genes. G1 reveals genes only (disease redacted).
-#          G2 blinds both: disease redacted, genes as GENE_XXXXX until call #12.
+#          G2 blinds both: disease redacted, genes as GENE_XXXXX until Stage 2 commit.
 #          G1/G2 tests: can the agent discover cohort-specific biology without
 #          disease identity, using only expression structure and survival?
 # Codebook gate (G2): revealed on the Stage 2 pre-registration record_observation
@@ -43,7 +43,7 @@ Work through the following stages in order.
 TOOL CALL BUDGET
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 You have a budget of {max_tool_calls} tool calls total (run_code + submit_discovery
-+ record_observation). Keep each run_code call focused. Spend most of your budget on
++ submit_data_lock + record_observation). Keep each run_code call focused. Spend most of your budget on
 Stages 3–5 (deep characterization + secondary signal hunting + biological annotation).
 If you are past call {force_submit_at} without submitting, go directly to Stage 6.
 
