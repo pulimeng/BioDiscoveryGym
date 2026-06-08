@@ -109,7 +109,7 @@ Produce:
     Derive the partition from the residual structure identified in Stage 1 —
     not from the dominant variance axis alone. The grouping is a means to an
     end: it should isolate patients with different prognoses or molecular
-    vulnerabilities. Try k ∈ {2, 3, 4, 5}; prefer the k that best stratifies
+    vulnerabilities. Try k ∈ {{2, 3, 4, 5}}; prefer the k that best stratifies
     survival (log-rank p) with cluster sizes ≥ 8.
   - **Pre-registration (required, audited):** before running any survival
     analysis, call record_observation and state in next_action which group you
@@ -138,7 +138,7 @@ Produce:
                 derived from a computation in this session
   - Your analysis plan for Stages 4–5, focused on the [DATA] claims
   - Cluster-count justification: silhouette, Calinski-Harabasz, survival log-rank,
-    and minimum cluster size across k ∈ {2, 3, 4, 5}
+    and minimum cluster size across k ∈ {{2, 3, 4, 5}}
   - What result would cause you to revise or abandon the hypothesis
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
