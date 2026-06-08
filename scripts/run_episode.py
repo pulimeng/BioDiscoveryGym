@@ -105,8 +105,12 @@ def parse_args():
     p.add_argument(
         "--gene-codebook-gate",
         type=int,
-        default=8,
-        help="run_code calls before gene codebook is auto-injected for G2 (default: 8; use 0 to pre-reveal at start for G1)",
+        default=None,
+        help=(
+            "record_observation calls before gene codebook is revealed for G2 "
+            "(default: 3 — after Stage 0 end, Stage 1 end, Stage 2 partition commit; "
+            "use 0 to pre-reveal at start for G1)"
+        ),
     )
     p.add_argument(
         "--thinking-budget",
@@ -184,15 +188,22 @@ def main():
     print(f"  Cohort : {args.cohort.upper()}")
     print(f"  Seed   : {args.seed}")
     print(f"  Model  : {args.model}")
+    if args.gene_codebook_gate is None:
+        args.gene_codebook_gate = 3
+
     if args.explicit_retrieval:
         args.gene_codebook_gate = 0
+
+    # All true G2 runs (gate > 0) use action-based reveal: codebook injected on the
+    # 3rd record_observation (Stage 0 end → Stage 1 end → Stage 2 partition commit).
+    action_based_gate = args.gene_codebook_gate > 0
 
     if args.explicit_retrieval:
         mode = "G0 explicit-retrieval (cohort+genes revealed)"
     elif args.gene_codebook_gate == 0:
         mode = "G1 implicit-retrieval (genes pre-revealed)"
     else:
-        mode = f"G2 data-driven (codebook after run_code #{args.gene_codebook_gate})"
+        mode = f"G2 data-driven (codebook on record_observation #{args.gene_codebook_gate} — Stage 2 commit)"
     if args.mislead_cohort:
         sc_gate_str = "pre-reveal" if args.sample_codebook_gate == 0 else f"gate={args.sample_codebook_gate}"
         mode += f" + mislead({args.mislead_cohort}, {sc_gate_str})"
@@ -232,6 +243,8 @@ def main():
         no_examination=args.no_examination,
         examination_max_calls=args.examination_max_calls,
         data_lock_max_calls=args.data_lock_max_calls,
+        cohort=args.cohort,
+        action_based_gate=action_based_gate,
     )
 
     if args.results_base:

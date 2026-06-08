@@ -1,0 +1,290 @@
+# ── PROMPT CONTRACT ────────────────────────────────────────────────────────────
+# Task:    Prognostic / predictive biomarker discovery in a rare cancer cohort.
+# Disease: G0 reveals disease + genes. G1 reveals genes only (disease redacted).
+#          G2 blinds both: disease redacted, genes as GENE_XXXXX until call #12.
+#          G1/G2 tests: can the agent discover cohort-specific biology without
+#          disease identity, using only expression structure and survival?
+# Codebook gate (G2): revealed on the Stage 2 pre-registration record_observation
+#          (the 3rd record_observation call, after Stage 0 end + Stage 1 end).
+#          Runner sets action_based_gate=True, codebook_gate=3 automatically for OS.
+# ───────────────────────────────────────────────────────────────────────────────
+
+A multi-modal dataset from a rare cancer cohort lands on your desk. Real patients, real outcomes.
+{disease_hint}
+
+What you have:
+  · Bulk RNA-seq expression profiles
+  · Clinical metadata                  — survival outcomes, tumor stage, demographics
+  · Somatic mutation calls             — binary matrix per gene (if available)
+  · DNA methylation (Illumina EPIC 850K) — beta values per CpG site (if available)
+  · Copy number alterations (GISTIC2)  — focal amp/del calls per gene (if available;
+                                         note partial sample coverage — see cna below)
+
+Your task: discover prognostic and predictive biomarkers for this cohort.
+
+A biomarker is a molecular feature that can be measured in a clinical sample and
+predicts patient outcome (survival, metastasis) or treatment response. Your goal
+is not to describe the known biology of this cancer type — it is to identify
+measurable molecular signals in this specific dataset that stratify patient outcomes
+in a way that has not been reported.
+
+This cancer type has a well-characterized molecular biology. The dominant source of
+variance is expected and known before you open the dataset. Histological identity
+markers — genes that are universally expressed because all tumors are of the same
+lineage — are not biomarkers. A biomarker must vary meaningfully across patients
+and that variation must predict something clinically relevant.
+
+Your job: identify the dominant axis, confirm it, set it aside as background, and
+find the molecular features that predict outcome beyond what is already known.
+
+Work through the following stages in order.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TOOL CALL BUDGET
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You have a budget of {max_tool_calls} tool calls total (run_code + submit_discovery
++ record_observation). Keep each run_code call focused. Spend most of your budget on
+Stages 3–5 (deep characterization + secondary signal hunting + biological annotation).
+If you are past call {force_submit_at} without submitting, go directly to Stage 6.
+
+**Codebook timing (G2 mode):** if gene names are not yet available (GENE_XXXXX),
+the codebook is revealed when you call record_observation for the Stage 2
+pre-registration commitment — the call that precedes your first survival analysis.
+Complete Stages 0 and 1, commit your partition, then call record_observation with
+your pre-registered prognosis prediction in next_action. The codebook will be
+appended to that tool response. The partition must be derived from expression
+structure and survival correlations alone — not from gene identity. When the
+codebook arrives, annotate your existing clusters; do not rebuild the partition
+from biological priors.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 0 — DATA ORIENTATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Check `'codebook' in dir()` — if present, gene names are available; if not, treat
+GENE_XXXXX as opaque labels until call #12.
+
+Produce:
+  - Sample count, gene count, data type and units
+  - Summary of clinical/metadata fields and their distributions
+  - Basic data quality assessment (missing values, outlier samples, expression range)
+  - Top 3 principal components and their correlations with clinical variables.
+    Note which PC explains the most variance — this is the dominant axis input
+    to Stage 1. PC2 and PC3 are the first residual candidates.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 1 — DOMINANT AXIS IDENTIFICATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Identify the dominant variance axis and characterize the residual structure.
+
+Produce:
+  - Top variably expressed genes and their loading on PC1 (the dominant axis
+    identified in Stage 0).
+  - Name the dominant biological program:
+      · If gene names available: identify the program by its top genes and
+        known biology (e.g., "osteoblast differentiation axis").
+      · If blind (GENE_XXXXX): treat PC1 as the dominant axis. Samples in the
+        top PC1 quartile vs. bottom PC1 quartile define the two poles of the
+        dominant program. Any cluster that aligns with this PC1 split is
+        "explained by the dominant axis" — treat it as background.
+  - **Residual structure (the target):** regress out PC1 scores (or compute
+    expression residuals after regressing on the PC1 top-gene centroid score),
+    then re-run PCA. Report PC1–PC3 of the residuals and their correlations
+    with survival, metastasis, and stage. These residual axes are the biomarker
+    search space.
+  - Ranked list of genes NOT captured by the dominant axis (low PC1 loading,
+    high residual variance) that correlate with survival or metastasis —
+    FDR-corrected across all tested genes (BH method). These are biomarker
+    candidates.
+
+  The dominant axis is background. The residual axes are the target.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 2 — PATIENT STRATIFICATION & PRE-COMMITMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Group patients by outcome-relevant molecular features and commit before annotation.
+
+Produce:
+  - Your proposed grouping: assign every sample to a label.
+    Derive the partition from the residual structure identified in Stage 1 —
+    not from the dominant variance axis alone. The grouping is a means to an
+    end: it should isolate patients with different prognoses or molecular
+    vulnerabilities. Try k ∈ {2, 3, 4, 5}; prefer the k that best stratifies
+    survival (log-rank p) with cluster sizes ≥ 8.
+  - **Pre-registration (required, audited):** before running any survival
+    analysis, call record_observation and state in next_action which group you
+    predict will have the worst prognosis and why, based only on expression
+    patterns and clinical variable distributions seen so far. This prediction
+    is checked by the scorer against your final submission — do not revise it
+    after seeing survival results. Call record_observation NOW, before the
+    survival test.
+  - After running survival: report whether the pre-registered prediction was
+    correct. If wrong, state so explicitly — that is useful signal.
+  - Top differentially expressed genes per group (FDR < 0.05 by BH correction).
+    Report absolute per-group values, Cohen's d, and FDR for each. Flag:
+      (a) genes with high PC1 loading — explained by the dominant axis, NOT
+          biomarker candidates
+      (b) genes with low PC1 loading but significant DE or survival correlation
+          — biomarker candidates
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 3 — ANALYSIS PLAN & HYPOTHESIS LABELING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Produce:
+  - A working hypothesis for each patient group. For every claim, explicitly label:
+      [PRIOR] — known biology for this cancer type; the data confirms but does
+                not establish it; would be predictable from training knowledge alone
+      [DATA]  — specific to this cohort; the prior alone would not predict it;
+                derived from a computation in this session
+  - Your analysis plan for Stages 4–5, focused on the [DATA] claims
+  - Cluster-count justification: silhouette, Calinski-Harabasz, survival log-rank,
+    and minimum cluster size across k ∈ {2, 3, 4, 5}
+  - What result would cause you to revise or abandon the hypothesis
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 4 — STATISTICAL DEEP-DIVE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Characterize the patient groups with emphasis on what is not explained by the
+dominant axis:
+
+  - Survival analysis: Kaplan-Meier + log-rank; Cox HR with 95% CI per group.
+    Report whether your Stage 2 pre-registered prediction was correct.
+  - Stage/metastasis enrichment per group
+  - Immune landscape: immune gene modules, checkpoint markers — does immune
+    composition vary independently of the dominant axis?
+  - Genomic instability: if CNA available, find recurrent focal events enriched
+    per group. Cross-reference with mutation for convergent two-hit evidence.
+    Report rates over CNA-covered samples only:
+        covered = cna[(cna != 0).any(axis=1)]
+  - Multi-modal integration: test whether methylation, CNA, or mutation adds
+    partition structure beyond expression:
+        result = multimodal_cluster(
+            {{"expression": expression, "methylation": methylation, "cna": cna}},
+            k=k_committed,   # use the k chosen in Stage 2
+            method="mofa",
+        )
+        nmi = result["nmi_vs_expr_only"]   # > 0.3 = meaningful multimodal signal
+    Compare NMI and survival log-rank between expression-only and multimodal
+    partitions. If multimodal NMI > 0.3, consider whether the multimodal partition
+    is a better biomarker stratifier.
+  - Effect size discipline: state absolute per-group values alongside every
+    difference. A statistically significant difference negligible relative to
+    the assay's dynamic range is not a finding.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 5 — BIOLOGICAL ANNOTATION & BIOMARKER INVENTORY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{sample_codebook_stage5_hint}
+
+  - Translate top marker genes (GENE_XXXXX → real symbols via codebook)
+  - Pathway enrichment: MSigDB Hallmarks + Reactome on top markers per group.
+    Report top 5 per group with exact GMT names and p-values. For each, assess:
+    expected consequence of the dominant axis [PRIOR], or residual structure [DATA]?
+  - Within-group heterogeneity: scan for tight co-expressed gene modules (4–10
+    genes) that don't define the top-level partition — immune state, cell cycle,
+    antigen expression programs diluted by the main split.
+  - **Biomarker candidate inventory:** for each candidate, report:
+      (a) molecular feature: gene, CpG locus, CNA event, or mutation
+      (b) outcome it predicts: survival HR with CI, metastasis OR, or
+          treatment-response proxy with p-value (FDR-corrected)
+      (c) effect size from this dataset: absolute group values + difference
+      (d) label: [PRIOR] known biomarker for this cancer type / [DATA] dataset-specific finding
+      (e) provenance: which run_code call number and which statistical test
+          produced this result — required for all submitted top_genes
+  - Novelty calibration: a gene cited from biological knowledge without a
+    corresponding computation in this session is a [PRIOR] claim. Only [DATA]
+    claims are biomarker discoveries.
+
+  Retrofit guard: do not rewrite Stage 0–4 hypotheses to fit the revealed
+  biology. If the codebook reveals a contradiction with an earlier hypothesis,
+  report it in record_observation under evidence_against. That is a positive
+  result, not a failure.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 6 — FINAL REPORT & SUBMISSION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Produce:
+  - A 3–5 sentence summary: what molecular feature predicts outcome in this
+    cohort, in what direction, with what effect size, and how it differs from
+    the dominant known biology of this cancer type
+  - Your mechanistic hypothesis with [PRIOR] / [DATA] labels on each claim
+  - One validation experiment for your highest-confidence [DATA] biomarker:
+    specify (i) clinical assay (IHC, RT-qPCR, methylation array),
+    (ii) patient stratification criterion (threshold value or binary marker),
+    (iii) expected outcome difference (HR, OS months, response rate)
+  - Call submit_discovery with all required fields
+
+  IMPORTANT — top_genes provenance requirement:
+  Each gene in top_genes must have passed at least two of the following three
+  independent statistical tests in this session:
+      · Differential expression: FDR < 0.05 (BH-corrected) between groups
+      · Survival correlation: FDR < 0.05 (BH-corrected across all genes tested)
+      · CNA or methylation enrichment: Fisher exact p < 0.05 per group
+  A gene passing only one test, or cited from biological knowledge without any
+  test, must be excluded. Before submitting:
+      top_genes_real = [codebook[g] for g in top_gene_ids if g in codebook]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DATA & TOOLS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Your patient dataset (pre-loaded in the code environment):
+  expression  — DataFrame, samples × genes (GENE_XXXXX IDs)
+  metadata    — DataFrame, clinical metadata. May include: vital_status,
+                days_to_death, days_to_last_follow_up, tumor_stage, metastasis,
+                age_at_diagnosis, gender. Subtype and clustering labels stripped.
+                Categorical values may be remapped to CAT_0, CAT_1, …
+  mutation    — DataFrame (or None), samples × genes binary matrix
+                (1 = functional somatic mutation)
+  rppa        — DataFrame (or None), samples × proteins, RPPA z-scores
+  methylation — DataFrame (or None), samples × CpG sites (beta values 0–1).
+                Columns are CpG IDs (cg######), not gene symbols.
+                Pre-filtered to top most-variable CpGs.
+  cna         — DataFrame (or None), samples × genes, integer focal CNA calls:
+                +1 = focal amplification, -1 = focal deletion, 0 = neutral/no data.
+                Always compute rates over covered samples only:
+                    covered_mask = (cna != 0).any(axis=1)
+                    cna_covered  = cna[covered_mask]
+  output_dir  — Path, save all plots and tables here
+  codebook    — dict, GENE_XXXXX → real symbol (check: 'codebook' in dir())
+
+run_code(code: str) → str
+    Execute Python. Libraries: pandas, numpy, scipy, sklearn, statsmodels,
+    matplotlib, seaborn, lifelines, and more. Stateful — variables persist.
+    No internet access.
+
+    REQUIRED: every run_code call MUST begin with:
+        # WHY: why this analysis is needed at this point
+        # EXPECTS: what result would confirm or falsify your current hypothesis
+        # CURRENT_HYPOTHESIS: your working model right now
+    Omitting these headers is an error. They are audited post-hoc.
+
+record_observation(
+    current_hypothesis: str,
+    evidence_for: list[str],
+    evidence_against: list[str],
+    alternatives_considered: list[str],
+    confidence: str,             # "high" | "medium" | "low"
+    next_action: str
+) → str
+    REQUIRED at the end of every stage (0–5) before advancing, and REQUIRED
+    immediately before running survival in Stage 2 (pre-registration checkpoint).
+    Confidence must track evidence_against — if a contradicting finding has
+    FDR < 0.05, drop confidence by one level and state the revision explicitly.
+
+{sample_codebook_section}
+submit_discovery(
+    proposed_grouping: str,      # path to grouping.json — save first with json.dump
+    top_genes: list[str],        # real gene symbols, each passing ≥2 of 3 provenance
+                                 # tests listed in Stage 6 — required
+    pathway_evidence: list[str], # exact GMT names + p-values
+                                 # e.g. "HALLMARK_TNFA_SIGNALING_VIA_NFKB p=3.2e-5 k=12/200"
+    mechanism_hypothesis: str,   # hypothesis with [PRIOR] / [DATA] labels — required
+    confidence: str,             # "high" | "medium" | "low" — required
+    next_experiment: str         # biomarker validation: clinical assay, stratification
+                                 # criterion, expected outcome difference — required
+) → str
+    Call once when done. Final — cannot be revised after submission.
+
+    Save grouping before calling:
+        import json
+        grouping_path = str(output_dir / "grouping.json")
+        json.dump(grouping_dict, open(grouping_path, "w"))

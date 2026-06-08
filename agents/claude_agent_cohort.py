@@ -198,10 +198,19 @@ _TOOLS: list[dict] = [
 
 class ClaudeAgentCohort:
     """
-    Gene-anonymized variant of ClaudeAgent. Identical tool loop,
-    different system prompt — no reference database lookups.
-    Codebook (GENE_XXXXX → symbol) is gated behind a minimum call count.
+    Gene-anonymized cohort discovery agent.
+
+    Gene names are replaced with GENE_XXXXX. In G2 mode the codebook is revealed
+    on the Nth record_observation call (action-based gate, default N=3 = Stage 2
+    partition commit). G1 pre-reveals the codebook; G0 pre-reveals both disease and
+    codebook via explicit_cohort.
+
+    Prompt is selected per cohort: OS → agent_system_os.txt, others → agent_system_tcga.txt.
     """
+
+    _COHORT_PROMPTS: dict[str, str] = {"OS": "agent_system_os.txt"}
+    _DEFAULT_TCGA_PROMPT = "agent_system_tcga.txt"
+    _FALLBACK_PROMPT = "agent_system.txt"
 
     def __init__(
         self,
@@ -210,7 +219,7 @@ class ClaudeAgentCohort:
         data_dir: str | Path = "data",
         verbose: bool = True,
         gene_map: dict[str, str] | None = None,
-        codebook_gate: int = 8,
+        codebook_gate: int = 3,
         mislead_cohort: str | None = None,
         sample_codebook_gate: int = 25,
         explicit_cohort: str | None = None,
@@ -220,6 +229,8 @@ class ClaudeAgentCohort:
         no_examination: bool = False,
         examination_max_calls: int = 40,
         data_lock_max_calls: int = 20,
+        cohort: str | None = None,
+        action_based_gate: bool = False,
     ):
         self.model = model
         self.max_tool_calls = max_tool_calls
@@ -236,6 +247,8 @@ class ClaudeAgentCohort:
         self.no_examination = no_examination
         self.examination_max_calls = examination_max_calls
         self.data_lock_max_calls = data_lock_max_calls
+        self.cohort = cohort.upper() if cohort else None
+        self.action_based_gate = action_based_gate
 
         # Load examination prompts (always-on unless --no-examination)
         if not no_examination:
@@ -252,7 +265,12 @@ class ClaudeAgentCohort:
             self._q1_q3_prompt = None
             self._q4_prompt = None
 
-        _system_prompt_template = _load_prompt("agent_system.txt")
+        # Select prompt based on cohort: OS → agent_system_os.txt, TCGA → agent_system_tcga.txt
+        _prompt_name = self._COHORT_PROMPTS.get(self.cohort or "", self._DEFAULT_TCGA_PROMPT)
+        try:
+            _system_prompt_template = _load_prompt(_prompt_name)
+        except FileNotFoundError:
+            _system_prompt_template = _load_prompt(self._FALLBACK_PROMPT)
 
         import httpx
         self.client = anthropic.Anthropic(
@@ -541,13 +559,13 @@ class ClaudeAgentCohort:
                     output = executor.execute(code)
                     self._log(f"  → {output[:200].strip()!r}")
                     _run_code_count += 1
-                    # G2 auto-inject: reveal codebook after Nth run_code (proxy for Stage 4 entry)
-                    if not _codebook_injected and _run_code_count >= self.codebook_gate and self.gene_map:
+                    # Time-based gate (TCGA/default): reveal after Nth run_code call
+                    if not self.action_based_gate and not _codebook_injected and _run_code_count >= self.codebook_gate and self.gene_map:
                         codebook_narrative = self._do_reveal_codebook(output_dir, executor)
                         output += f"\n\n{codebook_narrative}"
                         _codebook_injected = True
                         self._log(
-                            f"[ClaudeAgentCohort] Codebook auto-injected after run_code #{_run_code_count} (G2, gate={self.codebook_gate})"
+                            f"[ClaudeAgentCohort] Codebook auto-injected after run_code #{_run_code_count} (G2 time-based, gate={self.codebook_gate})"
                         )
                     tool_results.append(
                         {
@@ -616,6 +634,14 @@ class ClaudeAgentCohort:
                         f"Observation recorded (checkpoint {len(observations)}). "
                         f"Next: {obs.get('next_action', 'proceed')}"
                     )
+                    # Action-based gate (OS): reveal codebook on Nth record_observation
+                    if self.action_based_gate and not _codebook_injected and _ro_count >= self.codebook_gate and self.gene_map:
+                        codebook_narrative = self._do_reveal_codebook(output_dir, executor)
+                        ro_content += f"\n\n{codebook_narrative}"
+                        _codebook_injected = True
+                        self._log(
+                            f"[ClaudeAgentCohort] Codebook revealed on record_observation #{_ro_count} (action-based gate={self.codebook_gate})"
+                        )
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,

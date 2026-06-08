@@ -172,7 +172,7 @@ if [[ $SCORE_ONLY -eq 0 ]]; then
     fi
 
     if [[ -n "$G2_SEEDS" ]]; then
-        echo "=== G2: data-driven (gene codebook gated at call 25) ==="
+        echo "=== G2: data-driven (gene codebook gate: 12 for OS, 8 for TCGA) ==="
         for seed in $G2_SEEDS; do
             run_episode "g2" "$seed" ""
         done
