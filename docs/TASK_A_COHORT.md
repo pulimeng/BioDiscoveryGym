@@ -156,15 +156,24 @@ Score 4 on `mechanistic_logic` requires direction at every step and named molecu
 | S-HRD | 23 | HRD dominant; BRCA2 del; ~80% HRD+; platinum-sensitive | Intermediate | PARPi + cisplatin |
 | S-MD | 21 | MYC amp; OXPHOS; chemo-resistant; immune-cold | Worst | anti-MYC |
 
-### Results (9 runs: G0/G1/G2 × seeds 0/1/7)
+### Results summary by run
 
 Achievable max = **15 / 18 points** — `genomic_coherence_drivers` (2 pts) and `genomic_coherence_rppa` (1 pt) are structural zeros without CNA/WES/RPPA.
+
+#### run8 (2026-06-07, unified prompt `agent_system.txt`, time-based codebook gate @run_code #8/9)
+13 episodes: G0 × {0,1,7}, G1 × {0,1,7,42,123}, G2 × {0,1,7,42,123}
 
 | Group | Mean total (/15) | Normalized | SD |
 |-------|----------------:|-----------|-----|
 | G0 — explicit retrieval | 7.93 | 0.529 | 0.23 |
 | G1 — implicit retrieval | 7.59 | 0.506 | 0.40 |
 | G2 — data-driven        | 7.69 | 0.513 | 0.06 |
+
+Key finding: all 13 episodes converged on SP7/RUNX2/ALPL (dominant osteoblast axis) as top genes. Codebook analysis at `analysis/cot_run8/`. G2 agents named disease at call #11 in every episode; one age-based leak (G2 s7).
+
+#### run9_marker (2026-06-08, OS biomarker prompt `agent_system_os.txt`, action-based codebook gate)
+In progress. 13 episodes: G0 × {0,1,7}, G1 × {0,1,7,42,123}, G2 × {0,1,7,42,123}.
+Dryrun validation (G2 s42): codebook revealed at call #30 after genuine Stage 0→1→2 work; top genes shifted to SOX11, CX3CL1, TRPV2, EPHA2 (residual structure, not dominant axis).
 
 ### Key observations (run3 — clinical columns not yet anonymized)
 
@@ -239,22 +248,22 @@ Same Phase 2 questions sent with no data, only cohort framing (n=371, Metabolic 
 cd /Users/lpu/myprojects/BioDiscovery
 conda activate biodiscoverygym
 
-# Smoke test — runs G0/G1/G2 once each (seed=42, 15 calls, no exam) → results/external/dry-run/
+# Smoke test — G0/G1/G2 once each (seed=42, 15 calls, no exam)
 bash scripts/run_cohort.sh --smoke-test --cohort OS
 
-# Full OS benchmark run (3 modes × 3 seeds)
-bash scripts/run_cohort.sh --tag run7_unified --cohort OS
+# Full OS benchmark run (13 episodes: G0×{0,1,7} + G1/G2×{0,1,7,42,123})
+bash scripts/run_cohort.sh --tag run9_marker --cohort OS
 
 # Single episodes
 python scripts/run_episode.py --cohort OS --explicit-retrieval --seed 42           # G0
 python scripts/run_episode.py --cohort OS --gene-codebook-gate 0 --seed 42         # G1
-python scripts/run_episode.py --cohort OS --seed 42                                 # G2 (codebook at run_code #8)
+python scripts/run_episode.py --cohort OS --seed 42                                 # G2 (codebook at record_observation #3)
 python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42           # G3
 python scripts/run_episode.py --cohort OS --seed 42 --primekg                       # G2 + PrimeKG
 
 # Score
-python scripts/score_episode_v3.py results/external/run7_unified/<uuid>/<label>.json --cohort OS --save
-bash scripts/score_all_withMeth.sh results/external/run7_unified/
+python scripts/score_episode_v3.py results/external/run9_marker/<uuid>/<label>.json --cohort OS --save
+bash scripts/score_all_withMeth.sh results/external/run9_marker/
 ```
 
 ---
@@ -425,16 +434,17 @@ The scoring for OS runs will need its own rubric — one that rewards survival-a
 
 ## What's Next
 
-**OS run7 (next):**
-- All three bugs from run6 fixed: H3F3A leak, G2 codebook trigger, `data/external` block
-- Unified prompt (`agent_system.txt`), multimodal_cluster tool, HR+CI in survival
-- Smoke test first: `bash scripts/run_cohort.sh --smoke-test --cohort OS`
-- Full run: `bash scripts/run_cohort.sh --tag run7_unified --cohort OS`
+**run9_marker (in progress, 2026-06-08):**
+- New OS biomarker prompt (`prompts/agent_system_os.txt`): explicit dominant-axis suppression, pre-registration enforcement, [PRIOR]/[DATA] labeling, two-of-three provenance gate on top_genes
+- Action-based codebook gate: codebook revealed on 3rd `record_observation` (Stage 2 partition commit) for all G2 runs — both OS and TCGA. Replaces time-based run_code counter that could be gamed
+- Dryrun (G2 s42) confirms fix: codebook at call #30 vs call #9 in run8; top genes shifted from osteoblast axis to residual structure (SOX11, CX3CL1, TRPV2, EPHA2)
+- CoT extractor: `scripts/extract_cot.py` → `analysis/cot_run9/` (run after completion)
 
 **Pending:**
+- Analyze run9_marker results: do G2 agents now diverge from G0/G1 in top_genes? Is pre-registration prediction correct?
 - Obtain WES/CNA approval (GSA HRA003260) → re-run with full multi-omic data
-- Stage 3/4 retrofit guard (hold off — revisit if run7 still shows retconning)
+- OS scoring rubric: current v3 scorer designed for TCGA subtypes; OS needs survival-anchored, novelty-aware rubric
 
 **TCGA benchmark (future):**
-- Fund and run 67-episode benchmark (~$201 on Sonnet)
-- Analyze G0 vs G1 vs G2 mode effect; analyze G3 mislead fraction
+- Run 67-episode benchmark (~$201 on Sonnet) using `prompts/agent_system_tcga.txt`
+- Action-based gate now applies to TCGA G2 as well
