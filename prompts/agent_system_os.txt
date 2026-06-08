@@ -61,7 +61,8 @@ from biological priors.
 STAGE 0 — DATA ORIENTATION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Check `'codebook' in dir()` — if present, gene names are available; if not, treat
-GENE_XXXXX as opaque labels until call #12.
+GENE_XXXXX as opaque labels; the codebook arrives at the Stage 2 pre-registration
+record_observation.
 
 Produce:
   - Sample count, gene count, data type and units

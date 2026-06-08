@@ -50,7 +50,8 @@ Write complete answers; do not truncate.
 STAGE 0 — DATA ORIENTATION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Check `'codebook' in dir()` — if present, resolve GENE_XXXXX IDs immediately;
-if not, treat them as opaque labels until the codebook is revealed.
+if not, treat them as opaque labels; the codebook arrives at the Stage 2
+partition-commit record_observation.
 
 Produce:
   - Sample count, gene count, data type and units
