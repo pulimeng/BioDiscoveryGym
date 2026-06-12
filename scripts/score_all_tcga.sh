@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Score all episode JSONs in a results folder with v3 scorer (includes LLM judge).
-# Usage: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_withMeth.sh <results_folder>
-# Example: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_withMeth.sh results/cohort/external/run4_clinAnon_obsTrack
+# Score all TCGA episode JSONs in a results folder (faithfulness rubric, includes LLM judge).
+# Usage: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_tcga.sh <results_folder>
+# Example: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_tcga.sh results/tcga/run4
 
 set -e
 
 if [[ -z "${1:-}" ]]; then
-    echo "Usage: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_withMeth.sh <results_folder>" >&2
+    echo "Usage: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_tcga.sh <results_folder>" >&2
     exit 1
 fi
 
@@ -38,7 +38,7 @@ echo ""
 
 for ep in "${EPISODES[@]}"; do
     echo "=== $(basename $ep) ==="
-    python scripts/score_episode_v3.py "$ep" --save
+    python scripts/score_tcga_episode.py "$ep" --save
     echo ""
 done
 
