@@ -1,15 +1,18 @@
 """
-Post-hoc v3 scoring for a completed BioDiscoveryGym episode.
+Post-hoc TCGA scoring for a completed BioDiscoveryGym episode.
 
-Runs all v2 score components AND extracts an agent trace (reasoning + tool calls)
-from the raw message log. No new scored components — trace is descriptive only.
+Faithfulness rubric — scores whether the agent derived the known TCGA subtype
+biology through data-driven reasoning vs prior recall. Runs all v2 components
+AND extracts an agent trace from the raw message log.
+
+For OS / external cohorts, use score_os_episode.py instead (discovery rubric).
 
 Usage:
-    python scripts/score_episode_v3.py path/to/episode.json --cohort BRCA --save
-    python scripts/score_episode_v3.py path/to/episode.json --cohort OS --save --skip-llm
+    python scripts/score_tcga_episode.py path/to/episode.json --cohort BRCA --save
+    python scripts/score_tcga_episode.py path/to/episode.json --cohort LUAD --save --skip-llm
 
 Outputs (with --save):
-    <episode>_v3scores.json   — same structure as v2, plus 'trace' field
+    <episode>_v3scores.json   — score components + weighted total + trace summary
     <episode>_v3trace.json    — full per-call trace (reasoning + tool calls)
 """
 from __future__ import annotations
