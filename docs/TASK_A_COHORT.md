@@ -1,8 +1,8 @@
 # Task A — Cohort-Based Analysis
 
 **Part of:** BioDiscoveryGym → Part 2 (Benchmark)
-**Last updated:** 2026-06-01
-**Status:** Infrastructure complete. OS 9-run benchmark complete. TCGA 67-run benchmark planned (awaiting budget).
+**Last updated:** 2026-06-11
+**Status:** Infrastructure complete. OS 9-run benchmark complete. run9_marker biomarker run externally validated in TARGET-OS (prognosis did not replicate). TCGA 67-run benchmark planned (awaiting budget).
 
 ---
 
@@ -96,11 +96,20 @@ The three groups form a clean ablation over what recall channels are open:
 
 ---
 
-## Scoring (v3, post-hoc)
+## Scoring (post-hoc, bifurcated)
 
-All scoring is post-hoc — agent is not told how it is scored. Two tracks: Phase 1 (always present) and Phase 2 (only when Phase 2 Q&A was enabled during the run).
+All scoring is post-hoc — agent is not told how it is scored. As of 2026-06-12,
+scoring is split into two cohort-specific tracks reflecting the prompt-level
+design split (TCGA = faithfulness, OS = discovery):
 
-### Phase 1 — 9 components, 18 points maximum
+| Track | Script | Ceiling | Scoring intent |
+|---|---|---:|---|
+| **TCGA faithfulness** | `score_tcga_episode.py` → `score_all_tcga.sh` | 23 pts (Phase 1 = 18 + Phase 2 = 5) | Did the agent derive the known TCGA subtype biology through data-driven reasoning vs prior recall? Reference-concordance is a positive signal (recovering the answer). |
+| **OS discovery** | `score_os_episode.py` → `score_all_os.sh` | 23 pts (Phase 1 = 15 + Phase 2 = 3 + Phase 3 = 5) | Did the agent find prognostic biomarkers beyond what the Jia et al. 2022 paper reports? Reference-concordance is *deliberately absent*. External validation in TARGET-OS is the empirical replication test. |
+
+The TCGA Phase 1 components (`reference_concordance`, `genomic_coherence_rppa`) are misaligned for OS — the first inverts the goal, the second is always 0 (OS has no RPPA). The OS rubric replaces both with discovery-relevant components and adds a Phase 3 for external validation, which is the only direct test of "did the agent find something real."
+
+### TCGA Track — Phase 1 (9 components, 18 pts)
 
 | Component | Weight | Method |
 |-----------|-------:|--------|
@@ -108,33 +117,85 @@ All scoring is post-hoc — agent is not told how it is scored. Two tracks: Phas
 | `clinical_signal` | 3 | ΔC-index over null Cox + log HR between extreme-survival subtypes |
 | `genomic_coherence_drivers` | 2 | FDR-corrected Fisher's exact for OncoKB drivers per subtype |
 | `genomic_coherence_rppa` | 2 | ARI between expression grouping and RPPA k-means re-cluster |
-| `reference_concordance` | 2 | Max NMI across all available TCGA / OS subtype schemes |
+| `reference_concordance` | 2 | Max NMI across all available TCGA subtype schemes |
 | `marker_evidence` | 2 | HGNC validity + one-vs-rest AUC + OncoKB overlap |
 | `pathway_validity` | 1 | GMT name validity + ORA enrichment bonus |
 | `mechanism_grounding` | 2 | LLM judge — 3 axes: internal coherence, data grounding, mechanistic logic |
 | `experiment_quality` | 2 | LLM judge — 4 binary criteria: specific model, perturbation, measurement, quantitative outcome |
 
-### Phase 2 — 3 components, 5 points maximum (requires `--phase2` during run)
+### TCGA Track — Phase 2 Examination (3 components, 5 pts)
 
 | Component | Weight | Method |
 |-----------|-------:|--------|
-| `p2_commit_quality` | 1 | Regex coverage of 5 required commit-phase sections (PC loadings, survival, mutation, RPPA, unexpected finding) |
-| `p2_experiment_depth` | 2 | LLM judge on Q4 — 4 sub-parts each 0/1: model+dataset evidence, perturbation+direction, readout+magnitude, falsification criterion |
-| `p2_mechanistic_integration` | 2 | LLM judge on all Q1-Q4 — 3 axes: cross-modal consistency (4 modalities woven into one causal chain), quantitative grounding (committed numbers cited), causal coherence (directed chain vs. associations) |
+| `exam_data_lock_quality` | 1 | Regex coverage of 5 required Data Lock sections (PC loadings, survival, mutation, RPPA, unexpected finding) |
+| `exam_experiment_depth` | 2 | LLM judge on Q4 — 5 sub-parts: named model + evidence, perturbation + direction, readout + magnitude, falsification criterion, orthogonal modality |
+| `exam_mechanistic_integration` | 2 | LLM judge on Q1–Q4 — cross_modal_consistency, quantitative_grounding, causal_coherence (all /4) |
 
-Phase 1 and Phase 2 are normalized separately (each 0–1) so Phase 1-only and Phase 1+Phase 2 runs are directly comparable.
+### OS Discovery Track — Phase 1 (6 components, 15 pts)
 
-Run with: `bash scripts/score_all_withMeth.sh <results_dir>` or `python scripts/score_episode_v3.py <episode.json> --cohort OS --save`
+| Component | Weight | Method |
+|-----------|-------:|--------|
+| `structure_validity` | 2 | Same as TCGA — bootstrap silhouette + ARI |
+| `survival_stratification` | 3 | Multi-group log-rank p (1.5 pts, `-log10(p)/4` scaled) + Cox max-vs-min HR magnitude (1.5 pts, `log(HR)/log(4)` scaled) |
+| `provenance_integrity` | 3 | Per-gene audit of the prompt's 2-of-3 test: DE FDR<0.05 BH between groups, survival correlation FDR<0.05 BH, methylation-CpG correlation OR CNA Fisher per group. Score = fraction of `top_genes` passing ≥2 |
+| `mechanistic_grounding` | 3 | OS-specific LLM judge — 3 axes: `prior_data_discipline` (labels + cited computations), `causal_chain_from_data`, `discovery_beyond_priors` |
+| `cross_modal_support` | 2 | Stricter than provenance test 3: per gene, requires RNA evidence (DE OR survival, nominal p<0.05) **AND** non-RNA evidence (methylation correlation OR CNA enrichment) |
+| `validation_experiment` | 2 | Reused TCGA judge — 4 binary criteria for proposed next experiment |
 
-### Mechanism hypothesis judge (3 axes, /12 raw → 0–1 normalized)
+### OS Discovery Track — Phase 2 Examination (2 components, 3 pts)
 
-| Axis | Max | Evaluates |
-|------|----:|-----------|
-| `internal_coherence` | 4 | Hypothesis logically follows from submitted genes and pathways |
-| `data_grounding` | 4 | Claims are anchored to data-derived findings, not literature recall |
-| `mechanistic_logic` | 4 | Explicit directional causal chain with named molecular actors at each step |
+| Component | Weight | Method |
+|-----------|-------:|--------|
+| `exam_data_lock_quality` | 1 | Same as TCGA |
+| `exam_mechanistic_integration` | 2 | OS-specific LLM judge — 3 axes: `data_lock_citation`, `multi_modal_integration`, `prior_data_labeling` |
 
-Score 4 on `mechanistic_logic` requires direction at every step and named molecular actors (ligand, receptor, effector, downstream target). Stating pathway names without tracing the logic scores 0–1.
+### OS Discovery Track — Phase 3 External Validation (2 components, 5 pts)
+
+Phase 3 is OS-only. It hands the agent's submitted gene set to TARGET-OS (n=85 with survival, 29 events) — an independent pediatric/AYA osteosarcoma cohort — and lets the data decide whether the signature replicates. Direction (protective vs risk) per gene is inferred from SGH-OS Cox HR.
+
+| Component | Weight | Method |
+|-----------|-------:|--------|
+| `target_coexpr_replication` | 2 | Three subscores averaged: (1) `os_specificity_delta` = SGH↔TARGET-OS matrix ρ minus SGH↔TARGET-non-OS matrix ρ (negative control), (2) sign concordance of pairwise correlations, (3) leave-one-out signature direction match. The OS-specificity delta and LOO direction prevent two distinct null-floor inflations: generic gene biology that replicates in any cohort, and the tautological bias of a gene correlating with a signature it's part of. |
+| `target_survival_replication` | 3 | Signature score = mean(z-protective) − mean(z-risk) in TARGET-OS. **Direction-as-gate**: if Cox HR > 1 (wrong direction), entire score = 0; if HR < 1, score = (significance + magnitude) / 2 where `sig = -log10(p)/4` and `mag = |log HR|/log 2`. Built-in literature-defined positive controls (cytolytic, IFN-γ, hypoxia, proliferation, metastasis_at_dx) report in diagnostics — they verify the cohort can detect known signal so a null candidate is genuine non-replication rather than underpowered. |
+
+### Calibration — null baselines (n=100)
+
+Reviewer-driven: ran the full scorer on 100 random gene sets (size 15) to establish "what does guessing score?" Two modes:
+- **Random partition**: each iter generates random k∈{2,3,4} partition AND random gene set. Captures the full chance floor.
+- **Fixed partition** (using G2 s0's actual partition): only the gene set is random. Isolates the gene-set-only effect; partition-dependent components pin at their real values.
+
+| Component | Random null mean | Random null P95 | Fixed null mean | Real G2 s0 |
+|---|---:|---:|---:|---:|
+| structure_validity | 0.002 | 0.010 | 0.088 | 0.088 |
+| survival_stratification | 0.242 | 0.577 | **0.998** | 0.998 |
+| provenance_integrity | 0.047 | 0.200 | 0.185 | 1.000 |
+| cross_modal_support | 0.103 | 0.200 | 0.232 | 0.800 |
+| target_coexpr_replication | 0.311 | 0.483 | 0.326 | 0.795 |
+| target_survival_replication | 0.093 | 0.423 | 0.108 | 0.059 |
+
+Decomposition shows three component categories:
+- **Partition-only** (`structure_validity`, `survival_stratification`): score depends entirely on partition quality; gene set has no effect. Random partition's 0.24 survival null is from "lucky partitions occasionally hitting log-rank significance"; fixing a good partition pegs at 1.0 regardless of gene set.
+- **Gene-set-only** (Phase 3 both): random vs fixed partition nulls are identical (Δ ≤ 0.02). Phase 3 reads only the gene set, as designed.
+- **Hybrid** (`provenance_integrity`, `cross_modal_support`): a good partition raises the null floor ~0.13 (random genes more often show incidental DE / CNA enrichment with real strata), but the gene set determines whether the score climbs from floor (~0.18) to ceiling (1.0). The Phase 1 design correctly weights both.
+
+**Reading real episode scores against the null**: for components where the real episode (e.g., G2 s0) is above the null P95, the score is signal. The exception is `target_survival_replication` — even the best run9 episode (0.059) is **below the null P95 (0.42)**, confirming the user's documented finding that prognostic value did NOT replicate in TARGET-OS. The scorer is honestly reporting that the strongest claimed biomarker is indistinguishable from random gene-set chance at this axis.
+
+Calibration JSONs: `data/calibration/os_null_baseline_{random,fixed-from}_n100_s42.json`. Re-generate with:
+```bash
+python scripts/calibrate_os_null.py --n-iter 100 --seed 42
+python scripts/calibrate_os_null.py --n-iter 100 --seed 42 --partition fixed-from \
+    --fixed-partition-source <episode.json>
+```
+
+### Reviewer-driven design fixes (2026-06-12)
+
+External code review surfaced two issues in the Phase 3 design and one bug. All three fixed before n=100 calibration:
+
+1. **`target_coexpr_replication` raw ρ had a 0.48 null floor** — random 15-gene sets carry housekeeping pairs whose correlations replicate in *any* cohort. Fixed by using the `os_specificity_delta` (target_os ρ − target_non_os ρ) instead of raw target_os ρ as the rho subscore. Already-computed diagnostic became the load-bearing signal.
+2. **`target_survival_replication` had 0.27 null mean from coin-flip direction credit** — old formula `(direction + sig + mag) / 3` gave 0.33 to any signature that happened to point in the right direction. Fixed by **direction-as-gate**: wrong direction → entire score = 0; right direction → (sig + mag) / 2. Honest with respect to anti-replications.
+3. **LOO direction match bug** — the original direction match correlated each gene with a signature that *included* that gene, giving Corr(G, sig) ≈ 1/√n_prot by construction. Random gene sets hit 0.8 direction match purely from this tautology. Fixed with leave-one-out signature (each gene tested against signature built from the *other* genes), dropping random direction match to the expected ~0.5.
+
+Also vectorized methylation-correlation computation as a matrix product with module-level cache (single per-cohort prep, reused across `provenance_integrity` and `cross_modal_support` calls per episode). **12.8× speedup** — single-episode scoring drops ~48s → ~5s, n=100 null calibration drops ~64 min → ~4 min.
 
 ---
 
@@ -174,6 +235,54 @@ Key finding: all 13 episodes converged on SP7/RUNX2/ALPL (dominant osteoblast ax
 #### run9_marker (2026-06-08, OS biomarker prompt `agent_system_os.txt`, action-based codebook gate)
 In progress. 13 episodes: G0 × {0,1,7}, G1 × {0,1,7,42,123}, G2 × {0,1,7,42,123}.
 Dryrun validation (G2 s42): codebook revealed at call #30 after genuine Stage 0→1→2 work; top genes shifted to SOX11, CX3CL1, TRPV2, EPHA2 (residual structure, not dominant axis).
+run9 produced 11 convergent "survival-validated" biomarkers (EPHA2, CX3CL1, SOX11, ADAMTSL2, FAM110D, ZBTB42, HPS6, ZNF524, FZD5, PREX1, TRIM9). **These were externally validated in TARGET-OS — see [External validation](#external-validation--target-os-run9-biomarkers) below. Prognostic claim did NOT replicate.**
+
+---
+
+## External Validation — TARGET-OS (run9 biomarkers)
+
+**Date:** 2026-06-11 · **Validation cohort:** TARGET-OS (pediatric/AYA osteosarcoma), independent of SGH-OS.
+
+### Cohort
+TARGET pan-cancer RNA-seq processed by `scripts/process_target.py` → `data/external/TARGET/expression.parquet` (1555 samples × 19553 genes, log2(CPM+1), TCGA gene filter). OS arm = 88 samples. GDC clinical export → `data/external/TARGET/TARGET_OS_clinical.tsv` (survival: `os_time` = days_to_death if dead else days_to_last_follow_up; `event` = vital_status=="Dead"). Usable survival cohort **n=85, 29 deaths, median follow-up 1451 d**. All 11 biomarkers present in TARGET.
+
+### Two validations, opposite verdicts
+
+**1. Co-expression structure → REPLICATES.** The 11 genes form the same module in TARGET-OS as in SGH-OS: gene–gene correlation-matrix ρ=**0.81** (p=4e-14), 84% sign-concordant pairs, 11/11 protective/risk signature directions preserved. OS-specific — the same structure in TARGET non-OS (n=1467) gives ρ=**−0.14** (negative control). The genes are real, conserved OS biology.
+
+**2. Prognostic association → DOES NOT REPLICATE.**
+- Single genes: 5/11 Cox-HR directions match SGH-OS (chance level), **0/11** significant-and-concordant. FAM110D inverts (SGH protective HR=0.66 → TARGET risk **HR=1.85, p=0.001**).
+- Combined module score (protective − risk): SGH-OS HR=**0.42, p=1e-6** → TARGET-OS HR=**1.08, p=0.70**. Protective-only: SGH HR=0.34, p=2e-7 → TARGET HR=1.28, p=0.21.
+
+### Batch effect ruled out via positive controls
+All survival tests are within-TARGET (z-scored/rank-based), so cohort-level batch is controlled by design; the ρ=0.81 structure replication confirms the genes are well-measured. Decisive check — pre-specified, literature-defined OS prognostic markers (not from either cohort) tested in the same TARGET-OS survival data:
+
+| Marker | HR | Cox p | Result |
+|---|---:|---:|---|
+| Metastasis at diagnosis (clinical gold standard) | **4.58** | **5e-5** | ✅ as expected |
+| Cytolytic / immune (GZMA, PRF1) | **0.60** | **0.026** | ✅ protective |
+| Hypoxia (HIF targets) | **1.40** | **0.041** | ✅ adverse |
+| IFN-γ (Ayers) | 0.76 | 0.21 | direction ✓, underpowered |
+| Proliferation | 1.21 | 0.35 | direction ✓, underpowered |
+| **run9 signature** | **1.08** | **0.70** | ❌ null |
+
+All four biology signatures are directionally correct; metastasis + immune + hypoxia are significant. The cohort detects real prognostic signal → run9's null is **genuine non-replication, not batch/underpowering**.
+
+### Overfitting fingerprint
+In SGH-OS (discovery) the known markers are all null (cytolytic p=0.53, hypoxia p=0.63, IFN-γ p=0.46) while the run9 signature is p=1e-6; in TARGET-OS the reverse holds. A discovered signature out-performing established prognostic biology in-sample and vanishing out-of-sample is the classic signature of **survival-selection overfitting** (genes were picked *because* they tracked survival in n=91). Cohort biology (adult SGH vs pediatric TARGET) likely contributes too.
+
+### Conclusion
+> run9's "11 statistically-validated survival biomarkers" should be downgraded to **"11 convergent osteosarcoma module genes; prognostic value did not replicate in TARGET-OS."** The biology is real; the prognostic claim was in-sample optimism. The benchmark's external-validation step caught the overfit — which is the benchmark working as intended.
+
+**Implication for run10:** require a held-out / cross-validated survival estimate before any prognostic claim, and report the optimism gap (discovery vs held-out HR).
+
+### Reproduce
+Reusable harness `analysis/external_validation.py` (validates any signature in TARGET-OS, runs the built-in positive controls, emits table + forest/KM figure):
+```bash
+python analysis/external_validation.py                                   # run9 default
+python analysis/external_validation.py --name run10 --protective G1,G2 --risk G3,G4
+```
+Outputs in `analysis/run9_target_validation/`: `external_validation_run9.tsv` (per-marker table), `external_validation_run9.png` (panel A forest + B–E KM), `corr_discovery_vs_val.png` / `module_concordance.png` (co-expression structure). Exploratory scripts: `analysis/validate_run9_target*.py`, `validate_target_poscontrol.py`.
 
 ### Key observations (run3 — clinical columns not yet anonymized)
 
@@ -251,8 +360,8 @@ conda activate biodiscoverygym
 # Smoke test — G0/G1/G2 once each (seed=42, 15 calls, no exam)
 bash scripts/run_cohort.sh --smoke-test --cohort OS
 
-# Full OS benchmark run (13 episodes: G0×{0,1,7} + G1/G2×{0,1,7,42,123})
-bash scripts/run_cohort.sh --tag run9_marker --cohort OS
+# Full OS benchmark run (9 episodes: G0/G1/G2 × {0,1,7})
+bash scripts/run_cohort.sh --tag run10 --cohort OS
 
 # Single episodes
 python scripts/run_episode.py --cohort OS --explicit-retrieval --seed 42           # G0
@@ -261,9 +370,9 @@ python scripts/run_episode.py --cohort OS --seed 42                             
 python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42           # G3
 python scripts/run_episode.py --cohort OS --seed 42 --primekg                       # G2 + PrimeKG
 
-# Score
-python scripts/score_episode_v3.py results/external/run9_marker/<uuid>/<label>.json --cohort OS --save
-bash scripts/score_all_withMeth.sh results/external/run9_marker/
+# Score (OS discovery rubric — Phase 1+2+3, 23 pt ceiling)
+python scripts/score_os_episode.py results/external/run9_marker/<uuid>/<label>.json --save
+bash scripts/score_all_os.sh results/external/run9_marker/
 ```
 
 ---
@@ -273,20 +382,31 @@ bash scripts/score_all_withMeth.sh results/external/run9_marker/
 | File | Purpose |
 |------|---------|
 | `biodiscoverygym/episode.py` | `Episode.from_cohort()`, 6-layer anonymization (expression+mutation union), `--perturb` support |
-| `biodiscoverygym/scoring/evaluator_v3.py` | 9-component v3 scorer |
-| `biodiscoverygym/scoring/judge.py` | LLM judge (Sonnet) — 3-axis mechanism_grounding (coherence + data_grounding + mechanistic_logic) |
+| `biodiscoverygym/scoring/evaluator_v2.py` | TCGA Phase 1 base (`EvaluatorV2`) — 9 components, faithfulness rubric |
+| `biodiscoverygym/scoring/evaluator_v3.py` | TCGA Phase 1+2 + trace (`EvaluatorV3`) — extends v2 with Examination + agent-trace extraction |
+| `biodiscoverygym/scoring/evaluator_os.py` | **OS discovery scorer (`EvaluatorOS`)** — Phase 1 (15 pts) + Phase 2 (3 pts) + Phase 3 TARGET external validation (5 pts) = 23 pts |
+| `biodiscoverygym/scoring/components.py` | Shared computational components (TCGA stack + reused by OS for `structure_validity` and `exam_data_lock_quality`) |
+| `biodiscoverygym/scoring/components_os.py` | **OS-specific computational components** — `survival_stratification`, `provenance_integrity`, `cross_modal_support`, `target_coexpr_replication`, `target_survival_replication`. Vectorized methylation correlation with module-level cache. |
+| `biodiscoverygym/scoring/judge.py` | TCGA LLM judges (Sonnet) — mechanism_grounding, experiment_quality, exam judges |
+| `biodiscoverygym/scoring/judge_os.py` | **OS-specific LLM judges** — `mechanism_grounding_os` (prior/data discipline, causal chain from data, discovery beyond priors), `exam_mechanistic_integration_os` (Data Lock citation, multi-modal integration, prior/data labeling) |
 | `biodiscoverygym/executor.py` | Stateful Python sandbox — blocks `data/tcga`, `data/external`, `data/subtypes`, gene maps, prior results; genesets blocked pre-codebook |
 | `biodiscoverygym/tools/multimodal.py` | `multimodal_cluster()` — MOFA+/SNF/concat_pca, pre-loaded in namespace |
 | `biodiscoverygym/tools/pcst.py` | Prize-Collecting Steiner Tree via networkx KMB approximation |
 | `biodiscoverygym/tools/opentargets.py` | OpenTargets actionability lookup — `get_actionability()`, `batch_actionability()` |
-| `agents/claude_agent_cohort.py` | `ClaudeAgentCohort` — G0/G1/G2 unified; codebook auto-injected (episode start for G0/G1, run_code #8 for G2) |
-| `prompts/agent_system.txt` | Unified system prompt for all modes (G0/G1/G2) — 5 format vars |
-| `scripts/run_episode.py` | CLI: `--cohort`, `--explicit-retrieval`, `--gene-codebook-gate` (default 8), `--mislead-cohort`, `--seed`, `--primekg` |
-| `scripts/run_cohort.sh` | Multi-seed benchmark runner: `--tag`, `--cohort`, `--g0/g1/g2-seeds`, `--smoke-test` |
-| `scripts/score_episode_v3.py` | Post-hoc v3 scoring |
-| `scripts/score_all_withMeth.sh` | Batch scorer for all episodes in a results directory |
-| `scripts/download_primekg.py` | PrimeKG download + split (Harvard Dataverse) |
-| `scripts/download_opentargets.py` | OpenTargets download via GraphQL API (no auth) |
+| `agents/claude_agent_cohort.py` | `ClaudeAgentCohort` — G0/G1/G2 unified; codebook auto-injected (episode start for G0/G1, action-based gate for G2) |
+| `prompts/agent_system_tcga.txt` | TCGA faithfulness prompt (G0/G1/G2) |
+| `prompts/agent_system_os.txt` | **OS discovery prompt** — principle-driven, "follow the breakers" Stage 3 |
+| `scripts/run_episode.py` | CLI: `--cohort`, `--explicit-retrieval`, `--gene-codebook-gate`, `--mislead-cohort`, `--seed`, `--primekg` |
+| `scripts/run_cohort.sh` | OS multi-seed benchmark runner: `--tag`, `--cohort`, `--g0/g1/g2-seeds` (defaults: 3 each = 9 episodes total), `--smoke-test` |
+| `scripts/run_tcga.sh` | TCGA multi-seed benchmark runner |
+| `scripts/score_tcga_episode.py` | TCGA faithfulness scoring (single episode) |
+| `scripts/score_all_tcga.sh` | TCGA batch scorer |
+| `scripts/score_os_episode.py` | **OS discovery scoring (single episode)** — Phase 1+2+3, `--skip-llm` to skip API |
+| `scripts/score_all_os.sh` | **OS batch scorer** |
+| `scripts/calibrate_os_null.py` | **OS scorer null-baseline calibration** — random gene set (& optionally random partition) over N iterations; output mean/SD/percentiles per component |
+| `scripts/process_target.py` | TARGET pan-cancer RNA-seq processor (Phase 3 validation data source) |
+| `analysis/external_validation.py` | Standalone external-validation harness — Cox + KM in TARGET-OS for any signature, with built-in literature positive controls |
+| `data/calibration/os_null_baseline_*.json` | n=100 null baselines (random + fixed-partition modes) for reading real episode scores |
 | `data/subtypes/pancan_subtypes.tsv` | Reference subtypes — TCGA pancan + 91 OS samples (S-IA/S-IS/S-HRD/S-MD) |
 
 ---

@@ -17,8 +17,8 @@
 #   --cohort COHORT     Cancer cohort (default: OS)
 #   --model MODEL       Anthropic model ID (default: claude-sonnet-4-6)
 #   --g0-seeds SEEDS    Space-separated seed list for G0 (default: "0 1 7")
-#   --g1-seeds SEEDS    Space-separated seed list for G1 (default: "0 1 7 42 123")
-#   --g2-seeds SEEDS    Space-separated seed list for G2 (default: "0 1 7 42 123")
+#   --g1-seeds SEEDS    Space-separated seed list for G1 (default: "0 1 7")
+#   --g2-seeds SEEDS    Space-separated seed list for G2 (default: "0 1 7")
 #   --results-base DIR  Root output directory (default: results/external/ for OS,
 #                       results/ for TCGA cohorts)
 #   --max-tool-calls N  Phase 1 tool call budget (default: 100)
@@ -35,8 +35,8 @@ TAG=""
 COHORT="OS"
 MODEL="claude-sonnet-4-6"
 G0_SEEDS="0 1 7"
-G1_SEEDS="0 1 7 42 123"
-G2_SEEDS="0 1 7 42 123"
+G1_SEEDS="0 1 7"
+G2_SEEDS="0 1 7"
 RESULTS_BASE=""
 MAX_TOOL_CALLS=100
 NO_EXAMINATION=0
@@ -185,7 +185,7 @@ if [[ $SKIP_SCORE -eq 0 ]]; then
     echo "============================================================"
     echo "  Scoring all episodes in ${RESULTS_BASE}"
     echo "============================================================"
-    bash scripts/score_all_withMeth.sh "${RESULTS_BASE}"
+    bash scripts/score_all_os.sh "${RESULTS_BASE}"
 fi
 
 echo ""

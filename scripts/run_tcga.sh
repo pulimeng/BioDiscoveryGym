@@ -153,10 +153,10 @@ score_all() {
     echo "  Scoring all episodes in ${OUT_DIR}"
     echo "============================================================"
     if [[ $DRY_RUN -eq 1 ]]; then
-        echo "  [dry-run] bash scripts/score_all_withMeth.sh ${OUT_DIR}"
+        echo "  [dry-run] bash scripts/score_all_tcga.sh ${OUT_DIR}"
         return
     fi
-    bash scripts/score_all_withMeth.sh "$OUT_DIR"
+    bash scripts/score_all_tcga.sh "$OUT_DIR"
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────────
