@@ -129,11 +129,17 @@ python scripts/run_episode.py --cohort OS --seed 42 --gene-codebook-gate 0
 python scripts/score_sghos_episode.py results/external/<run>/<uuid>/<label>.json --save        # OS discovery rubric (24 pts)
 python scripts/score_tcga_episode.py results/tcga/<run>/<uuid>/<label>.json --cohort BRCA --save  # TCGA faithfulness rubric (16 pts)
 
-# Pipeline smoke test (1 seed/mode, 15 calls, no exam — ~$1, ~15 min)
+# OS pipeline smoke test (1 seed/mode, 15 calls, no exam — fast pipeline check, ~$1, ~15 min)
 bash scripts/run_cohort.sh --smoke-test --cohort OS
 
 # Full OS benchmark (G0/G1/G2 × 3 seeds = 9 episodes; ~$30 on Sonnet)
 bash scripts/run_cohort.sh --tag run10 --cohort OS
+
+# TCGA smoke test (1 cohort × 1 seed × G0/G1/G2/G3 at default 100-call budget, scored — ~$12, ~1 hr)
+bash scripts/run_tcga.sh --smoke-test
+
+# Full TCGA benchmark (55 episodes = G0×7 + G1×21 + G2×21 + G3×6, ~$165)
+bash scripts/run_tcga.sh --tag run10
 
 # Null-baseline calibration for OS discovery rubric
 python scripts/calibrate_os_null.py --n-iter 100 --seed 42

@@ -5,8 +5,8 @@
 # then scores every episode. Resume-safe: skips runs whose JSON already exists.
 #
 # Usage:
-#   bash scripts/run_tcga.sh --smoke-test                    # pipeline test: 1 cohort × 1 seed × G0/G1/G2/G3, 15 calls, no scoring (~$1, ~10 min)
-#   bash scripts/run_tcga.sh --tag run10                     # full benchmark (55 episodes) + scoring
+#   bash scripts/run_tcga.sh --smoke-test                    # 1 cohort × 1 seed × G0/G1/G2/G3 at default 100-call budget, scored (~$12, ~1 hr)
+#   bash scripts/run_tcga.sh --tag run10                     # full benchmark (55 episodes) + scoring (~$165)
 #   bash scripts/run_tcga.sh --tag run10 --group G2          # one group only
 #   bash scripts/run_tcga.sh --tag run10 --score-only        # score existing results
 #   bash scripts/run_tcga.sh --tag run10 --skip-score        # run only, no scoring
@@ -20,7 +20,7 @@ set -euo pipefail
 # ── Defaults ─────────────────────────────────────────────────────────────────
 TAG=""
 MODEL="${TASK_A_MODEL:-claude-sonnet-4-6}"
-MAX_CALLS=100
+# MAX_CALLS resolved later from USER_MAX_CALLS sentinel + smoke-test mode
 BASE_DIR="results/tcga"
 COHORTS=(BRCA PRAD UCEC LUAD LIHC LUSC OV)
 SEEDS=(42 7 123)
@@ -31,13 +31,14 @@ DRY_RUN=0
 SCORE_ONLY=0
 SKIP_SCORE=0
 SMOKE_TEST=0
+USER_MAX_CALLS=""             # sentinel: tracks whether --max-calls was explicitly passed
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --tag)         TAG="$2";         shift 2 ;;
         --model)       MODEL="$2";       shift 2 ;;
-        --max-calls)   MAX_CALLS="$2";   shift 2 ;;
+        --max-calls)   USER_MAX_CALLS="$2"; shift 2 ;;
         --group)       RUN_GROUP="$2";   shift 2 ;;
         --dry-run)     DRY_RUN=1;        shift ;;
         --score-only)  SCORE_ONLY=1;     shift ;;
@@ -52,22 +53,28 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Smoke-test overrides ──────────────────────────────────────────────────────
-# Pipeline check: 1 cohort (OV) × 1 seed × all 4 groups (G0/G1/G2/G3), 15-call budget.
+# 1 cohort (OV) × 1 seed × all 4 groups (G0/G1/G2/G3).
 # G3 reuses the locked OV:BRCA pair so all 4 groups touch the OV expression matrix.
-# ~$1, ~10 min total on Sonnet. Forces TAG=smoke-test, BASE_DIR=results, no scoring.
+#
+# Two flavors via --max-calls:
+#   --smoke-test                       → 15 calls, no scoring (~$1, ~10 min)   — pipeline check
+#   --smoke-test --max-calls 100       → 100 calls, scored   (~$12, ~1 hr)     — depth check
+# Auto-skips scoring only when MAX_CALLS ≤ 30 (too few to produce meaningful scores).
 if [[ $SMOKE_TEST -eq 1 ]]; then
     TAG="smoke-test"
     COHORTS=(OV)
     SEEDS=(42)
     G3_PAIRS=("OV:BRCA")
-    MAX_CALLS=15
-    RUN_GROUP=""             # always all 4 groups in smoke test
-    SKIP_SCORE=1             # 15 calls won't produce meaningful scores
+    RUN_GROUP=""             # always all 4 groups
 fi
+
+# ── Resolve MAX_CALLS from sentinel ───────────────────────────────────────────
+[[ -z "$USER_MAX_CALLS" ]] && USER_MAX_CALLS=100   # default for all modes (full + smoke)
+MAX_CALLS="$USER_MAX_CALLS"
 
 # ── Validation ────────────────────────────────────────────────────────────────
 if [[ -z "$TAG" ]]; then
-    echo "Error: --tag is required (e.g. --tag run5_exam, or use --smoke-test)" >&2
+    echo "Error: --tag is required (e.g. --tag run10, or use --smoke-test)" >&2
     exit 1
 fi
 
