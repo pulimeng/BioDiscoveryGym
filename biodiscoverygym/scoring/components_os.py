@@ -417,8 +417,8 @@ def score_provenance_integrity(
     cna: pd.DataFrame | None,
 ) -> tuple[float, dict]:
     """For each submitted top_gene, verify ≥ 2 of:
-      (1) DE between groups: ANOVA F-test, FDR<0.05 across all submitted genes
-      (2) Survival correlation: Spearman with OS time, FDR<0.05 across all submitted
+      (1) DE between groups: ANOVA F-test, FDR<0.05 across all expression genes tested
+      (2) Survival correlation: Spearman with OS time, FDR<0.05 across all expression genes tested
       (3) Cross-modal: methylation correlation OR CNA enrichment
     Score = fraction passing ≥2 tests."""
     if not top_genes:
@@ -427,16 +427,30 @@ def score_provenance_integrity(
         # Filter to genes present in expression matrix (others fail by default)
         valid_genes = [g for g in top_genes if g in expression.columns]
 
-        # Test 1: DE p-values, then FDR-correct across submitted genes
-        de_pvals = [_gene_de_anova(g, expression, grouping) for g in valid_genes]
+        # Test 1: DE p-values, then FDR-correct across the full expression
+        # testing universe. The prompt requires genome-wide correction; correcting
+        # only across submitted top_genes would make selective reporting too easy.
+        universe_genes = list(expression.columns)
+        de_pvals = [_gene_de_anova(g, expression, grouping) for g in universe_genes]
         de_fdr = _bh_fdr(de_pvals)
-        de_pass = {g: (fdr == fdr and fdr < 0.05) for g, fdr in zip(valid_genes, de_fdr)}
+        de_fdr_by_gene = dict(zip(universe_genes, de_fdr))
+        de_pass = {
+            g: (de_fdr_by_gene.get(g, float("nan")) == de_fdr_by_gene.get(g, float("nan"))
+                and de_fdr_by_gene[g] < 0.05)
+            for g in valid_genes
+        }
 
-        # Test 2: Survival p-values, then FDR-correct
+        # Test 2: Survival p-values, also FDR-corrected across the full expression
+        # testing universe.
         surv_df = _build_survival_df(metadata)
-        surv_pvals = [_gene_survival_pvalue(g, expression, surv_df) for g in valid_genes]
+        surv_pvals = [_gene_survival_pvalue(g, expression, surv_df) for g in universe_genes]
         surv_fdr = _bh_fdr(surv_pvals)
-        surv_pass = {g: (fdr == fdr and fdr < 0.05) for g, fdr in zip(valid_genes, surv_fdr)}
+        surv_fdr_by_gene = dict(zip(universe_genes, surv_fdr))
+        surv_pass = {
+            g: (surv_fdr_by_gene.get(g, float("nan")) == surv_fdr_by_gene.get(g, float("nan"))
+                and surv_fdr_by_gene[g] < 0.05)
+            for g in valid_genes
+        }
 
         # Test 3: cross-modal (methylation OR CNA), per-gene
         modal_pass = {}
@@ -460,6 +474,8 @@ def score_provenance_integrity(
                 "modal": modal_pass[g],
                 "n_passed": n_passed,
                 "valid": True,
+                "de_fdr_genomewide": de_fdr_by_gene.get(g),
+                "surv_fdr_genomewide": surv_fdr_by_gene.get(g),
             }
 
         passing = sum(1 for v in per_gene.values() if v["n_passed"] >= 2)
@@ -467,6 +483,8 @@ def score_provenance_integrity(
         return float(score), {
             "n_top_genes": len(top_genes),
             "n_valid_in_expr": len(valid_genes),
+            "fdr_universe": "all expression genes with valid per-test statistics",
+            "n_expression_genes_tested": len(universe_genes),
             "n_passing_2of3": passing,
             "per_gene": per_gene,
         }

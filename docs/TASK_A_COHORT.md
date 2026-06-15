@@ -2,7 +2,7 @@
 
 **Part of:** BioDiscoveryGym → Part 2 (Benchmark)
 **Last updated:** 2026-06-15
-**Status:** Infrastructure complete. OS 9-run benchmark complete + externally validated in TARGET-OS (prognosis did not replicate; empirical finding documented). TCGA scoring track simplified to 18-pt Phase 1; smoke-test runner wired; 55-episode benchmark ready to launch.
+**Status:** Infrastructure complete. OS 9-run benchmark complete + externally validated in TARGET-OS (prognosis did not replicate; empirical finding documented). TCGA scoring track simplified to 16-pt Phase 1; smoke-test runner wired; 55-episode benchmark ready to launch.
 
 ---
 
@@ -101,7 +101,7 @@ Three changes locked in preparation for the multi-seed TCGA run, mirroring the O
 
 **1. Post-submission Examination removed for TCGA.** The Phase 1 components (`reference_concordance`, `clinical_signal`, `genomic_coherence_drivers`) already test whether the agent recovered the known TCGA subtype biology — the examination phase was layering Q1–Q4 on top to test the same thing at ~$0.50/episode additional LLM-judge cost. For OS the examination is the discovery-quality proxy (no known answer exists), but for TCGA it is parallel-testing the faithfulness signal already captured in Phase 1.
 - `scripts/run_tcga.sh` now passes `--no-examination` automatically on every episode invocation
-- `biodiscoverygym/scoring/evaluator_v3.py` only attaches the examination report when actual Data Lock content exists in the messages — so the grand-total ceiling correctly resolves to 18 pts (was 23 with phantom Phase 2)
+- `biodiscoverygym/scoring/evaluator_v3.py` only attaches the examination report when actual Data Lock content exists in the messages — so the grand-total ceiling correctly resolves to 16 pts (was 23 with phantom Phase 2)
 - TCGA prompt's "After submit_discovery" block removed; replaced with single line: "submit_discovery ends the session"
 - Cost savings: ~$28 across the 55-episode plan
 
@@ -507,7 +507,7 @@ bash scripts/score_all_sghos.sh results/external/run9_marker/
 | `biodiscoverygym/episode.py` | `Episode.from_cohort()`, 6-layer anonymization (expression+mutation union), `--perturb` support |
 | `biodiscoverygym/scoring/evaluator_v2.py` | TCGA Phase 1 base (`EvaluatorV2`) — 9 components, faithfulness rubric |
 | `biodiscoverygym/scoring/evaluator_v3.py` | TCGA Phase 1+2 + trace (`EvaluatorV3`) — extends v2 with Examination + agent-trace extraction |
-| `biodiscoverygym/scoring/evaluator_os.py` | **OS discovery scorer (`EvaluatorOS`)** — Phase 1 (15 pts) + Phase 2 (3 pts) + Phase 3 TARGET external validation (5 pts) = 23 pts |
+| `biodiscoverygym/scoring/evaluator_os.py` | **OS discovery scorer (`EvaluatorOS`)** — Phase 1 (16 pts) + Phase 2 (3 pts) + Phase 3 TARGET external validation (5 pts) = 24 pts |
 | `biodiscoverygym/scoring/components.py` | Shared computational components (TCGA stack + reused by OS for `structure_validity` and `exam_data_lock_quality`) |
 | `biodiscoverygym/scoring/components_os.py` | **OS-specific computational components** — `survival_stratification`, `provenance_integrity`, `cross_modal_support`, `target_coexpr_replication`, `target_survival_replication`. Vectorized methylation correlation with module-level cache. |
 | `biodiscoverygym/scoring/judge.py` | TCGA LLM judges (Sonnet) — mechanism_grounding, experiment_quality, exam judges |

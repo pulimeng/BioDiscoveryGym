@@ -126,8 +126,17 @@ Produce:
     # genes hit by both SNV and CNA within the same subtype — convergent two-hit
     # evidence is a strong mechanistic signal.
 
-  Multi-modal integration: if methylation, RPPA, mutation, or CNA data is available,
-  use the pre-loaded multimodal_cluster() function to integrate modalities:
+  Multi-omics reasoning support: if methylation, RPPA, mutation, or CNA data is
+  available, use it to explain and stress-test the expression-derived subtype
+  structure rather than treating every modality as an independent rediscovery
+  target. The TCGA scorer primarily rewards faithful recovery of known subtype
+  biology from molecular structure, clinical signal, driver/RPPA coherence,
+  marker evidence, pathway validity, and mechanism grounding. Extra omics should
+  sharpen the mechanism, reveal contradictions, or explain why the expression
+  partition succeeds or fails.
+
+  If the non-expression modalities show strong structure, you may use the
+  pre-loaded multimodal_cluster() function as a sensitivity analysis:
 
     result = multimodal_cluster(
         {{"expression": expression, "methylation": methylation, "rppa": rppa, "cna": cna}},
@@ -138,10 +147,11 @@ Produce:
     nmi     = result["nmi_vs_expr_only"]  # float — NMI vs expression-only k-means
     print(result["method"])               # actual method used
 
-  Try mofa, snf, and concat_pca and compare:
+  Optionally try mofa, snf, and concat_pca and compare:
     - NMI between each multi-modal partition and expression-only partition
     - Survival log-rank p-value for each partition
-  Prefer the partition that best stratifies survival and clinical variables.
+  Prefer the partition that best recovers coherent subtype biology and clinical
+  patterns; do not chase a multi-modal partition solely because it is available.
   None values are silently skipped — pass all available modalities.
 
   Within-partition heterogeneity: even at your chosen k, scan for marker modules

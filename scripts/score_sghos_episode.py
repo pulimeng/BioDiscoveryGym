@@ -3,10 +3,10 @@ Post-hoc OS discovery scoring for a completed BioDiscoveryGym episode.
 
 Discovery rubric for SGH-OS (Jia et al. 2022) — scores whether the agent found
 prognostic biomarkers beyond what the paper reports. Three phases:
-  Phase 1 — structural + computational (15 pts)
+  Phase 1 — structural + computational (16 pts)
   Phase 2 — post-submission Examination (3 pts)
   Phase 3 — TARGET-OS external validation (5 pts)
-Grand total: 23 pts. All components implemented; LLM-judge components
+Grand total: 24 pts. All components implemented; LLM-judge components
 (mechanistic_grounding, validation_experiment, exam_mechanistic_integration)
 can be bypassed with --skip-llm for fast no-API-cost scoring.
 
@@ -71,14 +71,14 @@ def apply_sample_rename(dataset: dict, sample_id_map: dict) -> dict:
 def main():
     args = parse_args()
 
-    # Fail-fast guard: missing API key would silently zero 7 of 23 LLM-judged
+    # Fail-fast guard: missing API key would silently zero 7 of 24 LLM-judged
     # points (mechanistic_grounding 3 + validation_experiment 2 + exam_mechanistic_integration 2).
     # Components catch the AuthenticationError defensively and return 0 — useful
     # for batch resilience but a footgun for one-off scoring runs.
     import os
     if not args.skip_llm and not os.environ.get("ANTHROPIC_API_KEY"):
         print("ERROR: ANTHROPIC_API_KEY is not set.", file=sys.stderr)
-        print("  This script invokes 3 LLM judges (~7 of 23 pts).", file=sys.stderr)
+        print("  This script invokes 3 LLM judges (~7 of 24 pts).", file=sys.stderr)
         print("  Either:", file=sys.stderr)
         print("    export ANTHROPIC_API_KEY=sk-...    # to run judges", file=sys.stderr)
         print("    OR pass --skip-llm                  # to score computational components only", file=sys.stderr)

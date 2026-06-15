@@ -106,7 +106,7 @@ An LLM judge for benchmark components that cannot be scored quantitatively: biol
 - Novelty — conclusion goes beyond training-data recall (measured against no-data baseline)
 - Biological plausibility — proposed mechanism coherent given evidence
 
-**Status:** v2 scorer with LLM judge implemented for Task A (9 components, 18 pts). Full adversarial harness and internet-enabled evaluator not yet built.
+**Status:** Bifurcated scorers implemented for Task A — TCGA faithfulness rubric (8 components, 16 pts; Phase 1 only) and SGH-OS discovery rubric (11 components, 24 pts; Phase 1 + 2 + 3 with TARGET-OS external validation). Full adversarial harness and internet-enabled evaluator not yet built.
 
 ---
 

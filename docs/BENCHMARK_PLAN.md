@@ -54,25 +54,16 @@ Each episode: agent receives an anonymized patient cohort (expression ± mutatio
 
 - Runners: `bash scripts/run_tcga.sh --tag <run>` (G0-G3, TCGA cohorts) and `bash scripts/run_cohort.sh --tag <run> --cohort OS` (G0-G2, SGH-OS)
 - Results saved to `results/tcga/<run>/<uuid>/` (TCGA) or `results/external/<run>/<uuid>/` (OS)
-- Scorers: `scripts/score_tcga_episode.py` (TCGA faithfulness, 18 pts) and `scripts/score_sghos_episode.py` (OS discovery, 23 pts)
+- Scorers: `scripts/score_tcga_episode.py` (TCGA faithfulness, 16 pts) and `scripts/score_sghos_episode.py` (OS discovery, 24 pts)
 
 ---
 
 ## Evaluation Metrics
 
-### Primary: v2 score (0–18 pts, 9 components)
+Scoring is now bifurcated between the two experiments. See `docs/TASK_A_COHORT.md § Scoring (post-hoc, bifurcated)` and the `README.md` Scoring section for the canonical component-level rubrics.
 
-| Component | Points | Method |
-|-----------|--------|--------|
-| Grouping quality (NMI vs. TCGA subtypes) | 2 | Numeric |
-| Survival separation | 2 | Log-rank p-value |
-| Marker discriminability (AUROC) | 2 | Per-gene ROC |
-| Coverage (fraction of samples assigned) | 1 | Numeric |
-| Pathway evidence quality | 2 | LLM judge |
-| Mechanism hypothesis quality | 2 | LLM judge |
-| Next experiment quality | 2 | LLM judge |
-| Submission structure completeness | 2 | Structural check |
-| Biological insight (holistic) | 3 | LLM judge |
+- **TCGA faithfulness rubric** — 16 pts, 8 Phase 1 components (no Phase 2). Reference concordance against known TCGA subtypes is the faithfulness anchor.
+- **SGH-OS discovery rubric** — 24 pts: Phase 1 = 16 pts (7 components) + Phase 2 Examination = 3 pts + Phase 3 TARGET-OS external validation = 5 pts. Reference concordance deliberately absent.
 
 ### Secondary metrics
 
@@ -125,7 +116,7 @@ Each episode: agent receives an anonymized patient cohort (expression ± mutatio
 | `scripts/run_tcga.sh` | TCGA G0-G3 benchmark runner (resume-safe; `--smoke-test` for pipeline check) |
 | `scripts/run_cohort.sh` | OS G0-G2 benchmark runner (resume-safe; `--smoke-test` for pipeline check) |
 | `scripts/run_episode.py` | Single-episode CLI (cohort-aware default results-base) |
-| `scripts/score_tcga_episode.py` | TCGA faithfulness scorer (Phase 1, 18 pts) |
-| `scripts/score_sghos_episode.py` | OS discovery scorer (Phase 1+2+3, up to 23 pts) |
+| `scripts/score_tcga_episode.py` | TCGA faithfulness scorer (Phase 1, 16 pts) |
+| `scripts/score_sghos_episode.py` | OS discovery scorer (Phase 1+2+3, up to 24 pts) |
 | `docs/TASK_A_COHORT.md` | Full task design and empirical findings |
 | `docs/GRAND_DESIGN.md` | Overall benchmark architecture |

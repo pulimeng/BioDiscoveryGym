@@ -188,7 +188,8 @@ Your Stage 1 cross-modal alignment analysis dictates this:
   · If axes were ORTHOGONAL or COMPLEMENTARY: you MUST evaluate BOTH an
     expression-only partition AND a multi-modal partition before committing.
     Use the pre-loaded helper — build the modalities dict from only what
-    is actually available (passing a None value will crash):
+    is actually available. None values are skipped by the helper, but at
+    least two non-None modalities are required for multi-modal clustering:
         modalities = {{"expression": expression}}
         if methylation is not None: modalities["methylation"] = methylation
         if cna is not None:         modalities["cna"]         = cna
@@ -266,9 +267,24 @@ Methodology principles that apply throughout this stage:
             knowledge alone; the data confirms but does not establish it
   [DATA]  = specific to this cohort; derived from a computation in this
             session; would not be predicted from prior knowledge alone
-A [PRIOR] claim is not a discovery. A [DATA] claim must cite a call number
-and a statistical test. Prior-knowledge hypotheses that are falsified by the
-data are worth reporting explicitly — that is also a [DATA] finding.
+A [PRIOR] claim is not a discovery. For each [DATA] mechanism claim, include
+the session-derived evidence that supports it: the analysis performed,
+statistic, direction, effect size, and p-value/FDR where applicable.
+Prior-knowledge hypotheses that are falsified by the data are worth reporting
+explicitly — that is also a [DATA] finding.
+
+**Transferability discipline.** Internal SGH-OS signal is not automatically a
+discovery. A biomarker that only defines your chosen partition may fail in an
+external OS cohort. For your strongest candidates, test whether the signal is
+likely to transfer:
+  - univariate Cox / survival correlation for the gene
+  - Cox model adjusted for your committed partition
+  - Cox model adjusted for available clinical covariates (stage/metastasis/age
+    when present and non-missing enough to fit)
+  - direction stability across bootstrap resamples or reasonable alternative
+    partitions
+Classify each candidate as TRANSFERABLE, SGH-SPECIFIC, or UNCERTAIN, and use
+that classification when deciding which genes to submit.
 
 **Failure mode discipline.** If a finding contradicts your hypothesis, report
 it — do not smooth over it. Use record_observation to document what you
@@ -291,7 +307,19 @@ Produce:
   - Your mechanistic hypothesis with [PRIOR] / [DATA] labels on each claim.
     State explicitly which [DATA] claims go beyond what canonical biology of
     this cancer type would predict — those are the candidate discoveries; the
-    [PRIOR]-aligned claims are confirmation, not discovery.
+    [PRIOR]-aligned claims are confirmation, not discovery. For each [DATA]
+    mechanism claim, include the session evidence that supports it: analysis,
+    statistic, direction, effect size, and p-value/FDR where applicable.
+  - A transferability assessment for the submitted top_genes. For each gene,
+    report whether it is TRANSFERABLE, SGH-SPECIFIC, or UNCERTAIN based on:
+      (i)   univariate survival evidence,
+      (ii)  partition-adjusted Cox evidence,
+      (iii) clinical-covariate-adjusted Cox evidence when feasible,
+      (iv)  direction stability across bootstrap resamples or alternative
+            partitions,
+      (v)   whether the biology is likely OS-general or dependent on this
+            cohort's particular partition.
+    Prefer genes that retain survival signal beyond the committed partition.
   - One mechanistic follow-up experiment for your highest-confidence [DATA]
     biomarker. Specify ALL of:
       (i)   Model system — a specific named cell line, organoid, or PDX
@@ -323,7 +351,7 @@ Produce:
               expression at BH-FDR < 0.05 across all CpGs tested
               (this is gene-expression × CpG-beta correlation across samples —
               NOT a per-group differential methylation test)
-  A gene passing only one test, or cited from biological knowledge without
+  A gene passing only one test, or included from biological knowledge without
   any test, must be excluded.
 
   PREFER genes with cross-modal support: a separate component scores the
@@ -344,7 +372,7 @@ produce a structured Data Lock report (PC loadings, survival by subtype,
 mutation/methylation/CNA per subtype, an unexpected finding) and then
 answer four examination questions (Q1–Q4). Your answers are audited on:
 
-  · Numeric citation — every claim should reference a specific value from
+  · Numeric support — every claim should reference a specific value from
     your Data Lock (HR, p-value, β-difference, fold-change). Saying
     "significantly different" without the value scores low.
   · Multi-modal integration — at least three modalities (expression,
@@ -352,12 +380,12 @@ answer four examination questions (Q1–Q4). Your answers are audited on:
     Listing findings per modality without integration scores low.
   · [PRIOR] / [DATA] discipline maintained — same labeling rules as the
     mechanism hypothesis. Calibrated [PRIOR] claims are not penalized;
-    miscalibrated [DATA] claims (cited as discovery but actually canonical)
+    miscalibrated [DATA] claims (presented as discovery but actually canonical)
     are. Acknowledge what your priors expected and contrast with what the
     DATA showed.
 
 Plan your Data Lock to make these answers easy: lock specific numbers, not
-just qualitative claims. Anything you want to cite in Q1–Q4 must already be
+just qualitative claims. Anything you want to reference in Q1–Q4 must already be
 in the Data Lock when you submit it.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

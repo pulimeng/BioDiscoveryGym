@@ -6,10 +6,11 @@ where the goal is finding prognostic biomarkers beyond what the reference paper 
 
 For TCGA cohorts (faithfulness framing, known answer), use evaluator_v3.EvaluatorV3.
 
-Phase 1 — structural + computational (15 pts):
+Phase 1 — structural + computational (16 pts):
   structure_validity         2
   survival_stratification    3
   provenance_integrity       3
+  pathway_validity           1
   mechanistic_grounding      3
   cross_modal_support        2
   validation_experiment      2
@@ -22,7 +23,7 @@ Phase 3 — External validation in TARGET-OS (5 pts), scored only when TARGET da
   target_coexpr_replication    2
   target_survival_replication  3
 
-Total max = 23 pts.
+Total max = 24 pts.
 """
 from __future__ import annotations
 

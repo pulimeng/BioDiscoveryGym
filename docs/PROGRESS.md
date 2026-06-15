@@ -10,9 +10,10 @@
 |------|--------|
 | Task A infrastructure | Complete |
 | Task A OS benchmark | run6 complete (bugs found + fixed); **run7 ready** |
-| Task A TCGA benchmark | Designed (67 runs); awaiting budget (~$201 on Sonnet) |
-| Task B target discovery | v1+v2 implemented; not yet run systematically |
-| v3 scorer | Complete — 9 components, 18 pts, 3-axis LLM judge |
+| Task A TCGA benchmark | Designed (55 runs after G3 lock to 2 pairs); awaiting budget (~$165 on Sonnet) |
+| Task B target discovery | Archived (`scripts/archive/run_target_discovery*.py`) |
+| TCGA scorer (Phase 1) | Complete — 8 components, 16 pts (experiment_quality dropped 2026-06-15) |
+| SGH-OS scorer (Phase 1+2+3) | Complete — 11 components, 24 pts, with TARGET-OS external validation |
 | Unified prompt | `agent_system.txt` replaces g0/g1/g2_system.txt; codebook auto-injected |
 | multimodal_cluster() | Pre-loaded in executor namespace (MOFA+/SNF/concat_pca) |
 | PrimeKG + PCST | Integrated — `--primekg` flag, PCST via networkx steiner_tree |
@@ -150,6 +151,6 @@ bash scripts/run_cohort.sh --tag run10 --cohort OS
 ## Next Steps
 
 1. **run7** — smoke test first, then full 9-run OS benchmark with all fixes applied
-2. **TCGA benchmark** — fund and run 67 episodes (G0×7, G1×21, G2×21, G3×18) on Sonnet (~$201)
+2. **TCGA benchmark** — fund and run 55 episodes (G0×7, G1×21, G2×21, G3×6 from 2 mislead pairs) on Sonnet (~$165)
 3. **OS with WES/CNA** — re-run once GSA HRA003260 access granted; expect `genomic_coherence_drivers` to become non-zero
 4. **Task B systematic runs** — run target discovery pipeline on 3+ indications
