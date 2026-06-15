@@ -25,30 +25,30 @@ Each episode: agent receives an anonymized patient cohort (expression ± mutatio
 
 **Identity blinding (5 layers):** cancer-type columns stripped, demographics removed, sample IDs → `SAMPLE_XXXX`, gene symbols → `GENE_XXXXX`, data served from neutral path.
 
-**4 experimental groups (67 runs, TCGA set):**
+**4 experimental groups (55 runs, TCGA set):**
 
 | Group | Label | Gene names | Cohort name | Gate | Seeds | Runs |
 |-------|-------|------------|-------------|------|-------|------|
-| G0 | Explicit retrieval | Real (forced) | **Revealed** | 0 | 42 | 7 |
-| G1 | Implicit retrieval | Real | Hidden | 0 | 42, 7, 123 | 21 |
-| G2 | Data-driven | GENE_XXXXX → real at call 30 | Hidden | 30 | 21 |
-| G3 | Mislead | GENE_XXXXX → real at call 30 | Hidden + wrong barcodes | 30 | 42, 7, 123 | 18 |
+| G0 | Explicit retrieval | Real (forced) | **Revealed** | episode start | 42 | 7 |
+| G1 | Implicit retrieval | Real | Hidden | episode start | 42, 7, 123 | 21 |
+| G2 | Data-driven | GENE_XXXXX → real at 3rd `record_observation` | Hidden | action-based | 42, 7, 123 | 21 |
+| G3 | Mislead | GENE_XXXXX → real at 3rd `record_observation` | Hidden + wrong barcodes (OV:BRCA, LUAD:LIHC) | action-based | 42, 7, 123 | 6 |
 
 **7 TCGA cohorts:** BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV
 
-**Held-out test set:** Osteosarcoma (~80 samples, multi-omics, 2023 paper). Run G0/G1/G2 only (no G3 — single cohort). Scored against paper-specific ground truth; in preparation.
+**Held-out test set:** SGH-OS (Jia et al. 2022, 91 samples, multi-omics). Run G0/G1/G2 only (no G3 — single cohort). Discovery rubric scored against TARGET-OS external validation (Phase 3) rather than the paper's reported markers.
 
 ### Models
 
 | # | Model | Family | API ID | Role | Episodes |
 |---|-------|--------|--------|------|----------|
-| M1 | Claude Sonnet 4.6 | Claude | `claude-sonnet-4-6` | Fast/cheap reference | 67 |
-| M2 | Claude Opus 4.7 | Claude | `claude-opus-4-7` | High-capability Claude | 67 |
-| M3 | GPT-5.4 | OpenAI | `gpt-5.4-2026-03-05` | Cross-family reference | 67 |
-| M4 | GPT-5.5 | OpenAI | `gpt-5.5-2026-04-23` | High-capability OpenAI | 67 |
-| M5 | Gemini 3.1 Pro | Google | `gemini-3.1-pro` | Cross-family reference | 67 |
+| M1 | Claude Sonnet 4.6 | Claude | `claude-sonnet-4-6` | Fast/cheap reference | 55 |
+| M2 | Claude Opus 4.7 | Claude | `claude-opus-4-7` | High-capability Claude | 55 |
+| M3 | GPT-5.4 | OpenAI | `gpt-5.4-2026-03-05` | Cross-family reference | 55 |
+| M4 | GPT-5.5 | OpenAI | `gpt-5.5-2026-04-23` | High-capability OpenAI | 55 |
+| M5 | Gemini 3.1 Pro | Google | `gemini-3.1-pro` | Cross-family reference | 55 |
 
-**Total episodes:** 67 × 5 models = **335 episodes**
+**Total episodes:** 55 × 5 models = **275 episodes**
 
 ### Infrastructure
 
@@ -102,7 +102,7 @@ After the G3 mislead-pair reduction (4 TBD pairs dropped), the per-model TCGA ep
 
 | Milestone | Dependency |
 |-----------|-----------|
-| Run M1 (Sonnet) — all 67 eps | Budget approved |
+| Run M1 (Sonnet) — all 55 eps | Budget approved |
 | Score M1, verify pipeline end-to-end | M1 complete |
 | Run M2–M5 in parallel | M1 pipeline verified |
 | Osteosarcoma data ready → build scorer | Data collection complete |
