@@ -180,7 +180,7 @@ _TOOLS: list[dict] = [
                 },
                 "next_experiment": {
                     "type": "string",
-                    "description": "One testable experiment to validate the hypothesis.",
+                    "description": "Optional. One testable experiment to validate the hypothesis. Only scored on the OS discovery rubric (as validation_experiment); TCGA scoring ignores this field.",
                 },
             },
             "required": [
@@ -189,7 +189,6 @@ _TOOLS: list[dict] = [
                 "pathway_evidence",
                 "mechanism_hypothesis",
                 "confidence",
-                "next_experiment",
             ],
         },
     },
