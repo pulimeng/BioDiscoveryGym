@@ -88,7 +88,7 @@ def parse_args():
         metavar="DIR",
         help=(
             "Root directory for episode output. Episode UUID subdir is created inside it. "
-            "Defaults to results/cohort/external/ for external cohorts, results/cohort/ otherwise."
+            "Defaults to results/external/ for external cohorts (OS), results/tcga/ for TCGA."
         ),
     )
     p.add_argument(
@@ -250,9 +250,9 @@ def main():
     if args.results_base:
         results_base = Path(args.results_base)
     elif args.cohort.upper() in EXTERNAL_COHORT_DIRS:
-        results_base = Path("results") / "cohort" / "external"
+        results_base = Path("results") / "external"
     else:
-        results_base = Path("results") / "cohort"
+        results_base = Path("results") / "tcga"
     result = episode.run(agent, results_base=results_base)
 
     # Print results

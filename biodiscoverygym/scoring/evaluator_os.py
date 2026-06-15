@@ -26,6 +26,7 @@ Total max = 23 pts.
 """
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -112,17 +113,19 @@ class OSExaminationReport:
         if self.data_lock_length == 0 and self.n_examination_answers == 0:
             return "  Examination : not run"
         lines = [
-            f"  {'Examination Component':<33} {'Raw':>6}  {'Weight':>6}  {'Pts':>6}",
-            "  " + "-" * 58,
+            f"  {'Examination Component':<33} {'Raw':>8}  {'Weight':>6}  {'Pts':>6}",
+            "  " + "-" * 60,
         ]
         for key, raw in self.raw_scores.items():
             w = OS_EXAMINATION_WEIGHTS.get(key, 0)
             pts = self.weighted_scores.get(key, 0)
-            lines.append(f"  {key:<35} {raw:>6.3f}  {w:>6.1f}  {pts:>6.3f}")
+            diag = self.diagnostics.get(key, {})
+            raw_str = " LLM_ERR" if isinstance(diag, dict) and diag.get("error") else f"{raw:>8.3f}"
+            lines.append(f"  {key:<35} {raw_str}  {w:>6.1f}  {pts:>6.3f}")
         lines += [
-            "  " + "-" * 58,
-            f"  {'EXAMINATION TOTAL':<35} {'':>6}  {self.total_max:>6.1f}  {self.total_raw:>6.3f}",
-            f"  {'EXAMINATION NORMALIZED (0-1)':<35} {'':>6}  {'':>6}  {self.normalized:>6.4f}",
+            "  " + "-" * 60,
+            f"  {'EXAMINATION TOTAL':<35} {'':>8}  {self.total_max:>6.1f}  {self.total_raw:>6.3f}",
+            f"  {'EXAMINATION NORMALIZED (0-1)':<35} {'':>8}  {'':>6}  {self.normalized:>6.4f}",
         ]
         return "\n".join(lines)
 
@@ -193,6 +196,10 @@ class OSScoreReport:
             d["examination"] = self.examination.to_dict()
         if self.external_validation is not None:
             d["external_validation"] = self.external_validation.to_dict()
+        # Composite metrics — discovery = internal × external transfer
+        d["internal_norm"] = self.internal_norm
+        d["external_norm"] = self.external_norm
+        d["composite_discovery"] = self.composite_discovery
         return d
 
     @property
@@ -214,19 +221,51 @@ class OSScoreReport:
             t += self.external_validation.total_max
         return t
 
+    @property
+    def internal_norm(self) -> float:
+        """(Phase 1 + Phase 2) normalized to [0,1]."""
+        num = self.total_raw + (self.examination.total_raw if self.examination else 0.0)
+        denom = self.total_max + (self.examination.total_max if self.examination else 0.0)
+        return num / denom if denom > 0 else 0.0
+
+    @property
+    def external_norm(self) -> float:
+        """Phase 3 normalized to [0,1]."""
+        if self.external_validation is None or self.external_validation.total_max <= 0:
+            return 0.0
+        return self.external_validation.total_raw / self.external_validation.total_max
+
+    @property
+    def composite_discovery(self) -> float:
+        """Geometric mean of internal and external normalized scores.
+
+        Discovery = rigorous methodology AND external transferability.
+        Geometric mean punishes any axis being low — a perfect internal score
+        with failed TARGET replication is bounded by sqrt(1 * 0.05) ≈ 0.22.
+        Symmetric: strong external with weak internal is also dampened.
+        """
+        i, e = self.internal_norm, self.external_norm
+        if i <= 0 or e <= 0:
+            return 0.0
+        return math.sqrt(i * e)
+
     def pretty_print(self) -> str:
         lines = [
-            f"{'Component':<35} {'Raw':>6}  {'Weight':>6}  {'Pts':>6}",
-            "-" * 60,
+            f"{'Component':<35} {'Raw':>8}  {'Weight':>6}  {'Pts':>6}",
+            "-" * 62,
         ]
         for key, raw in self.raw_scores.items():
             w = OS_COMPONENT_WEIGHTS.get(key, 0)
             pts = self.weighted_scores.get(key, 0)
-            lines.append(f"  {key:<33} {raw:>6.3f}  {w:>6.1f}  {pts:>6.3f}")
+            diag = self.diagnostics.get(key, {})
+            # Distinguish "real 0" from "errored to 0" — an LLM judge that
+            # crashed should not look identical to a genuinely scored 0.
+            raw_str = " LLM_ERR" if isinstance(diag, dict) and diag.get("error") else f"{raw:>8.3f}"
+            lines.append(f"  {key:<33} {raw_str}  {w:>6.1f}  {pts:>6.3f}")
         lines += [
-            "-" * 60,
-            f"  {'PHASE 1 TOTAL':<33} {'':>6}  {self.total_max:>6.1f}  {self.total_raw:>6.3f}",
-            f"  {'PHASE 1 NORMALIZED (0-1)':<33} {'':>6}  {'':>6}  {self.normalized:>6.4f}",
+            "-" * 62,
+            f"  {'PHASE 1 TOTAL':<33} {'':>8}  {self.total_max:>6.1f}  {self.total_raw:>6.3f}",
+            f"  {'PHASE 1 NORMALIZED (0-1)':<33} {'':>8}  {'':>6}  {self.normalized:>6.4f}",
         ]
         if self.examination is not None:
             lines += ["", self.examination.pretty_print()]
@@ -234,9 +273,13 @@ class OSScoreReport:
             lines += ["", self.external_validation.pretty_print()]
         lines += [
             "",
-            "=" * 60,
-            f"  GRAND TOTAL                       {self.grand_total_max:>6.1f}  {self.grand_total_raw:>6.3f}",
-            f"  GRAND NORMALIZED (0-1)                          {self.grand_total_raw / self.grand_total_max if self.grand_total_max > 0 else 0.0:>6.4f}",
+            "=" * 62,
+            f"  GRAND TOTAL                       {self.grand_total_max:>8.1f}  {self.grand_total_raw:>6.3f}",
+            f"  GRAND NORMALIZED (0-1)                            {self.grand_total_raw / self.grand_total_max if self.grand_total_max > 0 else 0.0:>6.4f}",
+            "",
+            f"  Internal norm (Phase 1+2)                         {self.internal_norm:>6.4f}",
+            f"  External norm (Phase 3)                           {self.external_norm:>6.4f}",
+            f"  COMPOSITE DISCOVERY  √(int × ext)                 {self.composite_discovery:>6.4f}",
         ]
         return "\n".join(lines)
 

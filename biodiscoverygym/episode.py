@@ -157,7 +157,7 @@ class Episode:
 
         self._write_episode_data()
 
-        base = Path(results_base) if results_base else Path("results") / "cohort"
+        base = Path(results_base) if results_base else Path("results") / "tcga"
         output_dir = base / self.episode_id
         output_dir.mkdir(parents=True, exist_ok=True)
 

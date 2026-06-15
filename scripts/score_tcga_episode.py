@@ -63,6 +63,18 @@ def apply_sample_rename(dataset: dict, sample_id_map: dict) -> dict:
 
 def main():
     args = parse_args()
+
+    # Fail-fast guard: missing API key silently zeros all LLM judges and looks
+    # like a low real score. Either set the env var or explicitly opt out.
+    import os
+    if not args.skip_llm and not os.environ.get("ANTHROPIC_API_KEY"):
+        print("ERROR: ANTHROPIC_API_KEY is not set.", file=sys.stderr)
+        print("  This script invokes LLM judges that materially affect the score.", file=sys.stderr)
+        print("  Either:", file=sys.stderr)
+        print("    export ANTHROPIC_API_KEY=sk-...    # to run judges", file=sys.stderr)
+        print("    OR pass --skip-llm                  # to score computational components only", file=sys.stderr)
+        sys.exit(1)
+
     episode_path = Path(args.episode_json)
     if not episode_path.exists():
         print(f"Error: {episode_path} not found", file=sys.stderr)

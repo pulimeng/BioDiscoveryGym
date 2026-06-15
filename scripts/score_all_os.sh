@@ -2,7 +2,7 @@
 # Score all OS episode JSONs in a results folder (discovery rubric — WIP).
 # Currently delegates to TCGA faithfulness scorer with a warning.
 # Usage: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_os.sh <results_folder>
-# Example: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_os.sh results/cohort/external/run9_marker
+# Example: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_os.sh results/external/run9_marker
 
 set -e
 

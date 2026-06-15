@@ -20,7 +20,7 @@
 #   --g1-seeds SEEDS    Space-separated seed list for G1 (default: "0 1 7")
 #   --g2-seeds SEEDS    Space-separated seed list for G2 (default: "0 1 7")
 #   --results-base DIR  Root output directory (default: results/external/ for OS,
-#                       results/ for TCGA cohorts)
+#                       results/tcga/ for TCGA cohorts)
 #   --max-tool-calls N  Phase 1 tool call budget (default: 100)
 #   --no-examination    Disable Examination stage (dev/debug only)
 #   --skip-score        Run episodes but skip scoring afterwards

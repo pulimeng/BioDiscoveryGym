@@ -49,44 +49,118 @@ correlations alone — not from gene identity. When the codebook arrives, annota
 your existing clusters; do not rebuild the partition from biological priors.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STAGE 0 — ORIENT
+STAGE 0 — ORIENT (per-modality survey)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Check `'codebook' in dir()` — if present, gene names are available; if not,
 treat GENE_XXXXX as opaque labels until Stage 2.
 
-Understand what you have:
-  - Sample count, gene count, data types and units
-  - Clinical metadata: distributions, missingness, survival endpoint
-  - Top principal components: variance explained and correlations with
-    survival, metastasis, stage, and age
+Each modality captures different biology and must be surfaced before you
+anchor on one as the primary axis. Skipping this step is the single most
+common failure mode — agents default to expression-only analysis and then
+treat methylation/CNA/mutation as afterthoughts in Stage 3, by which point
+the partition is already committed.
+
+For each modality available, produce:
+
+  - **Expression**: sample × gene counts, units, top 3 PCs with variance
+    explained, PC correlations with survival/metastasis/stage/age
+  - **Methylation** (if not None): n_samples × n_CpGs, mean β distribution,
+    top-variance CpGs, methylation-PC structure
+  - **CNA** (if not None): sample coverage rate
+    (`(cna != 0).any(axis=1).mean()`), recurrent focal events (top amp +
+    top del genes by frequency among covered samples)
+  - **Mutation** (if not None): top mutated genes, mutation burden
+    distribution per sample, co-occurrence patterns
+  - **Clinical metadata**: distributions, missingness, survival endpoint
+
+Clinical orientation:
   - State your priors explicitly: what do you already expect to find in this
     cancer type? Which clinical variables might confound the analysis?
     These are your [PRIOR] hypotheses — name them now so you can test them.
 
+**Required commitment before proceeding:** name which modalities you will
+investigate as PRIMARY drivers (likely to define the partition) vs which as
+SUPPORTING evidence (used to characterize the partition after the fact).
+
+Justify each choice from operational criteria — not from cancer-type priors.
+A modality qualifies as PRIMARY if it meets ALL of:
+  - Sample coverage ≥ 50 % (`(modality != 0).any(axis=1).mean()` for sparse
+    modalities like CNA/mutation; non-NA fraction for continuous modalities)
+  - Top PC1 (or equivalent dominant axis) explains > 10 % of variance for
+    continuous modalities, OR ≥ 5 recurrent events for sparse modalities
+  - Has at least 100 non-constant features (genes / CpGs / etc.) after
+    filtering
+A modality that fails any of these can be demoted to SUPPORTING. A modality
+that meets all three should NOT be demoted just because it is secondary in
+the textbook for this cancer type — that smuggles priors back in through
+the structural-richness assessment. State each modality's numeric values
+for the three criteria when declaring it primary or supporting.
+
 Call record_observation before proceeding to Stage 1.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STAGE 1 — INTERROGATE THE DOMINANT AXIS
+STAGE 1 — DOMINANT STRUCTURE ACROSS MODALITIES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The dominant source of variance may or may not be the prognostic signal.
-Characterize it — do not assume it is or isn't relevant before looking.
+Identify the dominant axis of variation in EACH primary modality, then
+characterize how those axes relate to each other. This is the load-bearing
+analysis that decides whether multi-modal integration is needed.
 
-Produce:
-  - Top genes loading on PC1 and what biological program they represent
-  - Does PC1 stratify survival? (log-rank at median split)
-  - Is PC1 a confound (lineage, purity, immune infiltration — shared by all
-    patients regardless of outcome) or a signal (meaningful variation that
-    predicts survival)?
+For each primary modality from Stage 0:
 
-Make an explicit decision in record_observation before proceeding:
-  · If PC1 is a confound: set it aside, regress it out, and define your
-    biomarker search space in the residual structure
-  · If PC1 is a signal: use it as a starting point and characterize residual
-    axes for secondary signals
-  · If ambiguous: state the ambiguity and keep both options open
+  - **Expression**: top PC1; what biological program loads on it (use real
+    gene names if codebook is available, GENE_XXXXX top loadings otherwise);
+    does PC1 stratify survival at median split (log-rank p)?
+  - **Methylation**: top methylation PC; broad pattern (hypermethylation
+    vs hypomethylation cluster; CpG-island enrichment if interpretable);
+    does it stratify survival?
+  - **CNA** (if coverage adequate): is there a recurrent broad CNA event
+    or a co-occurrence cluster (e.g., samples sharing 8q gain + 17p loss)?
+    Does it stratify survival?
+  - **Mutation**: a dominant driver mutation or mutation-burden axis?
+    Does it stratify survival?
 
-Gene-level survival correlations (FDR-corrected, BH method, across all genes)
-are your primary biomarker screen regardless of the axis decision above.
+**Cross-modal alignment analysis (required):** how do these dominant axes
+relate to each other across patients?
+
+  - **Aligned** — same patients fall on the same side of each modality's
+    axis (e.g., samples with high expression PC1 are also hypermethylated
+    and CNA-stable). One modality's axis is sufficient to capture the
+    others; expression alone is OK.
+  - **Orthogonal** — modalities stratify patients differently (e.g.,
+    expression PC1 splits by lineage but methylation PC1 splits by purity).
+    A multi-modal partition is required to capture the full structure;
+    expression alone will miss biology.
+  - **Complementary** — modality A defines a coarse subtype, modality B
+    defines within-subtype heterogeneity (e.g., 3 expression clusters,
+    each splitable into 2 methylation sub-clusters). Multi-level structure;
+    pick the level that best stratifies your outcome of interest.
+
+Quantify with concrete numbers: NMI or ARI between each modality's
+quartile-based labels (top vs bottom quartile of each axis); cross-modality
+correlation of dominant scores. Report values, not vibes.
+
+Example pattern (NMI requires categorical labels):
+    from sklearn.metrics import normalized_mutual_info_score
+    from scipy.stats import spearmanr
+    expr_q = pd.qcut(expr_PC1_score, 4, labels=False)
+    meth_q = pd.qcut(meth_PC1_score, 4, labels=False)
+    nmi_em = normalized_mutual_info_score(expr_q, meth_q)
+    rho_em, _ = spearmanr(expr_PC1_score, meth_PC1_score)
+Higher NMI/ARI ≈ aligned; near-zero NMI ≈ orthogonal; signed Spearman
+captures direction (which pole of methylation matches which pole of
+expression).
+
+**Decision required in record_observation before proceeding:**
+  · If axes are aligned: expression alone is sufficient — note which
+    modality is the cleanest channel and use it
+  · If axes are orthogonal or complementary: Stage 2 must evaluate both
+    expression-only and multimodal partitions and pick the better one
+  · For each modality where the dominant axis is itself the prognostic
+    signal (log-rank p < 0.05 at median split), say so explicitly
+
+Gene-level survival correlations (FDR-corrected, BH method, across all
+genes) remain your primary single-gene biomarker screen regardless of the
+partition decision above.
 
 Call record_observation before proceeding to Stage 2.
 
@@ -98,12 +172,39 @@ Group patients by outcome-relevant molecular features.
 **Step 1 — assign the partition without looking at survival.** Choose your
 clustering approach and k using unsupervised criteria only: silhouette,
 Calinski-Harabasz, cluster stability, minimum cluster size (≥ 8 per group),
-and the molecular separation seen in expression structure. Do not run
-log-rank, Cox, or any survival comparison on the partition yet — that test
-is held for Step 3.
+and the molecular separation seen across modalities. Do not run log-rank,
+Cox, or any survival comparison on the partition yet — that test is held
+for Step 3.
 
-  (The PC1 log-rank screen in Stage 1 is a continuous-axis screening test,
-  not a partition test, and is exempt from the pre-registration window.)
+  (The single-modality log-rank screens in Stage 1 are continuous-axis
+  screening tests, not partition tests, and are exempt from the
+  pre-registration window.)
+
+**Step 1 sub-decision — single-modality or multi-modal partition.**
+Your Stage 1 cross-modal alignment analysis dictates this:
+
+  · If axes were ALIGNED: commit an expression-based partition; record the
+    decision and why.
+  · If axes were ORTHOGONAL or COMPLEMENTARY: you MUST evaluate BOTH an
+    expression-only partition AND a multi-modal partition before committing.
+    Use the pre-loaded helper — build the modalities dict from only what
+    is actually available (passing a None value will crash):
+        modalities = {{"expression": expression}}
+        if methylation is not None: modalities["methylation"] = methylation
+        if cna is not None:         modalities["cna"]         = cna
+        if mutation is not None:    modalities["mutation"]    = mutation
+        result = multimodal_cluster(modalities, k=k_choice, method="mofa")
+        nmi_vs_expr = result["nmi_vs_expr_only"]   # >0.3 = meaningful new info
+    Compare the two on cluster cohesion (silhouette, CH, min size) AND
+    cross-modal consistency (does each cluster show coherent methylation/CNA
+    state, not just expression?). Commit the partition that wins on the
+    balance of these criteria — and state which it is and why.
+
+NMI > 0.3 vs expression-only is the threshold for "multi-modal added real
+structure." NMI < 0.1 means the modalities you fed in already agreed
+(redundant); fall back to expression alone. NMI in between is genuinely
+ambiguous — pick by which partition gives the cleaner per-cluster
+biological narrative, not by which has the better silhouette.
 
 **Step 2 — pre-register.** Call record_observation and state which group
 you predict will have the worst prognosis and why, based only on expression
@@ -135,17 +236,28 @@ this session — but you can judge whether a finding fits or breaks the
 model you have right now. Pursue the breakers.
 
 The following are avenues to consider — use them when the data suggests
-them, not because they appear on this list:
+them, not because they appear on this list. Anything you DEEPLY
+characterized at Stage 1 (e.g., the methylation dominant axis) does not
+need to be redone here; instead, drill into per-cluster patterns rather
+than dataset-wide structure.
+
   · Gene-level Cox HRs for top biomarker candidates
   · Pathway enrichment on cluster markers (MSigDB Hallmarks, Reactome)
-  · Differential methylation: CpG anchors co-varying with top genes
-  · CNA enrichment per group (over covered samples only:
-    `cna_covered = cna[(cna != 0).any(axis=1)]`)
+  · For modalities you've already characterized at the dataset level:
+    move to per-cluster differential analysis (which CpGs / CNA events /
+    mutations are most discriminating BETWEEN clusters, with effect sizes
+    per cluster). For modalities you set aside as supporting: now is the
+    time to bring them in if a per-cluster signal is plausible.
+  · Cross-modal mechanism per cluster: a per-cluster claim becomes more
+    credible if methylation + expression + CNA + mutation each tell the
+    same story (e.g., gene X is hypermethylated, low-expressed, frequently
+    deleted, and rarely mutated in cluster A).
   · Immune gene modules: does immune composition vary independently of the
     dominant axis?
-  · Multi-modal integration: `multimodal_cluster(...)` — compare NMI and
-    survival log-rank to expression-only; only pursue if NMI > 0.3
   · Within-group heterogeneity: tight co-expressed modules inside a cluster
+
+(`multimodal_cluster` was used at Stage 2 if your alignment analysis
+required it; it is not relisted here.)
 
 Methodology principles that apply throughout this stage:
 
@@ -176,11 +288,28 @@ Produce:
   - A 3–5 sentence summary: what molecular feature predicts outcome in this
     cohort, in what direction, with what effect size, and how it differs from
     the dominant known biology of this cancer type
-  - Your mechanistic hypothesis with [PRIOR] / [DATA] labels on each claim
-  - One validation experiment for your highest-confidence [DATA] biomarker:
-    specify (i) clinical assay (IHC, RT-qPCR, methylation array),
-    (ii) patient stratification criterion (threshold or binary marker),
-    (iii) expected outcome difference (HR, OS months, response rate)
+  - Your mechanistic hypothesis with [PRIOR] / [DATA] labels on each claim.
+    State explicitly which [DATA] claims go beyond what canonical biology of
+    this cancer type would predict — those are the candidate discoveries; the
+    [PRIOR]-aligned claims are confirmation, not discovery.
+  - One mechanistic follow-up experiment for your highest-confidence [DATA]
+    biomarker. Specify ALL of:
+      (i)   Model system — a specific named cell line, organoid, or PDX
+            (e.g. "MG-63", "U2OS"; NOT "OS cell lines" or "patient samples")
+      (ii)  Perturbation — a specific genetic or pharmacological intervention
+            with direction (e.g. "CRISPR KO of CX3CL1", "treat with anti-CD274
+            atezolizumab at 10 µg/mL"). Naming a gene without a method scores 0.
+      (iii) Measurement — a specific assay or readout (e.g. "RT-qPCR for OS time
+            proxy", "IC50 by CellTiter-Glo", "IHC for SP7"). "Cell viability"
+            without an assay is not specific.
+      (iv)  Quantitative outcome — expected direction AND magnitude or threshold
+            (e.g. "≥2-fold reduction", "p<0.05 by log-rank", "HR shifts from
+            0.4 to >1 after knockdown"). "Significant" without a value is not
+            quantitative.
+    Why mechanistic, not just clinical assay: the scorer audits this as a test
+    of CAUSAL claim. An IHC-only biomarker validation answers "does it predict?"
+    but not "does it drive?" — and the [DATA] mechanism hypothesis claims the
+    latter.
   - Call submit_discovery with all required fields
 
   IMPORTANT — top_genes provenance requirement:
@@ -188,10 +317,48 @@ Produce:
   independent statistical tests in this session:
       · Differential expression: FDR < 0.05 (BH-corrected) between groups
       · Survival correlation: FDR < 0.05 (BH-corrected across all genes tested)
-      · CNA or methylation enrichment: Fisher exact p < 0.05 per group
+      · Cross-modal evidence: either
+            · CNA enrichment in any group: Fisher exact p < 0.05, OR
+            · Methylation coupling: a CpG whose beta correlates with the gene's
+              expression at BH-FDR < 0.05 across all CpGs tested
+              (this is gene-expression × CpG-beta correlation across samples —
+              NOT a per-group differential methylation test)
   A gene passing only one test, or cited from biological knowledge without
-  any test, must be excluded. Before submitting:
+  any test, must be excluded.
+
+  PREFER genes with cross-modal support: a separate component scores the
+  fraction of your top_genes that have BOTH RNA evidence (DE or survival)
+  AND non-RNA evidence (methylation or CNA). A 15-gene list where 12 carry
+  cross-modal support scores higher than a 15-gene list where 4 do — so when
+  choosing between equally-significant candidates, list the multi-modal ones
+  first.
+
+  Before submitting:
       top_genes_real = [codebook[g] for g in top_gene_ids if g in codebook]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STAGE 5 — DATA LOCK & EXAMINATION (after submit_discovery)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Calling submit_discovery does NOT end the session. You will be asked to
+produce a structured Data Lock report (PC loadings, survival by subtype,
+mutation/methylation/CNA per subtype, an unexpected finding) and then
+answer four examination questions (Q1–Q4). Your answers are audited on:
+
+  · Numeric citation — every claim should reference a specific value from
+    your Data Lock (HR, p-value, β-difference, fold-change). Saying
+    "significantly different" without the value scores low.
+  · Multi-modal integration — at least three modalities (expression,
+    methylation, CNA, mutation, clinical) woven into ONE causal model.
+    Listing findings per modality without integration scores low.
+  · [PRIOR] / [DATA] discipline maintained — same labeling rules as the
+    mechanism hypothesis. Calibrated [PRIOR] claims are not penalized;
+    miscalibrated [DATA] claims (cited as discovery but actually canonical)
+    are. Acknowledge what your priors expected and contrast with what the
+    DATA showed.
+
+Plan your Data Lock to make these answers easy: lock specific numbers, not
+just qualitative claims. Anything you want to cite in Q1–Q4 must already be
+in the Data Lock when you submit it.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DATA & TOOLS

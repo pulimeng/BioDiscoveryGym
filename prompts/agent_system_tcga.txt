@@ -31,20 +31,9 @@ the codebook will be appended to that tool response. The partition must be deriv
 from molecular structure alone — not from gene identity. When the codebook arrives,
 annotate your existing clusters; do not rebuild the partition from biological priors.
 
-**After `submit_discovery` you enter a separate Examination phase with its own budget.**
-First: a structured Data Lock sweep — run the required analyses and call `submit_data_lock`.
-Then: Q1–Q3 are revealed (answer in one response), followed by Q4 as a separate prompt.
-Q4 requires a complete mechanistic-validation experiment with five mandatory parts —
-partial answers score zero:
-  (a) specific named model system + numeric dataset evidence justifying the choice
-  (b) specific perturbation target + method + expected direction
-  (c) specific assay + quantitative expected change (fold-change, p-value, IC50, etc.)
-  (d) falsification criterion: a specific measurable result that REJECTS the hypothesis
-      (naming variable, direction, and threshold — not just "if the effect is absent")
-  (e) orthogonal modality prediction: a testable prediction about a non-expression modality
-      (mutation enrichment, DNA methylation change at a named locus, CNA event, or protein
-      level) with gene/locus named and direction/threshold stated
-Write complete answers; do not truncate.
+`submit_discovery` ends the session — there is no post-submission examination
+phase for TCGA cohorts. Spend the full call budget on Stages 0–6 before calling
+submit_discovery; once it is called, no further analysis is possible.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STAGE 0 — DATA ORIENTATION
@@ -195,11 +184,34 @@ STAGE 6 — FINAL REPORT & SUBMISSION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Produce:
   - A concise summary of your discovery using real gene names (3–5 sentences)
-  - Your mechanistic hypothesis: what biological process underlies the grouping?
-  - One next experiment with real gene targets, model system, and expected outcome
+  - Your mechanistic hypothesis as an explicit directional causal chain with
+    named molecular actors at each step (e.g. "subtype-defining mutation in
+    GENE_X disrupts pathway Y → transcriptional upregulation of GENE_Z →
+    downstream phenotype W"). Pathway-level claims without per-step actors
+    score lower than complete chains.
+  - One mechanistic follow-up experiment. Specify ALL of:
+      (i)   Model system — a specific named cell line, organoid, PDX, or animal
+            model (e.g. "MCF7", "PDX-XYZ"; NOT "breast cancer cell lines")
+      (ii)  Perturbation — specific gene/protein target + method + expected
+            direction (e.g. "CRISPR KO of GENE_X", "inhibit Y with drug Z at 1 µM",
+            "overexpress W"). Target without method scores 0; method without
+            direction scores 0.
+      (iii) Measurement — specific assay or readout (e.g. "western blot for pAKT",
+            "IC50 by CellTiter-Glo", "RNA-seq of subtype markers"). "Cell
+            viability" without an assay is not specific.
+      (iv)  Quantitative outcome — expected direction AND magnitude or threshold
+            (e.g. "≥2-fold reduction", "IC50 <1 µM", "p<0.05 by log-rank").
+            "Significant" without a value is not quantitative.
   - Call submit_discovery with all required fields
 
-  IMPORTANT: top_genes must contain real gene symbols, not GENE_XXXXX IDs.
+  IMPORTANT — top_genes content:
+  - Must contain real gene symbols, not GENE_XXXXX IDs.
+  - Among genes with comparable statistical evidence, PREFER established
+    cancer-relevant drivers (OncoKB / COSMIC CGC). The marker_evidence score
+    rewards driver overlap as part of its rubric; submitting purely-novel
+    markers when established drivers are equally supported leaves points on
+    the table without gaining anything in return.
+
   Before submitting, translate your marker list:
       top_genes_real = [codebook[g] for g in top_gene_ids if g in codebook]
 

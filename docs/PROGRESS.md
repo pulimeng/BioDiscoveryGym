@@ -22,7 +22,7 @@
 
 ## OS Benchmark Results (SGH-OS, Jia et al. 2022)
 
-**9 runs complete. Seed 42 stale runs archived in `results/cohort/external/stale/`.**
+**9 runs complete. Seed 42 stale runs archived in `results/external/stale/`.**
 
 | Group | Seeds | Mean total (/15) | Normalized | SD |
 |-------|-------|----------------:|-----------|-----|
@@ -35,7 +35,7 @@ Key findings:
 - Mode differences (≤0.35 pts) are smaller than G1 seed-to-seed spread (~1 pt) — no mode effect
 - G2 is the most stable (SD = 0.06); best individual run G0 s7 = 8.25 (normalized 0.55)
 - 3 pts structurally unavailable: `genomic_coherence_drivers` + `genomic_coherence_rppa` require CNA/WES (pending GSA HRA003260)
-- Full analysis: `results/cohort/external/os_benchmark_summary.md`
+- Full analysis: `results/external/os_benchmark_summary.md`
 
 ---
 
@@ -130,18 +130,19 @@ python scripts/run_episode.py --cohort BRCA --gene-codebook-gate 0 --seed 42
 # G3 — mislead
 python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42
 
-# Score any episode
-python scripts/score_episode_v3.py results/{id}/<label>.json --cohort OS --save
-bash scripts/score_all_withMeth.sh results/external/run7_unified/
+# Score any episode (cohort-specific tracks)
+python scripts/score_os_episode.py results/external/run10/<uuid>/<label>.json --save     # OS discovery
+python scripts/score_tcga_episode.py results/tcga/run10/<uuid>/<label>.json --cohort BRCA --save  # TCGA
+bash scripts/score_all_os.sh results/external/run10/                    # batch OS
+bash scripts/score_all_tcga.sh results/tcga/run10/                      # batch TCGA
 
 # OS smoke test (1 seed/mode, fast verify)
 bash scripts/run_cohort.sh --smoke-test --cohort OS
 
-# OS full benchmark run (3 modes × 3 seeds)
-bash scripts/run_cohort.sh --tag run7_unified --cohort OS
+# OS full benchmark run (G0/G1/G2 × 3 seeds = 9 episodes)
+bash scripts/run_cohort.sh --tag run10 --cohort OS
 
-# Task B
-python scripts/run_target_discovery_v2.py --indication "Acute Myeloid Leukemia" --save-log results/aml.json
+# Task B (archived — see scripts/archive/run_target_discovery*.py)
 ```
 
 ---

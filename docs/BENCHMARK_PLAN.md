@@ -52,9 +52,9 @@ Each episode: agent receives an anonymized patient cohort (expression ± mutatio
 
 ### Infrastructure
 
-- Runner: `bash taskA.sh --group G{0-3}` (model configurable via `--model`)
-- Results saved to `results/task_a/{model}/{group}_{cohort}_{seed}.json`
-- Scorer: `scripts/score_episode_v2.py` (post-hoc, no API cost for quantitative components)
+- Runners: `bash scripts/run_tcga.sh --tag <run>` (G0-G3, TCGA cohorts) and `bash scripts/run_cohort.sh --tag <run> --cohort OS` (G0-G2, SGH-OS)
+- Results saved to `results/tcga/<run>/<uuid>/` (TCGA) or `results/external/<run>/<uuid>/` (OS)
+- Scorers: `scripts/score_tcga_episode.py` (TCGA faithfulness, 18 pts) and `scripts/score_os_episode.py` (OS discovery, 23 pts)
 
 ---
 
@@ -122,8 +122,10 @@ Each episode: agent receives an anonymized patient cohort (expression ± mutatio
 
 | File | Purpose |
 |------|---------|
-| `taskA.sh` | Benchmark runner (all groups, resume-safe) |
-| `scripts/run_episode.py` | Single episode CLI |
-| `scripts/score_episode_v2.py` | Post-hoc v2 scorer |
+| `scripts/run_tcga.sh` | TCGA G0-G3 benchmark runner (resume-safe; `--smoke-test` for pipeline check) |
+| `scripts/run_cohort.sh` | OS G0-G2 benchmark runner (resume-safe; `--smoke-test` for pipeline check) |
+| `scripts/run_episode.py` | Single-episode CLI (cohort-aware default results-base) |
+| `scripts/score_tcga_episode.py` | TCGA faithfulness scorer (Phase 1, 18 pts) |
+| `scripts/score_os_episode.py` | OS discovery scorer (Phase 1+2+3, up to 23 pts) |
 | `docs/TASK_A_COHORT.md` | Full task design and empirical findings |
 | `docs/GRAND_DESIGN.md` | Overall benchmark architecture |

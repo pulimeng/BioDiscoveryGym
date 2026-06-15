@@ -5,14 +5,15 @@
 # then scores every episode. Resume-safe: skips runs whose JSON already exists.
 #
 # Usage:
-#   bash scripts/run_tcga.sh --tag run5_exam                 # run all + score
-#   bash scripts/run_tcga.sh --tag run5_exam --group G2      # one group only
-#   bash scripts/run_tcga.sh --tag run5_exam --score-only    # score existing results
-#   bash scripts/run_tcga.sh --tag run5_exam --skip-score    # run only, no scoring
-#   bash scripts/run_tcga.sh --tag run5_exam --dry-run       # print commands only
+#   bash scripts/run_tcga.sh --smoke-test                    # pipeline test: 1 cohort × 1 seed × G0/G1/G2/G3, 15 calls, no scoring (~$1, ~10 min)
+#   bash scripts/run_tcga.sh --tag run10                     # full benchmark (55 episodes) + scoring
+#   bash scripts/run_tcga.sh --tag run10 --group G2          # one group only
+#   bash scripts/run_tcga.sh --tag run10 --score-only        # score existing results
+#   bash scripts/run_tcga.sh --tag run10 --skip-score        # run only, no scoring
+#   bash scripts/run_tcga.sh --tag run10 --dry-run           # print commands only
 #
 # Environment overrides:
-#   TASK_A_MODEL=claude-opus-4-7 bash scripts/run_tcga.sh --tag run6_opus
+#   TASK_A_MODEL=claude-opus-4-7 bash scripts/run_tcga.sh --tag run10_opus
 
 set -euo pipefail
 
@@ -20,15 +21,16 @@ set -euo pipefail
 TAG=""
 MODEL="${TASK_A_MODEL:-claude-sonnet-4-6}"
 MAX_CALLS=100
-BASE_DIR="results"
+BASE_DIR="results/tcga"
 COHORTS=(BRCA PRAD UCEC LUAD LIHC LUSC OV)
 SEEDS=(42 7 123)
-G3_PAIRS=("OV:BRCA" "LUAD:LIHC")   # extend when finalized
+G3_PAIRS=("OV:BRCA" "LUAD:LIHC")   # locked 2026-06-13 — see docs/TASK_A_COHORT.md § G3 cohort pairs
 
 RUN_GROUP=""
 DRY_RUN=0
 SCORE_ONLY=0
 SKIP_SCORE=0
+SMOKE_TEST=0
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -40,6 +42,7 @@ while [[ $# -gt 0 ]]; do
         --dry-run)     DRY_RUN=1;        shift ;;
         --score-only)  SCORE_ONLY=1;     shift ;;
         --skip-score)  SKIP_SCORE=1;     shift ;;
+        --smoke-test)  SMOKE_TEST=1;     shift ;;
         -h|--help)
             sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
@@ -48,9 +51,23 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# ── Smoke-test overrides ──────────────────────────────────────────────────────
+# Pipeline check: 1 cohort (OV) × 1 seed × all 4 groups (G0/G1/G2/G3), 15-call budget.
+# G3 reuses the locked OV:BRCA pair so all 4 groups touch the OV expression matrix.
+# ~$1, ~10 min total on Sonnet. Forces TAG=smoke-test, BASE_DIR=results, no scoring.
+if [[ $SMOKE_TEST -eq 1 ]]; then
+    TAG="smoke-test"
+    COHORTS=(OV)
+    SEEDS=(42)
+    G3_PAIRS=("OV:BRCA")
+    MAX_CALLS=15
+    RUN_GROUP=""             # always all 4 groups in smoke test
+    SKIP_SCORE=1             # 15 calls won't produce meaningful scores
+fi
+
 # ── Validation ────────────────────────────────────────────────────────────────
 if [[ -z "$TAG" ]]; then
-    echo "Error: --tag is required (e.g. --tag run5_exam)" >&2
+    echo "Error: --tag is required (e.g. --tag run5_exam, or use --smoke-test)" >&2
     exit 1
 fi
 
@@ -93,10 +110,15 @@ run_episode() {
         return
     fi
     echo "  RUN   $label"
+    # TCGA = faithfulness rubric: Phase 1 only, no post-submission examination.
+    # The known-answer comparison (reference_concordance, clinical_signal, drivers)
+    # already tests recovery of the right partition. A Q1-Q4 layer on top is
+    # parallel-testing the same thing at higher cost — removed 2026-06-15.
     local cmd="python scripts/run_episode.py $* \
         --model $MODEL \
         --max-tool-calls $MAX_CALLS \
         --results-base $OUT_DIR \
+        --no-examination \
         --quiet \
         --save-log ${label}.json"
     if [[ $DRY_RUN -eq 1 ]]; then

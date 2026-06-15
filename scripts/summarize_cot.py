@@ -2,7 +2,7 @@
 """
 Summarize the chain-of-thought / analysis flow of each cohort run in detail.
 
-Reads episode JSONs under results/cohort/external/<run>/ and produces:
+Reads episode JSONs under results/external/<run>/ and produces:
   1. One detailed markdown file per run (default ~150-400 lines)
   2. A combined index markdown listing all runs with channel × mode breakdown
 
@@ -673,7 +673,7 @@ def find_episode_jsons(results_root: str) -> list[str]:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--results", default="results/cohort/external",
+    ap.add_argument("--results", default="results/external",
                     help="Root directory containing run subdirectories")
     ap.add_argument("--out", default=None,
                     help="Output directory for per-run markdown summaries "

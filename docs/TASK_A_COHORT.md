@@ -1,8 +1,8 @@
 # Task A — Cohort-Based Analysis
 
 **Part of:** BioDiscoveryGym → Part 2 (Benchmark)
-**Last updated:** 2026-06-11
-**Status:** Infrastructure complete. OS 9-run benchmark complete. run9_marker biomarker run externally validated in TARGET-OS (prognosis did not replicate). TCGA 67-run benchmark planned (awaiting budget).
+**Last updated:** 2026-06-15
+**Status:** Infrastructure complete. OS 9-run benchmark complete + externally validated in TARGET-OS (prognosis did not replicate; empirical finding documented). TCGA scoring track simplified to 18-pt Phase 1; smoke-test runner wired; 55-episode benchmark ready to launch.
 
 ---
 
@@ -62,15 +62,15 @@ The osteosarcoma cohort closes the primary confound of the TCGA set: for well-ch
 
 ## TCGA Experiment Design
 
-**67 runs total across 4 groups. 7 cohorts: BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV.**
+**55 runs total across 4 groups. 7 cohorts: BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV.**
 
 | Group | Label | Gene codebook | Cohort name | Seeds | Runs | Cost (~$3/ep) |
 |-------|-------|---------------|-------------|-------|------|---------------|
 | **G0** | Explicit retrieval | Episode start | **Revealed** | 42 | 7 × 1 = 7 | ~$21 |
 | **G1** | Implicit retrieval | Episode start | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
 | **G2** | Data-driven | run_code #8 | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
-| **G3** | Mislead | run_code #8 | Hidden + wrong barcodes | 42, 7, 123 | 6 pairs × 3 = 18 | ~$54 |
-| **Total** | | | | | **67** | **~$201** |
+| **G3** | Mislead | run_code #8 | Hidden + wrong barcodes | 42, 7, 123 | 2 pairs × 3 = 6 | ~$18 |
+| **Total** | | | | | **55** | **~$165** |
 
 ### Group definitions
 
@@ -88,11 +88,42 @@ The three groups form a clean ablation over what recall channels are open:
 
 ### G3 cohort pairs
 
-| True cohort | Mislead as |
-|-------------|-----------|
-| OV | BRCA |
-| LUAD | LIHC |
-| (4 more TBD) | |
+| True cohort | Mislead as | Why this pair |
+|-------------|-----------|---------------|
+| OV | BRCA | Both female-predominant, both BRCA1/2-associated, similar serous histology presentations — a model relying on gene-biology recall (BRCA1/2, ESR1, hormone-responsive pathways) is most likely to be fooled |
+| LUAD | LIHC | Both common adult solid tumors with mid-range mutation burden and overlap in TP53/CDKN2A drivers — close enough that the mislead signal is plausible but distinct lineage means the cluster structure should still separate them |
+
+Two pairs only (locked 2026-06-13). Earlier plan listed 4 more TBD; the additional pairs would have tested the same mechanism with diminishing return and added ~$36 to the budget. The two retained pairs are the most diagnostic: female-cancer recall (OV→BRCA) and common-cancer recall (LUAD→LIHC).
+
+### TCGA design decisions (2026-06-15)
+
+Three changes locked in preparation for the multi-seed TCGA run, mirroring the OS-side polish from the previous session:
+
+**1. Post-submission Examination removed for TCGA.** The Phase 1 components (`reference_concordance`, `clinical_signal`, `genomic_coherence_drivers`) already test whether the agent recovered the known TCGA subtype biology — the examination phase was layering Q1–Q4 on top to test the same thing at ~$0.50/episode additional LLM-judge cost. For OS the examination is the discovery-quality proxy (no known answer exists), but for TCGA it is parallel-testing the faithfulness signal already captured in Phase 1.
+- `scripts/run_tcga.sh` now passes `--no-examination` automatically on every episode invocation
+- `biodiscoverygym/scoring/evaluator_v3.py` only attaches the examination report when actual Data Lock content exists in the messages — so the grand-total ceiling correctly resolves to 18 pts (was 23 with phantom Phase 2)
+- TCGA prompt's "After submit_discovery" block removed; replaced with single line: "submit_discovery ends the session"
+- Cost savings: ~$28 across the 55-episode plan
+
+**2. TCGA prompt audited against scorer; 3 alignment fixes applied to Stage 6.** Same audit pattern as the OS session caught 5 mismatches; 2 are now moot (Q4/Q1-Q4 criteria removed with the examination phase), 3 still applied:
+- *Stage 6 next_experiment ask expanded* — was "real gene targets, model system, and expected outcome" (3 things, mismatched to the judge's 4-criteria rubric). Now explicitly lists model + perturbation + measurement + quantitative outcome with examples of what scores 0 vs 1. Worth 2 pts of `experiment_quality`.
+- *OncoKB driver preference hint added* — 20 % of `marker_evidence` rewards OncoKB driver overlap, but the prompt never told the agent that submitting established drivers (when statistically comparable to novel markers) is preferred. Added explicit "PREFER established cancer-relevant drivers among comparable candidates" instruction.
+- *Mechanism hypothesis wording strengthened* — was "what biological process underlies the grouping" (pathway-level satisfies); judge wants "full directional chain with named molecular actors at each step." Stage 6 now asks for the chain with the example syntax inline.
+
+**3. Smoke-test runner wired.** `bash scripts/run_tcga.sh --smoke-test` runs all 4 groups (G0/G1/G2/G3) on a single cohort (OV) at one seed (42) with 15-call budget — pipeline check, not a scoring run. Mirrors the OS `run_cohort.sh --smoke-test` pattern. Forces `SKIP_SCORE=1` (15 calls produce no meaningful scores) and `OUT_DIR=results/tcga/smoke-test`. ~$1, ~10 min total.
+
+### Results path migration (2026-06-15)
+
+Unified the output layout so TCGA results mirror the OS pattern. Before: TCGA episodes landed in `results/<tag>/<uuid>/` and the `run_episode.py` default for non-external cohorts was `results/cohort/`. Now everything is cohort-namespaced:
+
+| Cohort family | Path |
+|---|---|
+| OS smoke test | `results/external/smoke-test/<uuid>/` |
+| OS named run | `results/external/<tag>/<uuid>/` |
+| TCGA smoke test | `results/tcga/smoke-test/<uuid>/` |
+| TCGA named run | `results/tcga/<tag>/<uuid>/` |
+
+Changed: `scripts/run_tcga.sh` (BASE_DIR), `scripts/run_episode.py` (default for non-external), `biodiscoverygym/episode.py` (fallback default), plus README/PROGRESS.md/BENCHMARK_PLAN.md path examples. No `results/cohort/` references remain in active code or docs.
 
 ---
 
@@ -104,10 +135,12 @@ design split (TCGA = faithfulness, OS = discovery):
 
 | Track | Script | Ceiling | Scoring intent |
 |---|---|---:|---|
-| **TCGA faithfulness** | `score_tcga_episode.py` → `score_all_tcga.sh` | 23 pts (Phase 1 = 18 + Phase 2 = 5) | Did the agent derive the known TCGA subtype biology through data-driven reasoning vs prior recall? Reference-concordance is a positive signal (recovering the answer). |
+| **TCGA faithfulness** | `score_tcga_episode.py` → `score_all_tcga.sh` | 18 pts (Phase 1 only) | Did the agent derive the known TCGA subtype biology through data-driven reasoning vs prior recall? Reference-concordance is a positive signal (recovering the answer). |
 | **OS discovery** | `score_os_episode.py` → `score_all_os.sh` | 23 pts (Phase 1 = 15 + Phase 2 = 3 + Phase 3 = 5) | Did the agent find prognostic biomarkers beyond what the Jia et al. 2022 paper reports? Reference-concordance is *deliberately absent*. External validation in TARGET-OS is the empirical replication test. |
 
-The TCGA Phase 1 components (`reference_concordance`, `genomic_coherence_rppa`) are misaligned for OS — the first inverts the goal, the second is always 0 (OS has no RPPA). The OS rubric replaces both with discovery-relevant components and adds a Phase 3 for external validation, which is the only direct test of "did the agent find something real."
+**Why the tracks differ structurally**, not just in weights:
+- TCGA Phase 1 components (`reference_concordance`, `genomic_coherence_rppa`) are misaligned for OS — the first inverts the goal, the second is always 0 (OS has no RPPA). OS replaces both with discovery-relevant components plus Phase 3 external validation.
+- TCGA dropped its post-submission Examination phase (2026-06-15). The Phase 1 components (`reference_concordance`, `clinical_signal`, `genomic_coherence_drivers`) already test recovery of the known answer; layering Q1-Q4 on top was parallel-testing the same thing at ~30% additional LLM cost per episode. The runner now passes `--no-examination` automatically. OS keeps its Examination phase because no known answer exists — exam depth IS the discovery quality signal there.
 
 ### TCGA Track — Phase 1 (9 components, 18 pts)
 
@@ -123,13 +156,7 @@ The TCGA Phase 1 components (`reference_concordance`, `genomic_coherence_rppa`) 
 | `mechanism_grounding` | 2 | LLM judge — 3 axes: internal coherence, data grounding, mechanistic logic |
 | `experiment_quality` | 2 | LLM judge — 4 binary criteria: specific model, perturbation, measurement, quantitative outcome |
 
-### TCGA Track — Phase 2 Examination (3 components, 5 pts)
-
-| Component | Weight | Method |
-|-----------|-------:|--------|
-| `exam_data_lock_quality` | 1 | Regex coverage of 5 required Data Lock sections (PC loadings, survival, mutation, RPPA, unexpected finding) |
-| `exam_experiment_depth` | 2 | LLM judge on Q4 — 5 sub-parts: named model + evidence, perturbation + direction, readout + magnitude, falsification criterion, orthogonal modality |
-| `exam_mechanistic_integration` | 2 | LLM judge on Q1–Q4 — cross_modal_consistency, quantitative_grounding, causal_coherence (all /4) |
+The TCGA track has no Phase 2. `evaluator_v3.py` only attaches an examination report to the score when actual Data Lock or Q1–Q4 content exists in the messages; with `--no-examination` the grand-total ceiling correctly resolves to 18.
 
 ### OS Discovery Track — Phase 1 (6 components, 15 pts)
 
@@ -196,6 +223,86 @@ External code review surfaced two issues in the Phase 3 design and one bug. All 
 3. **LOO direction match bug** — the original direction match correlated each gene with a signature that *included* that gene, giving Corr(G, sig) ≈ 1/√n_prot by construction. Random gene sets hit 0.8 direction match purely from this tautology. Fixed with leave-one-out signature (each gene tested against signature built from the *other* genes), dropping random direction match to the expected ~0.5.
 
 Also vectorized methylation-correlation computation as a matrix product with module-level cache (single per-cohort prep, reused across `provenance_integrity` and `cross_modal_support` calls per episode). **12.8× speedup** — single-episode scoring drops ~48s → ~5s, n=100 null calibration drops ~64 min → ~4 min.
+
+### Prompt-scorer alignment fixes (2026-06-12)
+
+Audit of the OS prompt against each Phase 1+2+3 scoring component surfaced **3 substantive mismatches** that would unfairly cost the agent points by asking for the wrong thing, plus 2 invisible-criteria gaps. All fixed in Stage 4 of `prompts/agent_system_os.txt`:
+
+1. **Provenance test #3 method mismatch.** Prompt said "methylation enrichment: Fisher exact p<0.05 per group" but the scorer does "CpG-expression Pearson correlation, BH-FDR<0.05 across CpGs" — a different test. An agent following the prompt verbatim would compute DMC between groups and miss the cross-modal coupling check. Fixed to specify "Methylation coupling: a CpG whose beta value correlates with the gene's expression at BH-FDR<0.05 across all CpGs tested — NOT a per-group differential methylation test."
+2. **`cross_modal_support` was invisible (2 pts at stake).** Scorer rewards genes with RNA AND non-RNA evidence; prompt had no hint that multi-modal genes are preferred for `top_genes`. Added explicit "PREFER genes with cross-modal support" block with the scoring rationale.
+3. **`validation_experiment` framing mismatch.** Prompt asked for clinical biomarker validation (IHC + patient stratification + outcome difference); judge expected mechanistic perturbation (specific model + CRISPR/drug + western/IC50 + quantitative outcome). Following the prompt scored 0 on `specific_model` and `specific_perturbation`. Switched the ask to mechanistic perturbation with a rationale paragraph explaining that the [DATA] mechanism hypothesis claims causality, so the validation experiment must test causality — not just predictability.
+4. **`discovery_beyond_priors` axis was implicit.** Mechanism hypothesis section now explicitly says "State which [DATA] claims go beyond what canonical biology of this cancer type would predict — those are the candidate discoveries; [PRIOR]-aligned claims are confirmation, not discovery."
+5. **Q1–Q4 examination audit criteria were invisible.** Added "AFTER submit_discovery" block listing the three audit axes (numeric citation from Data Lock, multi-modal integration into one causal model, [PRIOR]/[DATA] discipline maintained in answers) so the agent plans the Data Lock to support them.
+
+### Signed-correlation diagnostic — the empirical finding (2026-06-12)
+
+Two-mode null calibration surfaced an unexpected result: real run9 signatures score BELOW the null P95 on `target_survival_replication` (0.059 vs 0.42), even with G2 s0's good partition held constant. The fixed-partition ablation isolated this to the **gene selection**, not the partition — the agent's chosen genes underperform random gene picks at predicting TARGET-OS survival.
+
+Reviewer proposed a signed-correlation diagnostic to decide between three hypotheses:
+1. The agent overfits SGH-OS-specific gene directionality (gene picks anti-correlated with TARGET-OS survival)
+2. Signatures are just narrow-variance / weak signal
+3. TARGET biology differs from SGH-OS biology
+
+For each run9 episode: infer directions from SGH-OS Cox → build TARGET-OS signature score → Spearman with TARGET-OS OS time. Decision rule per reviewer: ρ < −0.10 confirms (1); ρ ≈ 0 supports (2)/(3); ρ > +0.10 means signatures replicate at signed-correlation level.
+
+**Result (n=13 run9 episodes, `scripts/signed_correlation_diagnostic.py`, output in `analysis/run9_target_validation/signed_correlation.tsv`):**
+
+| Statistic | Value |
+|---|---:|
+| Mean ρ | **−0.064** |
+| Median ρ | −0.063 |
+| SD | 0.07 |
+| Range | [−0.185, +0.084] |
+| Wilcoxon signed-rank vs 0 | **p = 0.008** |
+| Episodes interpreted as "flips" (ρ < −0.15) | 2 of 13 |
+| Episodes interpreted as "replicates" (ρ > +0.15) | 0 of 13 |
+| "Near-zero" | 11 of 13 |
+
+**Interpretation:** signatures are essentially noise in TARGET-OS, with a statistically detectable but biologically tiny anti-correlation tilt. The agent isn't dramatically overfitting direction — it's generating signatures with the wrong sign just slightly more often than chance. This is **Read A territory**: discovery is genuinely hard at n=91, and the system honestly reports that the strongest signatures are indistinguishable from random gene-set chance at the held-out survival-prediction axis.
+
+The deeper finding: in this n=91 cohort, even a methodologically-disciplined biomarker discovery process produces signatures that don't generalize — and they don't fail by being inverted, they fail by being uninformative. That is a sharper statement of the rare-cohort biomarker problem than the literature typically makes, and the two-mode calibration framework is what made it visible.
+
+A leave-deciles-out robustness check at Stage 3 of the prompt (reviewer's proposed prompt edit) is **deferred** — when signatures are this weak, an internal robustness filter can't rescue them. The right next step is more cohort, not more filtering.
+
+### Multi-modal adaptation redesign (2026-06-15)
+
+**Diagnosis.** Run9 episode review showed multi-omics adaptation rate near zero. Across 13 episodes: methylation was used to define a partition or anchor a finding only twice (the cg13600537→GPRC5C cross-modal coupling in G1 s1 and an analogous CpG anchor in G2 s1 — both were genuine but rare). CNA was almost never used to drive partition decisions. Mutation was treated as a side-check, never as a primary stratifier. The OS scorer's `cross_modal_support` component was scoring ~0.7 on the best episodes because agents had non-RNA evidence available; but they weren't *using* it for the partition decision, only annotating clusters with it post-hoc.
+
+**Root cause.** The previous prompt listed `multimodal_cluster(...)` as one of seven "avenues to consider" in Stage 3. By Stage 3 the partition was committed — even when an agent did call `multimodal_cluster` then, it was post-hoc validation, not a partition decision. Stage 0 ("look at expression PCs and clinical metadata") and Stage 1 ("is PC1 a confound or signal?") were both single-modality framings that anchored agents on expression before they had seen what the other modalities offered. By Stage 2's "commit a partition," expression had a 2-stage head start.
+
+**Intervention.** Three changes promoting multi-modal awareness upstream:
+
+1. **Stage 0 — per-modality survey.** Replaced the expression-only orientation with an explicit per-modality block: Expression (counts + PCs + clinical correlations), Methylation (CpG count + β distribution + variance), CNA (coverage rate + recurrent focal events), Mutation (top genes + burden distribution). Required commitment at end of Stage 0: *name which modalities you'll investigate as PRIMARY drivers vs SUPPORTING evidence — justify from data, not from cancer-type priors*.
+
+2. **Stage 1 — cross-modal alignment as the central question.** Replaced "is PC1 a confound or signal?" with: identify the dominant axis in EACH primary modality, then classify their relationship as **aligned** (redundant; expression alone suffices), **orthogonal** (multi-modal partition required), or **complementary** (multi-level structure). Required quantification: NMI/ARI between modality axes, cross-modality correlation of dominant scores. Verdict recorded in `record_observation`.
+
+3. **Stage 2 — action-forcing sub-decision in Step 1.** If Stage 1 verdict was "orthogonal" or "complementary," the agent MUST evaluate BOTH an expression-only partition AND a `multimodal_cluster(...)` partition before committing. Explicit NMI thresholds inline: `> 0.3 = meaningful new info, < 0.1 = redundant, 0.1–0.3 = tie-break by biological narrative quality`. This converts the multi-modal question from an optional Stage 3 avenue to a required Stage 2 method choice.
+
+**Known concerns flagged for follow-up:**
+- NMI thresholds (0.3 / 0.1) are intuition, not data. A one-time calibration on SGH-OS random-subsample multimodal_cluster NMI distributions would let us pin them quantitatively.
+- "PRIMARY vs SUPPORTING" Stage 0 commitment is slightly premature (the agent classifies before seeing Stage 1 evidence); mitigation is that Stage 1 still requires per-modality dominant-axis work regardless.
+- OS mutation panel is sparse (3779 genes, mostly 0-1 samples per gene); current "low coverage can demote" language covers this but is ambiguous.
+
+**Smoke-test diagnostic to verify the intervention worked:**
+- Does the agent call `multimodal_cluster` in Stage 2? (Pass/fail)
+- Does Stage 1's cross-modal alignment paragraph produce concrete NMI/ARI numbers vs hand-waving?
+- Does the final partition justification cite Stage 1's alignment verdict?
+
+If 0/N episodes call `multimodal_cluster` after this revision, the intervention failed and a harder fix is needed (e.g., making `partition_method` and `multimodal_nmi_vs_expr_only` required fields in `submit_discovery`). Baseline to beat: ~2/13 multi-modal partition decisions in run9.
+
+**Follow-up fixes (same day, post-review polish):**
+
+Four pre-smoke-test concerns flagged by review, all addressed except the budget bump (deferred to user decision):
+
+1. **`multimodal_cluster` template would crash on missing modalities.** Inline code template in Stage 2 Step 1 passed `methylation` and `cna` unconditionally despite an English comment saying "pass only what is not None." Agents copy-paste templates verbatim; this would have crashed every episode where any modality is None. Replaced with conditional dict construction (`if methylation is not None: modalities["methylation"] = methylation`) so the template is copy-safe.
+
+2. **NMI quantification in Stage 1 was vague.** Original ask was "report NMI or ARI" without specifying how to derive categorical labels for NMI from continuous PC scores. Agents would have inferred this from first principles, costing 1–2 tool calls. Added inline example: `pd.qcut(modality_PC1_score, 4, labels=False)` → `normalized_mutual_info_score(expr_q, meth_q)`, plus directional `spearmanr` of dominant scores.
+
+3. **"Rich structure" criterion in Stage 0 could leak priors back in.** Original wording let the agent self-define what "rich structure" meant — and the easiest read of "rich structure" comes from cancer-type priors ("methylation matters in pediatric cancers"). Operationalized as three numeric criteria a modality must satisfy to qualify as PRIMARY: sample coverage ≥ 50 %, dominant axis explains > 10 % variance OR ≥ 5 recurrent events, ≥ 100 non-constant features. Agent must state the numbers when classifying. This forces the classification to be data-driven, not prior-driven.
+
+4. **Stage 3 avenues overlapped with Stage 1 work.** Original list mentioned "Differential methylation per cluster" and "CNA enrichment per group" as Stage 3 activities, but Stage 0/1 had already promoted these modalities to primary characterization. Tightened to: "for modalities you already characterized at Stage 1, move to per-cluster differential analysis rather than redoing dataset-wide structure. For modalities set aside as supporting, now is the time to bring them in." Avoids redundancy without losing flexibility.
+
+5. **Budget pressure flagged but not yet applied (deferred).** Stage 0 grew from 4 outputs to ~16 (per-modality survey), Stage 1 added per-modality dominant-axis work and cross-modal alignment quantification. Realistically these consume 25–40 of an 80-call budget; the previous default of 100 leaves Stage 2–4 with ~60 calls, which may pinch the depth of Stage 3 characterization that's the whole point of the redesign. Reviewer-recommended fix: bump `MAX_TOOL_CALLS=100` → `120` in `scripts/run_cohort.sh`. Cost impact: ~$6 more on a 9-episode multi-seed OS run on Sonnet. Trivial relative to the value of letting the new multi-modal exploration actually exercise itself, but is a recurring default change — pending user sign-off before applying.
 
 ---
 
@@ -284,6 +391,19 @@ python analysis/external_validation.py --name run10 --protective G1,G2 --risk G3
 ```
 Outputs in `analysis/run9_target_validation/`: `external_validation_run9.tsv` (per-marker table), `external_validation_run9.png` (panel A forest + B–E KM), `corr_discovery_vs_val.png` / `module_concordance.png` (co-expression structure). Exploratory scripts: `analysis/validate_run9_target*.py`, `validate_target_poscontrol.py`.
 
+## External Validation — TARGET-OS (run10_withval)
+
+**Date:** 2026-06-13 · **Run:** `results/external/run10_withval` (9 episodes, G0/G1/G2 × seeds {0,1,7}). Same two-pass protocol as run9. Outputs in `analysis/run10_target_validation/` (`signed_correlation.tsv`, `external_validation_run10.tsv/.png`, `report.md`).
+
+**run10 reproduces the run9 finding exactly — genuine non-replication.**
+
+1. **Per-episode signed correlation** (`scripts/signed_correlation_diagnostic.py --run-dir results/external/run10_withval`): mean ρ = **−0.089**, median −0.103, range [−0.199, +0.030], Wilcoxon vs 0 p=0.039. Breakdown 0 replicates / 8 near-zero / 1 flips (g1_s7, ρ=−0.199, p=0.07 ns). Same as run9 (mean ρ=−0.064): signatures are **uninformative, not direction-inverted**.
+2. **Convergent-signature external validation** (`external_validation.py --name run10`) on the strongly-convergent core (genes in ≥3 of 9 episodes; direction from SGH-OS Cox) — protective `ZBTB42,EPHA2,GPRC5C,DAB2IP,SMAD6,SATB2`, risk `SIMC1,ZNF280C`: signature HR=**1.28, p=0.22 → FAIL** (and wrong direction). Positive controls **3/5 pass** (cytolytic HR=0.60 p=0.026, hypoxia HR=1.40 p=0.041, metastasis HR=4.58 p=5e-5) → cohort is informative, so the null is genuine. SATB2 alone is nominal (logrank p=0.043) but opposite to its SGH-OS loading.
+
+Verdict identical to run9: at n≈85–91 with a methodology-driven prompt, discovered OS prognostic signatures do not carry cross-cohort survival information, while known prognostic axes validate in the same data. The failure mode is rare-cohort signal weakness, not a pipeline bug.
+
+> Note: `external_validation.py` hardcodes `OUT_DIR = analysis/run9_target_validation`; run10 outputs were moved into `analysis/run10_target_validation/` after generation.
+
 ### Key observations (run3 — clinical columns not yet anonymized)
 
 **Partition stability:** All 9 runs converge to a 4-cluster solution with sizes 25/25/21/20 (paper: 25/22/23/21). Structural, survival, and reference-concordance scores are byte-identical across runs — later found to be caused by agents reading the `mrna_cluster` column directly, not by genuine clustering.
@@ -305,7 +425,7 @@ Outputs in `analysis/run9_target_validation/`: `external_validation_run9.tsv` (p
 
 **Observation tracking** reveals hypothesis evolution for the first time: confidence trajectories, alternatives considered, quantitative findings cited before codebook reveal.
 
-Full report: `results/cohort/external/run4_clinAnon_obsTrack/`
+Full report: `results/external/run4_clinAnon_obsTrack/`
 
 ### Bug findings (run6 — unified prompt + examination phase)
 
@@ -317,7 +437,7 @@ Three structural bugs identified from run6 traces, all fixed before run7:
 
 3. **`data/external` unblocked** — Raw source files (`data/external/os_jia2022/expression.parquet` etc.) were readable from agent code, completely bypassing anonymization. Fixed: added `"data/external"` to `_BLOCKED_SUBSTRINGS`.
 
-Full report: `results/cohort/external/os_benchmark_summary.md`
+Full report: `results/external/os_benchmark_summary.md`
 
 ---
 

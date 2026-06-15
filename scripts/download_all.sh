@@ -201,6 +201,7 @@ echo "Data layout:"
 du -sh "$ROOT/data"/*/  2>/dev/null || true
 echo
 echo "Run benchmarks:"
-echo "  Target discovery : python scripts/run_target_discovery.py --indication 'AML'"
-echo "  Anomaly detection: python scripts/run_episode.py --cohort LIHC"
+echo "  Cohort analysis  : python scripts/run_episode.py --cohort OS    # SGH-OS discovery"
+echo "                   : python scripts/run_episode.py --cohort LIHC  # TCGA faithfulness"
+echo "  Multi-seed       : bash scripts/run_cohort.sh --tag run10 --cohort OS"
 echo "  Tests            : pytest tests/ -v"

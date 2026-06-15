@@ -811,6 +811,32 @@ def score_target_survival_replication(
         n_pos_pass = sum(1 for x in pos_controls if x.get("passes"))
         cohort_powered = n_pos_pass >= 1
 
+        # Verdict with magnitude check: direction-OK alone isn't replication.
+        # A signature with HR=0.94, p=0.74 has the right SIGN but no actual signal.
+        # Tiers (only consulted when direction is correct AND cohort is powered):
+        #   replicates       : significant (p<0.05) AND |log HR| > log(1.5)
+        #   directionally-OK : significant (p<0.05) but weak magnitude
+        #   uninformative    : direction matches but p≥0.05 — could be chance alignment
+        log_hr_threshold = np.log(1.5)  # HR<0.67 or HR>1.5 = meaningful magnitude
+        sig_threshold = 0.05
+        is_significant = cand["p"] < sig_threshold
+        is_strong_magnitude = abs(np.log(cand["hr"])) > log_hr_threshold
+        if not cohort_powered:
+            verdict = "underpowered_cohort_inconclusive"
+            note = "Cohort underpowered (no positive controls passing) — null candidate result is inconclusive"
+        elif not direction_ok:
+            verdict = "genuine_non_replication"
+            note = "Cohort can detect known prognostic signal — candidate null is genuine non-replication"
+        elif is_significant and is_strong_magnitude:
+            verdict = "replicates"
+            note = f"Candidate replicates: HR={cand['hr']:.2f}, p={cand['p']:.3g} (direction + magnitude + significance)"
+        elif is_significant:
+            verdict = "weak_replication"
+            note = f"Candidate weakly replicates: direction correct and p<0.05, but |log HR|={abs(np.log(cand['hr'])):.2f} below threshold — small effect"
+        else:
+            verdict = "uninformative"
+            note = f"Candidate uninformative: HR={cand['hr']:.2f}, p={cand['p']:.3g}. Direction technically matches but signal is indistinguishable from chance — not a replication"
+
         return float(score), {
             "n_samples": int(len(common)),
             "n_events": int(target_df["E"].sum()),
@@ -826,14 +852,8 @@ def score_target_survival_replication(
             "positive_controls": pos_controls,
             "n_positive_controls_passing": n_pos_pass,
             "cohort_powered": cohort_powered,
-            "interpretation_note": (
-                "Cohort can detect known prognostic signal — candidate null is genuine non-replication"
-                if cohort_powered and not direction_ok else
-                "Cohort underpowered (no positive controls passing) — null candidate result is inconclusive"
-                if not cohort_powered else
-                "Candidate replicates with correct direction" if direction_ok else
-                "Candidate does not replicate"
-            ),
+            "verdict": verdict,
+            "interpretation_note": note,
         }
     except Exception as e:
         return 0.0, {"error": str(e)}

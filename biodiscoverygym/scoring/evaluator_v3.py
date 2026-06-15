@@ -207,8 +207,15 @@ def trace_episode(messages: list[dict], run_log: dict | None = None) -> TraceRep
             report.calls.append(rec)
 
             # Track special calls
-            if tool_name == "request_codebook" and report.codebook_call_num is None:
-                report.codebook_call_num = call_num
+            # Codebook reveal: works for both explicit (`request_codebook` tool — historic)
+            # and action-based gate (codebook payload appended to the 3rd record_observation
+            # tool_result). Scanning the tool_result content for the reveal marker handles
+            # both mechanisms transparently.
+            if report.codebook_call_num is None:
+                if tool_name == "request_codebook":
+                    report.codebook_call_num = call_num
+                elif "identified the gene codebook" in output_raw:
+                    report.codebook_call_num = call_num
             if tool_name == "submit_discovery" and report.submit_call_num is None:
                 report.submit_call_num = call_num
 
@@ -379,8 +386,14 @@ class EvaluatorV3(EvaluatorV2):
         extracted_lock, examination_answers = extract_examination_data(messages)
         data_lock_report = data_lock_report or extracted_lock
 
+        # Only attach examination report if examination actually ran (Data Lock
+        # text or Q1-Q4 answers exist). When --no-examination was passed (TCGA
+        # default), keep `score_report.examination = None` so the grand-total
+        # ceiling correctly drops from 23 to 18 instead of keeping a phantom
+        # 5-pt zero-scored section.
         examination_report = self.score_examination(data_lock_report, examination_answers)
-        score_report.examination = examination_report
+        if examination_report.data_lock_length > 0 or examination_report.n_examination_answers > 0:
+            score_report.examination = examination_report
 
         trace_report = trace_episode(messages, run_log=run_log)
         return score_report, trace_report
