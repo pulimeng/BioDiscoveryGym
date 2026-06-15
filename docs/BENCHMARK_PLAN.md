@@ -78,21 +78,23 @@ Scoring is now bifurcated between the two experiments. See `docs/TASK_A_COHORT.m
 
 ## Budget
 
-| Model | API pricing | Est. cost/ep | 67 episodes |
+After the G3 mislead-pair reduction (4 TBD pairs dropped), the per-model TCGA episode count is **55** (G0×7 + G1×21 + G2×21 + G3×6).
+
+| Model | API pricing | Est. cost/ep | 55 episodes (1 model) |
 |-------|------------|-------------|-------------|
-| Claude Sonnet 4.6 (M1) | $3/M in · $15/M out | ~$6 | ~$402 |
-| Claude Opus 4.7 (M2) | $15/M in · $75/M out | ~$28 | ~$1,876 |
-| GPT-5.4 (M3) | $2.50/M in · $15/M out | ~$6 | ~$402 |
-| GPT-5.5 (M4) | $5/M in · $30/M out | ~$12 | ~$804 |
-| Gemini 3.1 Pro (M5) | $2/M in · $12/M out | ~$5 | ~$335 |
+| Claude Sonnet 4.6 (M1) | $3/M in · $15/M out | ~$3 | ~$165 |
+| Claude Opus 4.7 (M2) | $15/M in · $75/M out | ~$15 | ~$825 |
+| GPT-5.4 (M3) | $2.50/M in · $15/M out | ~$3 | ~$165 |
+| GPT-5.5 (M4) | $5/M in · $30/M out | ~$6 | ~$330 |
+| Gemini 3.1 Pro (M5) | $2/M in · $12/M out | ~$2 | ~$110 |
 
 | Line item | Amount |
 |-----------|--------|
-| TCGA 335 episodes (5 models) | ~$3,819 |
-| Osteosarcoma runs (~3 models × ~25 eps) | ~$400 |
-| Scoring API cost (LLM judge, 335 eps) | ~$300 |
+| TCGA 5-model × 55 episodes (275 episodes) | ~$1,595 |
+| Osteosarcoma — 5 models × 9 episodes (45 episodes), incl. Phase 3 | ~$300 |
+| Scoring API cost (LLM judge) — all episodes | ~$80 |
 | Reruns / debugging | ~$100 |
-| **Total budget** | **~$4,619** |
+| **Total budget** | **~$2,075** |
 
 ---
 
