@@ -61,17 +61,19 @@ The agent must check for `None` and adapt — not every modality is present ever
 
 Test whether the agent **derived** the known TCGA subtype biology from data rather than **recalled** it from literature. Examination phase removed 2026-06-15 (the Phase 1 components already cover the faithfulness signal).
 
-| Component | Weight | What it measures |
-|---|---:|---|
-| `structure_validity` | 2 | Bootstrap silhouette + ARI vs k-means re-cluster |
-| `clinical_signal` | 3 | ΔC-index over null Cox + log HR between extreme-survival subtypes |
-| `genomic_coherence_drivers` | 2 | FDR-corrected Fisher exact for OncoKB drivers per subtype |
-| `genomic_coherence_rppa` | 2 | ARI between expression grouping and RPPA k-means re-cluster |
-| `reference_concordance` | 2 | **Faithfulness anchor**: max NMI across known TCGA subtype schemes |
-| `marker_evidence` | 2 | HGNC validity + one-vs-rest AUC + OncoKB driver overlap |
-| `pathway_validity` | 1 | GMT name validity (MSigDB Hallmarks / Reactome / GO / KEGG) + ORA enrichment bonus |
-| `mechanism_grounding` | 2 | LLM judge — 3 axes: internal coherence, data grounding, mechanistic logic |
-| **Total** | **16** | |
+#### Phase 1 — 8 components, 16 pts
+
+| # | Component | Wt | Type | What it measures | Implementation |
+|---|---|---:|---|---|---|
+| 1 | `structure_validity` | 2 | computational | Partition is well-formed: bootstrap silhouette + ARI vs k-means re-cluster on PCA-reduced expression (50 dims) | `components.score_structure_validity` |
+| 2 | `clinical_signal` | 3 | computational | Subtypes stratify survival: ΔC-index over null Cox (60% weight) + log HR between best- and worst-survival extreme groups (40% weight) | `components.score_clinical_signal` |
+| 3 | `genomic_coherence_drivers` | 2 | computational | OncoKB driver mutations enrich per subtype via FDR-corrected Fisher exact (one-vs-rest per gene per subtype) | `components.score_driver_enrichment` |
+| 4 | `genomic_coherence_rppa` | 2 | computational | Expression-derived grouping is coherent with protein-level structure: ARI between submitted partition and RPPA k-means re-cluster | `components.score_rppa_concordance` |
+| 5 | `reference_concordance` | 2 | computational | **Faithfulness anchor** — recovered the known answer: max NMI across `pancan_subtypes.tsv` and `TCGASubtype.20170308.tsv.gz` schemes | `components.score_reference_concordance` |
+| 6 | `marker_evidence` | 2 | computational | Submitted `top_genes` actually mark their clusters: 40% HGNC validity + 40% one-vs-rest AUC + 20% OncoKB driver overlap | `components.score_marker_evidence` |
+| 7 | `pathway_validity` | 1 | computational | Pathway names are real GMT entries (MSigDB Hallmarks / Reactome / GO / KEGG) + ORA enrichment of `top_genes` adds a bonus | `components.score_pathway_validity` |
+| 8 | `mechanism_grounding` | 2 | LLM judge | 3 axes scored /4 each, total /12: internal coherence (hypothesis follows from genes/pathways), data grounding (claims traceable to dataset numbers — the faithfulness signal), mechanistic logic (directional A→B→C chain with named actors) | `judge.score_mechanism_grounding` |
+| | **Phase 1 total** | **16** | | | |
 
 14 of 16 pts are deterministic computational. Only `mechanism_grounding` (2 pts) uses an LLM judge — specifically because its `data_grounding` axis is what distinguishes data-derivation from literature recall.
 
@@ -79,37 +81,42 @@ Test whether the agent **derived** the known TCGA subtype biology from data rath
 
 Test whether the agent finds prognostic biomarkers that **generalize** to an independent cohort (TARGET-OS), beyond what the source paper reports. Reference concordance is deliberately absent — recovering the paper's subtypes would be the opposite of discovery.
 
-#### Phase 1 — structural + computational (16 pts)
+#### Phase 1 — 7 components, 16 pts
 
-| Component | Weight | What it measures |
-|---|---:|---|
-| `structure_validity` | 2 | Same as TCGA — bootstrap silhouette + ARI |
-| `survival_stratification` | 3 | Multi-group log-rank p (1.5) + Cox max-vs-min HR magnitude (1.5) |
-| `provenance_integrity` | 3 | Per-gene audit of the prompt's 2-of-3 test: DE FDR<0.05 BH + survival correlation FDR<0.05 BH + methylation CpG correlation OR CNA Fisher. Score = fraction of submitted `top_genes` passing ≥2 |
-| `pathway_validity` | 1 | Same as TCGA — direction-neutral GMT name + ORA check |
-| `mechanism_grounding` | 3 | OS-specific LLM judge — 3 axes: prior/data discipline, causal chain from data, discovery beyond priors |
-| `cross_modal_support` | 2 | Stricter than provenance test 3: per gene, RNA evidence (DE OR survival, p<0.05) **AND** non-RNA evidence (methylation OR CNA) |
-| `validation_experiment` | 2 | LLM judge (reused from TCGA stack) — 4 binary criteria for proposed next experiment |
+| # | Component | Wt | Type | What it measures | Implementation |
+|---|---|---:|---|---|---|
+| 1 | `structure_validity` | 2 | computational | Same as TCGA — partition well-formedness via silhouette + bootstrap ARI | `components.score_structure_validity` (shared) |
+| 2 | `survival_stratification` | 3 | computational | OS-specific Cox survival test: multi-group log-rank p scaled `-log10(p)/4` (1.5 pts) + Cox max-vs-min HR magnitude scaled `log(HR)/log(4)` (1.5 pts) | `components_os.score_survival_stratification` |
+| 3 | `provenance_integrity` | 3 | computational | Per-gene independent re-audit of the prompt's 2-of-3 test: (a) DE FDR<0.05 BH between groups, (b) Spearman ρ with OS time, FDR<0.05 BH, (c) methylation CpG-expression correlation FDR<0.05 BH OR CNA Fisher per group. Score = fraction of submitted `top_genes` passing ≥2 of 3 | `components_os.score_provenance_integrity` |
+| 4 | `pathway_validity` | 1 | computational | Same as TCGA — direction-neutral GMT name + ORA check. Catches hallucinated pathway names without rewarding recovery of known biology | `components.score_pathway_validity` (shared) |
+| 5 | `mechanistic_grounding` | 3 | LLM judge | OS-specific 3 axes scored /4 each, total /12: prior/data discipline (labels + cited computations), causal chain from data (each link grounded in cohort numbers), discovery beyond priors (identifies novel claims explicitly) | `judge_os.score_mechanism_grounding_os` |
+| 6 | `cross_modal_support` | 2 | computational | Stricter than provenance test 3: per gene, requires **both** RNA evidence (DE OR survival, nominal p<0.05) **AND** non-RNA evidence (methylation CpG correlation OR CNA Fisher). Score = fraction with both | `components_os.score_cross_modal_support` |
+| 7 | `validation_experiment` | 2 | LLM judge | Reused from TCGA stack — 4 binary criteria for the proposed next experiment: specific model, specific perturbation + method, specific assay, quantitative outcome | `judge.score_experiment_quality` |
+| | **Phase 1 subtotal** | **16** | | | |
+
+13 of 16 Phase 1 pts are deterministic computational; 3 LLM-judge pts come from `mechanistic_grounding`. The `validation_experiment` judge is also LLM-based but at 2 pts.
 
 #### Phase 2 — post-submission Examination (3 pts)
 
 Triggered after `submit_discovery`. Agent commits a Data Lock report then answers Q1–Q4.
 
-| Component | Weight | What it measures |
-|---|---:|---|
-| `exam_data_lock_quality` | 1 | Regex coverage of 5 required Data Lock sections (PC loadings, survival, mutation, methylation/RPPA, unexpected finding) |
-| `exam_mechanistic_integration` | 2 | OS-specific LLM judge on Q1–Q4: Data Lock numeric citation, multi-modal integration, [PRIOR]/[DATA] discipline |
+| # | Component | Wt | Type | What it measures | Implementation |
+|---|---|---:|---|---|---|
+| 8 | `exam_data_lock_quality` | 1 | computational (regex) | Data Lock contains 5 required sections: PC loadings, survival, mutation enrichment, methylation OR RPPA cross-modal, an explicitly-flagged unexpected finding | `components.score_exam_data_lock_quality` (shared) |
+| 9 | `exam_mechanistic_integration` | 2 | LLM judge | OS-specific 3 axes scored /4 each, total /12: Data Lock numeric citation (≥6 specific values from the Lock cited in answers), multi-modal integration (≥3 modalities woven into ONE causal model), [PRIOR]/[DATA] labeling discipline maintained throughout Q1–Q4 | `judge_os.score_exam_mechanistic_integration_os` |
+| | **Phase 2 subtotal** | **3** | | | |
 
 #### Phase 3 — external validation in TARGET-OS (5 pts)
 
-Hands the submitted gene set to TARGET-OS (n=85 independent pediatric/AYA osteosarcoma with survival) and lets the data decide whether the signature replicates.
+Hands the submitted gene set to TARGET-OS (n=85 independent pediatric/AYA osteosarcoma with survival) and lets the data decide whether the signature replicates. The empirical "is this a discovery?" component.
 
-| Component | Weight | What it measures |
-|---|---:|---|
-| `target_coexpr_replication` | 2 | Three subscores averaged: `os_specificity_delta` (target_os ρ − target_non_os ρ), sign concordance of pairwise correlations, leave-one-out signature direction match |
-| `target_survival_replication` | 3 | Direction-as-gate: wrong-direction signature = 0. Right direction → (significance + magnitude) / 2. Literature positive controls (cytolytic, IFN-γ, hypoxia, proliferation, metastasis_at_dx) verify the cohort can detect signal |
+| # | Component | Wt | Type | What it measures | Implementation |
+|---|---|---:|---|---|---|
+| 10 | `target_coexpr_replication` | 2 | computational | Three subscores averaged: (a) `os_specificity_delta` = matrix ρ (SGH-OS ↔ TARGET-OS pairwise correlations) − matrix ρ (SGH-OS ↔ TARGET-non-OS, negative control), (b) off-diagonal sign concordance scaled `(conc − 0.5)·2`, (c) leave-one-out signature direction match (each gene tested against signature built from the *other* genes — kills the tautological self-correlation bias) | `components_os.score_target_coexpr_replication` |
+| 11 | `target_survival_replication` | 3 | computational | Direction-as-gate: wrong-direction Cox HR (>1 when signature claims protective) → entire score = 0. Right direction → (significance + magnitude) / 2 where sig = clip(`-log10(p)/4`) and mag = clip(`|log HR|/log 2`). Literature positive controls (cytolytic GZMA/PRF1, IFN-γ, hypoxia HIF targets, proliferation, metastasis_at_dx) tested in the same TARGET-OS data verify the cohort can detect known signal — a null candidate is genuine non-replication, not underpowering | `components_os.score_target_survival_replication` |
+| | **Phase 3 subtotal** | **5** | | | |
 
-The Phase 3 verdict is the only direct empirical answer to "is this a discovery or in-sample optimism?"
+Phase 3 is OS-only and is the load-bearing answer to "is this a discovery or in-sample optimism?" Run9 episode scores on this component cluster near the random-gene-set null mean — see `docs/TASK_A_COHORT.md` § Signed-correlation diagnostic for the empirical finding.
 
 ### Null-baseline calibration (SGH-OS only)
 
