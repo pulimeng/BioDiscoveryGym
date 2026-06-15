@@ -5,7 +5,7 @@ Faithfulness rubric — scores whether the agent derived the known TCGA subtype
 biology through data-driven reasoning vs prior recall. Runs all v2 components
 AND extracts an agent trace from the raw message log.
 
-For OS / external cohorts, use score_os_episode.py instead (discovery rubric).
+For OS / external cohorts, use score_sghos_episode.py instead (discovery rubric).
 
 Usage:
     python scripts/score_tcga_episode.py path/to/episode.json --cohort BRCA --save

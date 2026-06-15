@@ -136,7 +136,7 @@ design split (TCGA = faithfulness, OS = discovery):
 | Track | Script | Ceiling | Scoring intent |
 |---|---|---:|---|
 | **TCGA faithfulness** | `score_tcga_episode.py` → `score_all_tcga.sh` | 16 pts (Phase 1 only) | Did the agent derive the known TCGA subtype biology through data-driven reasoning vs prior recall? Reference-concordance is a positive signal (recovering the answer). |
-| **OS discovery** | `score_os_episode.py` → `score_all_os.sh` | 24 pts (Phase 1 = 16 + Phase 2 = 3 + Phase 3 = 5) | Did the agent find prognostic biomarkers beyond what the Jia et al. 2022 paper reports? Reference-concordance is *deliberately absent*. External validation in TARGET-OS is the empirical replication test. |
+| **OS discovery** | `score_sghos_episode.py` → `score_all_sghos.sh` | 24 pts (Phase 1 = 16 + Phase 2 = 3 + Phase 3 = 5) | Did the agent find prognostic biomarkers beyond what the Jia et al. 2022 paper reports? Reference-concordance is *deliberately absent*. External validation in TARGET-OS is the empirical replication test. |
 
 **Why the tracks differ structurally**, not just in weights:
 - TCGA Phase 1 components (`reference_concordance`, `genomic_coherence_rppa`) are misaligned for OS — the first inverts the goal, the second is always 0 (OS has no RPPA). OS replaces both with discovery-relevant components plus Phase 3 external validation.
@@ -494,8 +494,8 @@ python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42       
 python scripts/run_episode.py --cohort OS --seed 42 --primekg                       # G2 + PrimeKG
 
 # Score (OS discovery rubric — Phase 1+2+3, 23 pt ceiling)
-python scripts/score_os_episode.py results/external/run9_marker/<uuid>/<label>.json --save
-bash scripts/score_all_os.sh results/external/run9_marker/
+python scripts/score_sghos_episode.py results/external/run9_marker/<uuid>/<label>.json --save
+bash scripts/score_all_sghos.sh results/external/run9_marker/
 ```
 
 ---
@@ -524,8 +524,8 @@ bash scripts/score_all_os.sh results/external/run9_marker/
 | `scripts/run_tcga.sh` | TCGA multi-seed benchmark runner |
 | `scripts/score_tcga_episode.py` | TCGA faithfulness scoring (single episode) |
 | `scripts/score_all_tcga.sh` | TCGA batch scorer |
-| `scripts/score_os_episode.py` | **OS discovery scoring (single episode)** — Phase 1+2+3, `--skip-llm` to skip API |
-| `scripts/score_all_os.sh` | **OS batch scorer** |
+| `scripts/score_sghos_episode.py` | **OS discovery scoring (single episode)** — Phase 1+2+3, `--skip-llm` to skip API |
+| `scripts/score_all_sghos.sh` | **OS batch scorer** |
 | `scripts/calibrate_os_null.py` | **OS scorer null-baseline calibration** — random gene set (& optionally random partition) over N iterations; output mean/SD/percentiles per component |
 | `scripts/process_target.py` | TARGET pan-cancer RNA-seq processor (Phase 3 validation data source) |
 | `analysis/external_validation.py` | Standalone external-validation harness — Cox + KM in TARGET-OS for any signature, with built-in literature positive controls |

@@ -54,7 +54,7 @@ Each episode: agent receives an anonymized patient cohort (expression ± mutatio
 
 - Runners: `bash scripts/run_tcga.sh --tag <run>` (G0-G3, TCGA cohorts) and `bash scripts/run_cohort.sh --tag <run> --cohort OS` (G0-G2, SGH-OS)
 - Results saved to `results/tcga/<run>/<uuid>/` (TCGA) or `results/external/<run>/<uuid>/` (OS)
-- Scorers: `scripts/score_tcga_episode.py` (TCGA faithfulness, 18 pts) and `scripts/score_os_episode.py` (OS discovery, 23 pts)
+- Scorers: `scripts/score_tcga_episode.py` (TCGA faithfulness, 18 pts) and `scripts/score_sghos_episode.py` (OS discovery, 23 pts)
 
 ---
 
@@ -126,6 +126,6 @@ Each episode: agent receives an anonymized patient cohort (expression ± mutatio
 | `scripts/run_cohort.sh` | OS G0-G2 benchmark runner (resume-safe; `--smoke-test` for pipeline check) |
 | `scripts/run_episode.py` | Single-episode CLI (cohort-aware default results-base) |
 | `scripts/score_tcga_episode.py` | TCGA faithfulness scorer (Phase 1, 18 pts) |
-| `scripts/score_os_episode.py` | OS discovery scorer (Phase 1+2+3, up to 23 pts) |
+| `scripts/score_sghos_episode.py` | OS discovery scorer (Phase 1+2+3, up to 23 pts) |
 | `docs/TASK_A_COHORT.md` | Full task design and empirical findings |
 | `docs/GRAND_DESIGN.md` | Overall benchmark architecture |

@@ -11,8 +11,8 @@ Grand total: 23 pts. All components implemented; LLM-judge components
 can be bypassed with --skip-llm for fast no-API-cost scoring.
 
 Usage:
-    python scripts/score_os_episode.py path/to/episode.json --save
-    python scripts/score_os_episode.py path/to/episode.json --save --skip-llm
+    python scripts/score_sghos_episode.py path/to/episode.json --save
+    python scripts/score_sghos_episode.py path/to/episode.json --save --skip-llm
 
 Outputs (with --save):
     <episode>_v3scores.json   — full report including phase 1/2/3 + trace summary

@@ -185,7 +185,7 @@ if [[ $SKIP_SCORE -eq 0 ]]; then
     echo "============================================================"
     echo "  Scoring all episodes in ${RESULTS_BASE}"
     echo "============================================================"
-    bash scripts/score_all_os.sh "${RESULTS_BASE}"
+    bash scripts/score_all_sghos.sh "${RESULTS_BASE}"
 fi
 
 echo ""

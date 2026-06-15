@@ -131,9 +131,9 @@ python scripts/run_episode.py --cohort BRCA --gene-codebook-gate 0 --seed 42
 python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42
 
 # Score any episode (cohort-specific tracks)
-python scripts/score_os_episode.py results/external/run10/<uuid>/<label>.json --save     # OS discovery
+python scripts/score_sghos_episode.py results/external/run10/<uuid>/<label>.json --save     # OS discovery
 python scripts/score_tcga_episode.py results/tcga/run10/<uuid>/<label>.json --cohort BRCA --save  # TCGA
-bash scripts/score_all_os.sh results/external/run10/                    # batch OS
+bash scripts/score_all_sghos.sh results/external/run10/                    # batch OS
 bash scripts/score_all_tcga.sh results/tcga/run10/                      # batch TCGA
 
 # OS smoke test (1 seed/mode, fast verify)

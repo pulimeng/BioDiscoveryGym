@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Score all OS episode JSONs in a results folder (discovery rubric — WIP).
 # Currently delegates to TCGA faithfulness scorer with a warning.
-# Usage: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_os.sh <results_folder>
-# Example: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_os.sh results/external/run9_marker
+# Usage: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_sghos.sh <results_folder>
+# Example: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_sghos.sh results/external/run9_marker
 
 set -e
 
 if [[ -z "${1:-}" ]]; then
-    echo "Usage: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_os.sh <results_folder>" >&2
+    echo "Usage: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_sghos.sh <results_folder>" >&2
     exit 1
 fi
 
@@ -39,7 +39,7 @@ echo ""
 
 for ep in "${EPISODES[@]}"; do
     echo "=== $(basename $ep) ==="
-    python scripts/score_os_episode.py "$ep" --save
+    python scripts/score_sghos_episode.py "$ep" --save
     echo ""
 done
 

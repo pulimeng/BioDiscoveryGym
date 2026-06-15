@@ -126,7 +126,7 @@ python scripts/run_episode.py --cohort OS --seed 42 --explicit-retrieval
 python scripts/run_episode.py --cohort OS --seed 42 --gene-codebook-gate 0
 
 # Score a completed episode (cohort-specific track)
-python scripts/score_os_episode.py results/external/<run>/<uuid>/<label>.json --save        # OS discovery rubric (24 pts)
+python scripts/score_sghos_episode.py results/external/<run>/<uuid>/<label>.json --save        # OS discovery rubric (24 pts)
 python scripts/score_tcga_episode.py results/tcga/<run>/<uuid>/<label>.json --cohort BRCA --save  # TCGA faithfulness rubric (16 pts)
 
 # Pipeline smoke test (1 seed/mode, 15 calls, no exam — ~$1, ~15 min)
@@ -194,9 +194,9 @@ scripts/
   run_tcga.sh                 — TCGA multi-seed benchmark runner
   process_os_jia2022.py       — preprocess SGH-OS raw data → parquet
   process_target.py           — preprocess TARGET pan-cancer (Phase 3 validation source)
-  score_os_episode.py         — score OS episode (discovery rubric)
+  score_sghos_episode.py         — score OS episode (discovery rubric)
   score_tcga_episode.py       — score TCGA episode (faithfulness rubric)
-  score_all_os.sh             — batch-score an OS results directory
+  score_all_sghos.sh             — batch-score an OS results directory
   score_all_tcga.sh           — batch-score a TCGA results directory
   calibrate_os_null.py             — null-baseline calibration for OS discovery scorer
   signed_correlation_diagnostic.py — signature direction replication test (TARGET-OS)
