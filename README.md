@@ -2,82 +2,127 @@
 
 A benchmark for evaluating LLM agents on open-ended cancer biology discovery tasks.
 
----
-
-## What it measures
-
-BioDiscoveryGym tests whether LLM agents can perform **genuine data-driven biological discovery** — or whether they produce correct answers primarily by recalling training knowledge.
-
-The core instrument is a **three-group blinding experiment**:
-
-| Group | Data shown | Identity visible | Tests |
-|-------|-----------|-----------------|-------|
-| G0 — explicit retrieval | real gene names + cancer type declared | yes | recall ceiling |
-| G1 — implicit retrieval | real gene names, cancer type withheld | partial | implicit recall |
-| G2 — data-driven blind  | anonymized genes (`GENE_XXXXX`) + cancer type withheld | no | pure reasoning |
-
-If G2 scores near G0, the agent is reasoning from data. If G2 degrades sharply, recall is carrying most of the load.
-
-**Identity blinding layers** (G2): cancer-type columns stripped, sample IDs → `SAMPLE_XXXX`, gene symbols → `GENE_XXXXX` (shuffled per episode), data served from a neutral path with no cohort-identifying filenames.
+The benchmark probes whether LLM agents can perform **genuine data-driven biological discovery** — or whether they produce correct answers primarily by recalling training knowledge. The core instrument is a multi-group blinding experiment that progressively hides cohort identity, sample provenance, and gene symbols, then watches how the agent's reasoning chain and final submission change.
 
 ---
 
-## Tasks
+## Two experiments, two scoring rubrics
 
-### Task A — Cohort Analysis
+The benchmark runs two parallel experiments that share infrastructure but answer different questions. Each has its own runner, prompt, and scoring rubric.
 
-Given an anonymized patient cohort, discover molecular subtypes without being told the cancer type, number of groups, or scoring criteria.
+|  | TCGA experiment | SGH-OS experiment |
+|---|---|---|
+| **Scoring intent** | Faithfulness — did the agent recover the known TCGA subtype answer via data-driven reasoning rather than literature recall? | Discovery — did the agent find prognostic biomarkers in n=91 SGH-OS that generalize to TARGET-OS, beyond what Jia et al. 2022 reports? |
+| **Reference answer exists** | Yes (TCGA pancan subtype calls) | No (the paper's marker list is the literature baseline to *go past*) |
+| **External validation cohort** | None | TARGET-OS (n=85 with survival) — Phase 3 |
+| **Cohorts** | BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV (7) | SGH-OS only |
+| **Groups** | G0, G1, G2, G3 | G0, G1, G2 (no G3 — single cohort) |
+| **Full-run episodes** | 55 (G0×7 + G1×21 + G2×21 + G3×6) | 9 (G0/G1/G2 × 3 seeds) |
+| **Full-run cost (Sonnet)** | ~$165 | ~$30 |
+| **Prompt** | `prompts/agent_system_tcga.txt` | `prompts/agent_system_os.txt` |
+| **Runner** | `scripts/run_tcga.sh` | `scripts/run_cohort.sh --cohort OS` |
+| **Scorer** | `scripts/score_tcga_episode.py` → `scripts/score_all_tcga.sh` | `scripts/score_sghos_episode.py` → `scripts/score_all_sghos.sh` |
+| **Scoring ceiling** | **16 pts** (Phase 1 only) | **24 pts** (Phase 1 + 2 + 3) |
 
-**Available modalities per cohort:**
+---
 
-| Modality | Variable | Format |
-|----------|----------|--------|
-| Gene expression | `expression` | samples × genes, log1p TPM |
-| Somatic mutations | `mutation` | samples × genes, binary (any functional variant) |
-| Copy-number alterations | `cna` | samples × genes, GISTIC calls (0/1/2 for amp, 0/-1 for del) |
-| DNA methylation | `methylation` | samples × CpG probes, beta values |
-| Protein expression (RPPA) | `rppa` | samples × proteins |
-| Clinical metadata | `metadata` | survival, age, staging (remapped to `CAT_X`) |
+## Blinding strategy
 
-Not all modalities are present for every cohort; the agent must check for `None` and adapt.
+Each group dials the same channels (cohort identity, gene symbols, sample barcodes, clinical categoricals) but reveals them at different points in the episode. This is what isolates "data-driven reasoning" from "implicit recall."
 
-### Task B — Target Discovery
+| Group | Cohort name | Gene codebook (real symbols) | Sample IDs → real barcodes | Special |
+|---|---|---|---|---|
+| **G0** — explicit retrieval | **Revealed in system prompt** | Revealed at episode start | Revealed at episode start | Recall ceiling |
+| **G1** — implicit retrieval | Redacted | Revealed at episode start (`gene_codebook_gate=0`) | Gated at run_code call #25 | Tests gene-name-mediated recall |
+| **G2** — data-driven blind | Redacted | **Subtle drop**: appended to the agent's 3rd `record_observation` tool result (Stage 2 partition-commit checkpoint) | Gated at run_code call #25 | Tests pure data-driven reasoning |
+| **G3** — mislead (TCGA only) | Redacted | Same as G2 | Same as G2, BUT barcodes are from a **different cohort** (e.g., OV samples labeled as BRCA-style) | Tests whether the agent trusts data over misleading provenance |
 
-Given population-scale cancer dependency and normal tissue data, reason to a computationally supported therapeutic target without being told what criteria define a good target.
+**Always stripped** (regardless of group): cancer-type columns in metadata; subtype/cluster labels (the paper's answer); cohort-fingerprinting categorical values (e.g. Enneking stage `IIB`/`III` → `CAT_0`/`CAT_1`).
 
-The chain it should construct: CRISPR selective dependency → cancer specificity → normal tissue tolerance (GTEx) → human tolerability (gnomAD pLI) → mechanism (STRING/pathway DBs) → patient frequency (TCGA) → evidence gaps stated → experimental roadmap.
+**The G1→G2 delta** is the cleanest single-variable test in the benchmark: the only thing that differs is *when* the gene codebook arrives (call 0 vs ~call 25–35 once the agent has worked through Stages 0–2 on GENE_XXXXX). If a model performs similarly on G1 and G2, it's reasoning from molecular structure. If G2 degrades sharply, gene-symbol recall was carrying the work.
+
+**The G2→G3 delta** (TCGA only) is the mislead-resilience test: identical pipeline to G2 plus wrong-cohort barcodes. G3 pairs are locked at OV:BRCA (female cancer recall) and LUAD:LIHC (common adult solid tumor recall).
+
+---
+
+## Available modalities per cohort
+
+The agent must check for `None` and adapt — not every modality is present everywhere.
+
+| Modality | Variable | Format | TCGA | SGH-OS |
+|---|---|---|:-:|:-:|
+| Gene expression | `expression` | samples × genes, log2(CPM+1) | ✅ | ✅ 18,869 genes |
+| Somatic mutations | `mutation` | samples × genes, binary (functional variant) | ✅ | ✅ 3,779 genes (panel, sparse) |
+| Copy-number alterations | `cna` | samples × genes, GISTIC focal calls (+1 amp / −1 del / 0 neutral) | ✅ | ✅ 1,618 genes |
+| DNA methylation | `methylation` | samples × CpG probes, beta values | varies | ✅ 10,000 most-variable CpGs |
+| Protein expression (RPPA) | `rppa` | samples × proteins, z-scores | ✅ | ❌ |
+| Clinical metadata | `metadata` | survival, stage, age, gender (categorical values remapped to `CAT_X` for non-G0) | ✅ | ✅ |
 
 ---
 
 ## Scoring
 
-Two phases, scored independently.
+### TCGA — faithfulness rubric (16 pts, Phase 1 only)
 
-### Phase 1 — Discovery (18 pts max)
+Test whether the agent **derived** the known TCGA subtype biology from data rather than **recalled** it from literature. Examination phase removed 2026-06-15 (the Phase 1 components already cover the faithfulness signal).
 
 | Component | Weight | What it measures |
-|-----------|--------|-----------------|
-| `structure_validity` | 2 | Bootstrap-stable silhouette + ARI vs k-means re-cluster |
+|---|---:|---|
+| `structure_validity` | 2 | Bootstrap silhouette + ARI vs k-means re-cluster |
 | `clinical_signal` | 3 | ΔC-index over null Cox + log HR between extreme-survival subtypes |
-| `genomic_coherence_drivers` | 2 | Driver gene enrichment in the submitted subtype grouping |
-| `genomic_coherence_rppa` | 2 | RPPA protein concordance with expression subtypes |
-| `reference_concordance` | 2 | Overlap of submitted markers with curated subtype signatures |
-| `marker_evidence` | 2 | OvR AUC of submitted top genes for their claimed subtype |
-| `pathway_validity` | 1 | GSEA enrichment of submitted pathways in top DE genes |
-| `mechanism_grounding` | 2 | LLM judge (3 axes: coherence, data grounding, mechanistic logic) |
-| `experiment_quality` | 2 | LLM judge: is the proposed experiment specific and falsifiable? |
+| `genomic_coherence_drivers` | 2 | FDR-corrected Fisher exact for OncoKB drivers per subtype |
+| `genomic_coherence_rppa` | 2 | ARI between expression grouping and RPPA k-means re-cluster |
+| `reference_concordance` | 2 | **Faithfulness anchor**: max NMI across known TCGA subtype schemes |
+| `marker_evidence` | 2 | HGNC validity + one-vs-rest AUC + OncoKB driver overlap |
+| `pathway_validity` | 1 | GMT name validity (MSigDB Hallmarks / Reactome / GO / KEGG) + ORA enrichment bonus |
+| `mechanism_grounding` | 2 | LLM judge — 3 axes: internal coherence, data grounding, mechanistic logic |
+| **Total** | **16** | |
 
-### Phase 2 — Examination (5 pts max)
+14 of 16 pts are deterministic computational. Only `mechanism_grounding` (2 pts) uses an LLM judge — specifically because its `data_grounding` axis is what distinguishes data-derivation from literature recall.
 
-Triggered after data lock. Agent answers Q1–Q4 (mechanistic deep-dive) and is scored on:
+### SGH-OS — discovery rubric (24 pts, Phase 1 + 2 + 3)
+
+Test whether the agent finds prognostic biomarkers that **generalize** to an independent cohort (TARGET-OS), beyond what the source paper reports. Reference concordance is deliberately absent — recovering the paper's subtypes would be the opposite of discovery.
+
+#### Phase 1 — structural + computational (16 pts)
 
 | Component | Weight | What it measures |
-|-----------|--------|-----------------|
-| `exam_data_lock_quality` | 1 | Completeness of committed sweep results |
-| `exam_experiment_depth` | 2 | 5-part Q4 rubric: named model + numeric justification, perturbation with direction, assay with magnitude threshold, falsification criterion, orthogonal-modality prediction |
-| `exam_mechanistic_integration` | 2 | Cross-modal consistency, quantitative grounding, causal chain completeness |
+|---|---:|---|
+| `structure_validity` | 2 | Same as TCGA — bootstrap silhouette + ARI |
+| `survival_stratification` | 3 | Multi-group log-rank p (1.5) + Cox max-vs-min HR magnitude (1.5) |
+| `provenance_integrity` | 3 | Per-gene audit of the prompt's 2-of-3 test: DE FDR<0.05 BH + survival correlation FDR<0.05 BH + methylation CpG correlation OR CNA Fisher. Score = fraction of submitted `top_genes` passing ≥2 |
+| `pathway_validity` | 1 | Same as TCGA — direction-neutral GMT name + ORA check |
+| `mechanism_grounding` | 3 | OS-specific LLM judge — 3 axes: prior/data discipline, causal chain from data, discovery beyond priors |
+| `cross_modal_support` | 2 | Stricter than provenance test 3: per gene, RNA evidence (DE OR survival, p<0.05) **AND** non-RNA evidence (methylation OR CNA) |
+| `validation_experiment` | 2 | LLM judge (reused from TCGA stack) — 4 binary criteria for proposed next experiment |
 
-Phase 2 uses an adversarial judge stance — partial answers that omit direction, magnitude, or specific cell line identifiers are scored 0, not charitably.
+#### Phase 2 — post-submission Examination (3 pts)
+
+Triggered after `submit_discovery`. Agent commits a Data Lock report then answers Q1–Q4.
+
+| Component | Weight | What it measures |
+|---|---:|---|
+| `exam_data_lock_quality` | 1 | Regex coverage of 5 required Data Lock sections (PC loadings, survival, mutation, methylation/RPPA, unexpected finding) |
+| `exam_mechanistic_integration` | 2 | OS-specific LLM judge on Q1–Q4: Data Lock numeric citation, multi-modal integration, [PRIOR]/[DATA] discipline |
+
+#### Phase 3 — external validation in TARGET-OS (5 pts)
+
+Hands the submitted gene set to TARGET-OS (n=85 independent pediatric/AYA osteosarcoma with survival) and lets the data decide whether the signature replicates.
+
+| Component | Weight | What it measures |
+|---|---:|---|
+| `target_coexpr_replication` | 2 | Three subscores averaged: `os_specificity_delta` (target_os ρ − target_non_os ρ), sign concordance of pairwise correlations, leave-one-out signature direction match |
+| `target_survival_replication` | 3 | Direction-as-gate: wrong-direction signature = 0. Right direction → (significance + magnitude) / 2. Literature positive controls (cytolytic, IFN-γ, hypoxia, proliferation, metastasis_at_dx) verify the cohort can detect signal |
+
+The Phase 3 verdict is the only direct empirical answer to "is this a discovery or in-sample optimism?"
+
+### Null-baseline calibration (SGH-OS only)
+
+```bash
+python scripts/calibrate_os_null.py --n-iter 100 --seed 42
+```
+
+Runs the scorer on 100 random gene sets to establish per-component chance floors. Two modes (random partition + random gene set; fixed partition + random gene set) decompose which signal comes from partition quality vs gene-set quality. Saved to `data/calibration/os_null_baseline_*.json`. See `docs/TASK_A_COHORT.md` § Calibration for the empirical findings.
 
 ---
 
@@ -90,34 +135,41 @@ pip install -e .
 export ANTHROPIC_API_KEY="sk-..."
 ```
 
-### OS cohort data (SGH-OS, Jia et al. 2022)
+### TCGA cohort data
 
-Raw data from GSA accession HRA003260. After downloading, preprocess:
+```bash
+python scripts/download_tcga.py    # downloads BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV
+python scripts/process_tcga.py     # builds expression.parquet caches
+```
+
+### SGH-OS cohort data (Jia et al. 2022)
+
+Raw data from GSA accession HRA003260. After downloading:
 
 ```bash
 python scripts/process_os_jia2022.py \
-    --raw-dir data/os_jia2022/raw \
-    --out-dir data/os_jia2022 \
+    --raw-dir data/external/os_jia2022/raw \
+    --out-dir data/external/os_jia2022 \
     --min-vaf 0.05
 ```
 
-This produces:
-- `expression.parquet` — 91 × ~20k genes, log1p TPM
-- `mutations.parquet` — 91 × 3779 genes, binary functional variants (VAF ≥ 0.05)
-- `cna.parquet` — 91 × 1618 genes, GISTIC focal calls (cytoband-aligned, DUX/OR artifacts blacklisted)
-- `OS_clinical.tsv` — survival, grade, histology
+Produces `expression.parquet` (91 × 18,869), `mutations.parquet` (91 × 3,779), `cna.parquet` (91 × 1,618), `methylation.parquet` (91 × 10,000), and `OS_clinical.tsv`.
 
-For other TCGA cohorts, see `scripts/download_tcga.py` and `scripts/process_tcga.py`.
+### TARGET-OS (for SGH-OS Phase 3 validation)
+
+```bash
+python scripts/process_target.py   # processes TARGET pan-cancer; OS arm = 88 samples, 85 with survival
+```
 
 ---
 
 ## Running
 
+### Single episode
+
 ```bash
-# Single episode — G2 (blind, data-driven; codebook gated on Stage 2 record_observation)
-python scripts/run_episode.py \
-    --cohort OS --seed 42 \
-    --save-log results/ep.json
+# G2 default — blind, data-driven, codebook gated on 3rd record_observation
+python scripts/run_episode.py --cohort OS --seed 42 --save-log results/ep.json
 
 # G0 ceiling — disease + gene names revealed
 python scripts/run_episode.py --cohort OS --seed 42 --explicit-retrieval
@@ -125,45 +177,67 @@ python scripts/run_episode.py --cohort OS --seed 42 --explicit-retrieval
 # G1 — gene names revealed, disease redacted
 python scripts/run_episode.py --cohort OS --seed 42 --gene-codebook-gate 0
 
-# Score a completed episode (cohort-specific track)
-python scripts/score_sghos_episode.py results/external/<run>/<uuid>/<label>.json --save        # OS discovery rubric (24 pts)
-python scripts/score_tcga_episode.py results/tcga/<run>/<uuid>/<label>.json --cohort BRCA --save  # TCGA faithfulness rubric (16 pts)
-
-# OS pipeline smoke test (1 seed/mode, 15 calls, no exam — fast pipeline check, ~$1, ~15 min)
-bash scripts/run_cohort.sh --smoke-test --cohort OS
-
-# Full OS benchmark (G0/G1/G2 × 3 seeds = 9 episodes; ~$30 on Sonnet)
-bash scripts/run_cohort.sh --tag run10 --cohort OS
-
-# TCGA smoke test (1 cohort × 1 seed × G0/G1/G2/G3 at default 100-call budget, scored — ~$12, ~1 hr)
-bash scripts/run_tcga.sh --smoke-test
-
-# Full TCGA benchmark (55 episodes = G0×7 + G1×21 + G2×21 + G3×6, ~$165)
-bash scripts/run_tcga.sh --tag run10
-
-# Null-baseline calibration for OS discovery rubric
-python scripts/calibrate_os_null.py --n-iter 100 --seed 42
-
-# Post-hoc modality attribution (which data types did the agent actually use?)
-python scripts/modality_attribution.py
+# G3 — TCGA only; mislead with wrong-cohort barcodes
+python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42
 ```
+
+### Multi-seed benchmarks
+
+```bash
+# === TCGA ===
+bash scripts/run_tcga.sh --smoke-test    # 1 cohort × 1 seed × G0/G1/G2/G3, 100 calls, scored (~$12, ~1 hr)
+bash scripts/run_tcga.sh --tag run10     # full 55 episodes + scoring                          (~$165)
+
+# === SGH-OS ===
+bash scripts/run_cohort.sh --smoke-test --cohort OS   # 1 seed/mode × 15 calls, no scoring     (~$1)
+bash scripts/run_cohort.sh --tag run10 --cohort OS    # full G0/G1/G2 × 3 seeds = 9 episodes   (~$30)
+```
+
+The runners are **resume-safe** — they check for `<label>.json` in the output directory and skip already-completed episodes. To re-run a tag from scratch, `rm -rf` its output directory first.
+
+### Post-hoc scoring
+
+```bash
+# SGH-OS — discovery rubric (24 pts)
+python scripts/score_sghos_episode.py results/external/<run>/<uuid>/<label>.json --save
+
+# TCGA — faithfulness rubric (16 pts)
+python scripts/score_tcga_episode.py results/tcga/<run>/<uuid>/<label>.json --cohort BRCA --save
+
+# Batch
+bash scripts/score_all_sghos.sh results/external/<run>/
+bash scripts/score_all_tcga.sh results/tcga/<run>/
+
+# Skip LLM judges (no API cost, partial score)
+python scripts/score_sghos_episode.py <...>.json --skip-llm
+```
+
+The scoring scripts fail-fast if `ANTHROPIC_API_KEY` is missing (LLM-judge components otherwise silently zero). Pass `--skip-llm` for explicit opt-out.
 
 ---
 
 ## Results
 
-### OS Discovery Benchmark — SGH-OS (Jia et al. 2022)
+### SGH-OS Discovery Benchmark (Jia et al. 2022)
 
-91-sample osteosarcoma cohort. mRNA expression + sparse mutation panel + DNA methylation + GISTIC CNA. Three modes (G0/G1/G2) × 3 seeds = 9 episodes per run.
+**Latest run9_marker (2026-06-08).** All episodes converged on residual prognostic structure (CX3CL1, EPHA2, FAM110D, ZBTB42, TRIM9) rather than the dominant SP7/RUNX2 axis from earlier prompt revisions.
 
-**Latest: run9_marker (2026-06-08).** Biomarker-discovery prompt (`agent_system_os.txt`) with pre-registration, [PRIOR]/[DATA] discipline, and two-of-three provenance. 13 episodes (the now-deprecated 5-seed config); all converged on residual prognostic structure (CX3CL1, EPHA2, FAM110D, ZBTB42, TRIM9) rather than the dominant SP7/RUNX2 axis from earlier runs.
+**External validation in TARGET-OS (2026-06-11).**
 
-**External validation (2026-06-11)** in TARGET-OS (n=85 with survival, independent pediatric/AYA osteosarcoma cohort):
-- Co-expression structure REPLICATES (matrix ρ=0.81 vs SGH-OS; 84% sign concordance; OS-specific vs non-OS control ρ=−0.14)
-- Prognostic signature is **indistinguishable from random gene-set chance** in TARGET-OS (Cox HR=1.08, p=0.70 vs SGH-OS HR=0.42, p=1e-6). Signed-correlation diagnostic across 13 episodes: mean ρ = −0.064 (Wilcoxon p=0.008 against 0 but tiny effect) — signatures are uninformative in TARGET-OS, not actively wrong.
-- Positive controls (cytolytic, hypoxia, metastasis_at_dx) all detected in TARGET-OS → the null on the candidate signatures is genuine, not cohort underpowering.
+| Layer | Result |
+|---|---|
+| Co-expression structure | **Replicates** — matrix ρ=0.81 vs SGH-OS; 84% sign concordance; OS-specific (TARGET non-OS control ρ=−0.14) |
+| Prognostic signature | **Does NOT replicate** — Cox HR=1.08, p=0.70 in TARGET-OS (vs SGH-OS HR=0.42, p=1e-6) |
+| Signed-correlation diagnostic | Mean ρ = −0.064 across 13 episodes; Wilcoxon p=0.008 against 0 but biologically tiny effect — signatures are **uninformative in TARGET-OS, not actively wrong** |
+| Positive controls in TARGET-OS | cytolytic, hypoxia, metastasis_at_dx all detected → null on candidates is **genuine**, not cohort underpowering |
 
-The co-expressed biology is real; the prognostic claim was in-sample optimism — a sharper statement of the rare-cohort biomarker problem than the literature usually makes. See `docs/TASK_A_COHORT.md` § "External Validation" and § "Scoring (post-hoc, bifurcated)" for the OS discovery scoring system (Phase 1 + 2 + 3, 23 pt ceiling) with null calibration framework.
+**Bottom line:** the co-expressed biology is real; the prognostic claim was in-sample optimism. A sharper statement of the rare-cohort biomarker problem than the literature usually makes — and the calibration framework is what made the empirical floor visible.
+
+See `docs/TASK_A_COHORT.md` § External Validation and § Signed-correlation diagnostic for the full writeup.
+
+### TCGA Benchmark
+
+Not yet run at multi-seed scale. Smoke-test pipeline verified end-to-end (4 episodes × 100 calls × ~$3). The 55-episode full run is queued.
 
 ---
 
@@ -171,52 +245,51 @@ The co-expressed biology is real; the prognostic claim was in-sample optimism �
 
 ```
 biodiscoverygym/
-  episode.py          — episode lifecycle: anonymization, data write, phase transitions
-  executor.py         — sandboxed code execution, injects data into agent namespace
+  episode.py                — episode lifecycle: anonymization, data write, phase transitions
+  executor.py               — sandboxed code execution, injects data into agent namespace
   scoring/
-    components.py     — TCGA + shared computational scorers (structure, survival, …)
-    components_os.py  — OS discovery scorers (survival_stratification, provenance_integrity,
-                        cross_modal_support, target_coexpr/survival_replication)
-    judge.py          — TCGA LLM judges (mechanism grounding, experiment quality, exam)
-    judge_os.py       — OS LLM judges (prior_data discipline, discovery_beyond_priors,
-                        data_lock citation, multi-modal integration)
-    evaluator_v2.py   — TCGA Phase 1 orchestrator
-    evaluator_v3.py   — TCGA Phase 1+2 + trace
-    evaluator_os.py   — OS discovery scorer (Phase 1 + 2 + 3 = 23 pts)
+    components.py           — TCGA + shared computational scorers (structure, survival, …)
+    components_os.py        — OS-specific computational scorers (survival_stratification,
+                              provenance_integrity, cross_modal_support, target_*_replication)
+    judge.py                — TCGA LLM judges (mechanism grounding, experiment quality, exam)
+    judge_os.py             — OS LLM judges (prior/data discipline, discovery beyond priors,
+                              Data Lock citation, multi-modal integration)
+    evaluator_v2.py         — TCGA Phase 1 orchestrator (16 pts)
+    evaluator_v3.py         — TCGA + trace extraction + (legacy) Phase 2 attachment
+    evaluator_os.py         — OS discovery scorer (Phase 1 + 2 + 3 = 24 pts)
   utils/
-    data_loader.py    — loads DepMap / TCGA / external (SGH-OS, TARGET) datasets
-    hidden_context.py — manages blinding: what the agent can and cannot see
+    data_loader.py          — loads TCGA / external (SGH-OS, TARGET) datasets
+    hidden_context.py       — manages blinding: what the agent can and cannot see
 
 prompts/
-  agent_system_tcga.txt — TCGA faithfulness prompt (G0/G1/G2)
-  agent_system_os.txt   — OS discovery prompt (G0/G1/G2)
-  agent_system.txt      — legacy unified prompt (fallback only)
-  examination/          — Phase 2 examination question sets
-  archive/              — superseded per-mode prompts
+  agent_system_tcga.txt     — TCGA faithfulness prompt
+  agent_system_os.txt       — OS discovery prompt (Stage 0–5 with multi-modal scaffolding)
+  examination/              — Phase 2 examination question sets (OS only now)
+  archive/                  — superseded prompts
 
 scripts/
-  run_episode.py              — run a single episode
-  run_cohort.sh               — OS multi-seed benchmark runner
-  run_tcga.sh                 — TCGA multi-seed benchmark runner
-  process_os_jia2022.py       — preprocess SGH-OS raw data → parquet
-  process_target.py           — preprocess TARGET pan-cancer (Phase 3 validation source)
-  score_sghos_episode.py         — score OS episode (discovery rubric)
-  score_tcga_episode.py       — score TCGA episode (faithfulness rubric)
-  score_all_sghos.sh             — batch-score an OS results directory
-  score_all_tcga.sh           — batch-score a TCGA results directory
-  calibrate_os_null.py             — null-baseline calibration for OS discovery scorer
-  signed_correlation_diagnostic.py — signature direction replication test (TARGET-OS)
-  modality_attribution.py          — post-hoc: which modalities did the agent use?
-  archive/                         — abandoned Task B + experimental scorers
+  run_episode.py            — single-episode CLI
+  run_cohort.sh             — OS multi-seed runner (G0/G1/G2 × seeds)
+  run_tcga.sh               — TCGA multi-seed runner (G0/G1/G2/G3 × seeds × cohorts)
+  process_os_jia2022.py     — preprocess SGH-OS raw data → parquet
+  process_target.py         — preprocess TARGET pan-cancer (Phase 3 source)
+  process_tcga.py           — preprocess TCGA cohorts
+  score_sghos_episode.py    — single-episode OS scorer
+  score_tcga_episode.py     — single-episode TCGA scorer
+  score_all_sghos.sh        — batch OS scoring
+  score_all_tcga.sh         — batch TCGA scoring
+  calibrate_os_null.py      — OS null-baseline calibration
+  signed_correlation_diagnostic.py  — OS signature direction replication diagnostic
+  modality_attribution.py   — post-hoc: which modalities did the agent use?
+  archive/                  — abandoned Task B + experimental scorers
 
-analysis/                          — (gitignored) one-off analysis scripts + outputs
-  external_validation.py           — TARGET-OS survival validation harness w/ positive controls
-  validate_run9_target*.py         — run9-specific TARGET-OS replication analyses
-  run9_target_validation/          — output tables, figures, reports
+analysis/                   — (gitignored) one-off analysis scripts + outputs
+  external_validation.py    — TARGET-OS survival validation harness w/ positive controls
 
 docs/
-  GRAND_DESIGN.md     — three-part architecture (Skills Library + Benchmark + Evaluator)
-  TASK_A_COHORT.md    — Task A full design, scoring system, empirical findings
+  GRAND_DESIGN.md           — three-part architecture (Skills Library + Benchmark + Evaluator)
+  TASK_A_COHORT.md          — full task design, scoring system, empirical findings
+  BENCHMARK_PLAN.md         — running notes on benchmark cohort + group choices
 ```
 
 ---
