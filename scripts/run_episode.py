@@ -103,6 +103,20 @@ def parse_args():
         help="Tool calls before the fake sample codebook is released (default: 25; use 0 to pre-reveal at start)",
     )
     p.add_argument(
+        "--sample-codebook-ro-gate",
+        type=int,
+        default=None,
+        help=(
+            "record_observation calls before the fake sample codebook is "
+            "subtly dropped (action-based, parallels --gene-codebook-gate). "
+            "When set, suppresses the request_sample_codebook tool and the "
+            "prompt's Stage-5 hint — the fake codebook appears unsolicited "
+            "in the Nth record_observation tool result. Try 3 (early, mimics "
+            "old gate=0 \"not fooled\" regime) vs 5 (late, mimics old gate=30 "
+            "\"fooled\" regime). Default: None (use the tool-call-based gate)."
+        ),
+    )
+    p.add_argument(
         "--gene-codebook-gate",
         type=int,
         default=None,
@@ -205,7 +219,12 @@ def main():
     else:
         mode = f"G2 data-driven (codebook on record_observation #{args.gene_codebook_gate} — Stage 2 commit)"
     if args.mislead_cohort:
-        sc_gate_str = "pre-reveal" if args.sample_codebook_gate == 0 else f"gate={args.sample_codebook_gate}"
+        if args.sample_codebook_ro_gate is not None:
+            sc_gate_str = f"ro_gate={args.sample_codebook_ro_gate}"
+        elif args.sample_codebook_gate == 0:
+            sc_gate_str = "pre-reveal"
+        else:
+            sc_gate_str = f"gate={args.sample_codebook_gate}"
         mode += f" + mislead({args.mislead_cohort}, {sc_gate_str})"
     if args.perturb:
         mode += " + PERTURBED(survival+mutations)"
@@ -236,6 +255,7 @@ def main():
         codebook_gate=args.gene_codebook_gate,
         mislead_cohort=args.mislead_cohort,
         sample_codebook_gate=args.sample_codebook_gate,
+        sample_codebook_ro_gate=args.sample_codebook_ro_gate,
         explicit_cohort=args.cohort if args.explicit_retrieval else None,
         primekg=args.primekg,
         clinical_codebook=episode.dataset.get("clinical_codebook", {}),
@@ -288,6 +308,7 @@ def main():
                 "explicit_retrieval": args.explicit_retrieval,
                 "mislead_cohort": args.mislead_cohort,
                 "sample_codebook_gate": args.sample_codebook_gate,
+                "sample_codebook_ro_gate": args.sample_codebook_ro_gate,
                 "perturb": args.perturb,
                 "no_examination": args.no_examination,
                 "examination_max_calls": args.examination_max_calls,

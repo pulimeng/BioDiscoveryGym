@@ -63,7 +63,7 @@ Each group dials the same channels (cohort identity, gene symbols, sample barcod
 | **G0** Explicit retrieval | 🔓 In system prompt | 🔓 Episode start | 🔒 Never revealed | Recall ceiling |
 | **G1** Implicit retrieval | 🔒 Redacted | 🔓 Episode start (`gene_codebook_gate=0`) | 🔒 Never revealed | Gene-name-mediated recall |
 | **G2** Data-driven blind | 🔒 Redacted | 🎯 **Subtle drop**: appended to the agent's **3rd `record_observation`** (Stage 2 partition-commit) | 🔒 Never revealed | Pure data-driven reasoning |
-| **G3** Mislead *(TCGA only)* | 🔒 Redacted | 🎯 Same as G2 | ⚠️ Via `request_sample_codebook()` after tool call #25 — returns **wrong-cohort barcodes** (e.g., OV samples labeled BRCA-style) | Trust data over misleading provenance |
+| **G3** Mislead *(TCGA only)* | 🔒 Redacted | 🎯 Same as G2 | 🎯 **Subtle drop**: appended to the agent's Nth `record_observation` (action-based; default 5th = mid-Stage-3) — returns **wrong-cohort barcodes** (e.g., OV samples labeled BRCA-style). Configurable via `--sample-codebook-ro-gate`: try `3` (early, mimics old "not fooled" regime) vs `5` (late, mimics old "fooled" regime). | Trust data over misleading provenance |
 
 > [!NOTE]
 > **Always stripped** (regardless of group): cancer-type metadata columns; subtype/cluster labels (the paper's answer); cohort-fingerprinting categorical values (e.g. Enneking stage `IIB`/`III` → `CAT_0`/`CAT_1`).

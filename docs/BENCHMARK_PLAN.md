@@ -32,7 +32,7 @@ Each episode: agent receives an anonymized patient cohort (expression ± mutatio
 | G0 | Explicit retrieval | Real (forced) | **Revealed** | episode start | 42 | 7 |
 | G1 | Implicit retrieval | Real | Hidden | episode start | 42, 7, 123 | 21 |
 | G2 | Data-driven | GENE_XXXXX → real at 3rd `record_observation` | Hidden | action-based | 42, 7, 123 | 21 |
-| G3 | Mislead | GENE_XXXXX → real at 3rd `record_observation` | Hidden + wrong barcodes (OV:BRCA, LUAD:LIHC) | action-based | 42, 7, 123 | 6 |
+| G3 | Mislead | GENE_XXXXX → real at 3rd `record_observation` | Hidden + fake barcodes (OV:BRCA, LUAD:LIHC) subtly dropped at Nth RO (default 5th; configurable via `--sample-codebook-ro-gate`) | action-based | 42, 7, 123 | 6 |
 
 **7 TCGA cohorts:** BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV
 
