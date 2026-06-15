@@ -11,7 +11,8 @@
 #          disease identity, using only expression structure and survival?
 # Codebook gate (G2): revealed on the 3rd record_observation call overall
 #          (Stage 0 end + Stage 1 end + Stage 2 partition commit).
-#          Runner sets action_based_gate=True, codebook_gate=3 automatically for OS.
+#          Runner sets action_based_gate=True, codebook_gate=3 automatically for
+#          this cohort.
 # ───────────────────────────────────────────────────────────────────────────────
 
 A multi-modal dataset from a rare cancer cohort lands on your desk. Real patients, real outcomes.
@@ -273,17 +274,17 @@ statistic, direction, effect size, and p-value/FDR where applicable.
 Prior-knowledge hypotheses that are falsified by the data are worth reporting
 explicitly — that is also a [DATA] finding.
 
-**Transferability discipline.** Internal SGH-OS signal is not automatically a
+**Transferability discipline.** Internal cohort signal is not automatically a
 discovery. A biomarker that only defines your chosen partition may fail in an
-external OS cohort. For your strongest candidates, test whether the signal is
-likely to transfer:
+independent cohort of the same indication. For your strongest candidates, test
+whether the signal is likely to transfer:
   - univariate Cox / survival correlation for the gene
   - Cox model adjusted for your committed partition
   - Cox model adjusted for available clinical covariates (stage/metastasis/age
     when present and non-missing enough to fit)
-  - direction stability across bootstrap resamples or reasonable alternative
-    partitions
-Classify each candidate as TRANSFERABLE, SGH-SPECIFIC, or UNCERTAIN, and use
+  - direction stability across bootstrap resamples (≥100 resamples, sign
+    stability ≥ 80% required to call the direction stable)
+Classify each candidate as TRANSFERABLE, COHORT-SPECIFIC, or UNCERTAIN, and use
 that classification when deciding which genes to submit.
 
 **Failure mode discipline.** If a finding contradicts your hypothesis, report
@@ -306,30 +307,38 @@ Produce:
     the dominant known biology of this cancer type
   - Your mechanistic hypothesis with [PRIOR] / [DATA] labels on each claim.
     State explicitly which [DATA] claims go beyond what canonical biology of
-    this cancer type would predict — those are the candidate discoveries; the
-    [PRIOR]-aligned claims are confirmation, not discovery. For each [DATA]
-    mechanism claim, include the session evidence that supports it: analysis,
-    statistic, direction, effect size, and p-value/FDR where applicable.
+    this cancer type would predict — those are the candidate discoveries.
+    Apply the [PRIOR]/[DATA] discipline from Stage 3 to each mechanism claim,
+    with the same evidence requirements (analysis, statistic, direction,
+    effect size, p-value/FDR where applicable).
   - A transferability assessment for the submitted top_genes. For each gene,
-    report whether it is TRANSFERABLE, SGH-SPECIFIC, or UNCERTAIN based on:
-      (i)   univariate survival evidence,
-      (ii)  partition-adjusted Cox evidence,
-      (iii) clinical-covariate-adjusted Cox evidence when feasible,
-      (iv)  direction stability across bootstrap resamples or alternative
-            partitions,
-      (v)   whether the biology is likely OS-general or dependent on this
-            cohort's particular partition.
+    report whether it is TRANSFERABLE, COHORT-SPECIFIC, or UNCERTAIN based on:
+      (i)   univariate survival evidence (HR, p-value),
+      (ii)  partition-adjusted Cox evidence (does the gene's HR survive when
+            the committed partition is included as a covariate?),
+      (iii) clinical-covariate-adjusted Cox evidence when feasible (stage,
+            metastasis, age — whichever are present and non-missing enough),
+      (iv)  direction stability across bootstrap resamples (≥100 resamples,
+            sign stability ≥ 80%).
+    Optional [PRIOR] judgment: whether the biology is likely indication-general
+    or specific to this cohort's particular partition — label it [PRIOR] so
+    the audit can separate it from the [DATA] evidence above.
     Prefer genes that retain survival signal beyond the committed partition.
+    When this conflicts with the cross-modal preference, prioritize cross-modal
+    support — partition-adjusted survival is the secondary tiebreaker.
   - One mechanistic follow-up experiment for your highest-confidence [DATA]
     biomarker. Specify ALL of:
       (i)   Model system — a specific named cell line, organoid, or PDX
-            (e.g. "MG-63", "U2OS"; NOT "OS cell lines" or "patient samples")
+            (an ATCC/DepMap/CCLE catalogue name appropriate to your indication;
+            NOT "tumor cell lines" or "patient samples")
       (ii)  Perturbation — a specific genetic or pharmacological intervention
-            with direction (e.g. "CRISPR KO of CX3CL1", "treat with anti-CD274
-            atezolizumab at 10 µg/mL"). Naming a gene without a method scores 0.
-      (iii) Measurement — a specific assay or readout (e.g. "RT-qPCR for OS time
-            proxy", "IC50 by CellTiter-Glo", "IHC for SP7"). "Cell viability"
-            without an assay is not specific.
+            with direction (e.g. "CRISPR KO of <your_top_gene>", "siRNA
+            knockdown", "small-molecule inhibitor at a stated concentration").
+            Naming a gene without a method scores 0.
+      (iii) Measurement — a specific assay or readout (e.g. "RT-qPCR for the
+            transcript of interest", "IC50 by CellTiter-Glo", "IHC for the
+            encoded protein"). "Cell viability" without an assay is not
+            specific.
       (iv)  Quantitative outcome — expected direction AND magnitude or threshold
             (e.g. "≥2-fold reduction", "p<0.05 by log-rank", "HR shifts from
             0.4 to >1 after knockdown"). "Significant" without a value is not
