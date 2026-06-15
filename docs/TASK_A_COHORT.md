@@ -135,14 +135,15 @@ design split (TCGA = faithfulness, OS = discovery):
 
 | Track | Script | Ceiling | Scoring intent |
 |---|---|---:|---|
-| **TCGA faithfulness** | `score_tcga_episode.py` → `score_all_tcga.sh` | 18 pts (Phase 1 only) | Did the agent derive the known TCGA subtype biology through data-driven reasoning vs prior recall? Reference-concordance is a positive signal (recovering the answer). |
-| **OS discovery** | `score_os_episode.py` → `score_all_os.sh` | 23 pts (Phase 1 = 15 + Phase 2 = 3 + Phase 3 = 5) | Did the agent find prognostic biomarkers beyond what the Jia et al. 2022 paper reports? Reference-concordance is *deliberately absent*. External validation in TARGET-OS is the empirical replication test. |
+| **TCGA faithfulness** | `score_tcga_episode.py` → `score_all_tcga.sh` | 16 pts (Phase 1 only) | Did the agent derive the known TCGA subtype biology through data-driven reasoning vs prior recall? Reference-concordance is a positive signal (recovering the answer). |
+| **OS discovery** | `score_os_episode.py` → `score_all_os.sh` | 24 pts (Phase 1 = 16 + Phase 2 = 3 + Phase 3 = 5) | Did the agent find prognostic biomarkers beyond what the Jia et al. 2022 paper reports? Reference-concordance is *deliberately absent*. External validation in TARGET-OS is the empirical replication test. |
 
 **Why the tracks differ structurally**, not just in weights:
 - TCGA Phase 1 components (`reference_concordance`, `genomic_coherence_rppa`) are misaligned for OS — the first inverts the goal, the second is always 0 (OS has no RPPA). OS replaces both with discovery-relevant components plus Phase 3 external validation.
 - TCGA dropped its post-submission Examination phase (2026-06-15). The Phase 1 components (`reference_concordance`, `clinical_signal`, `genomic_coherence_drivers`) already test recovery of the known answer; layering Q1-Q4 on top was parallel-testing the same thing at ~30% additional LLM cost per episode. The runner now passes `--no-examination` automatically. OS keeps its Examination phase because no known answer exists — exam depth IS the discovery quality signal there.
+- TCGA also dropped `experiment_quality` (2026-06-15, Option B). It scored "scientific competence at experimental design" (named model + CRISPR + assay + quantitative outcome) — orthogonal to faithfulness recovery of known subtypes. `mechanism_grounding`'s `data_grounding` axis is the LLM-judge component that actually distinguishes data-derivation from literature recall; that one stays. OS keeps `validation_experiment` (the same underlying judge) because for discovery, the proposed mechanism must be testable — a [DATA] biomarker claim with no falsifiable experiment is rhetoric.
 
-### TCGA Track — Phase 1 (9 components, 18 pts)
+### TCGA Track — Phase 1 (8 components, 16 pts)
 
 | Component | Weight | Method |
 |-----------|-------:|--------|
@@ -154,17 +155,19 @@ design split (TCGA = faithfulness, OS = discovery):
 | `marker_evidence` | 2 | HGNC validity + one-vs-rest AUC + OncoKB overlap |
 | `pathway_validity` | 1 | GMT name validity + ORA enrichment bonus |
 | `mechanism_grounding` | 2 | LLM judge — 3 axes: internal coherence, data grounding, mechanistic logic |
-| `experiment_quality` | 2 | LLM judge — 4 binary criteria: specific model, perturbation, measurement, quantitative outcome |
 
-The TCGA track has no Phase 2. `evaluator_v3.py` only attaches an examination report to the score when actual Data Lock or Q1–Q4 content exists in the messages; with `--no-examination` the grand-total ceiling correctly resolves to 18.
+14 of 16 pts are deterministic computational components. Only `mechanism_grounding` (2 pts) uses an LLM judge — the one component that explicitly tests the faithfulness signal (data-grounding axis distinguishes data-derivation from literature recall). TCGA scoring cost is therefore minimal: ~$0.05/episode on Sonnet vs ~$0.50/episode previously (saved by removing both Examination phase and `experiment_quality`).
 
-### OS Discovery Track — Phase 1 (6 components, 15 pts)
+The TCGA track has no Phase 2. `evaluator_v3.py` only attaches an examination report to the score when actual Data Lock or Q1–Q4 content exists in the messages; with `--no-examination` the grand-total ceiling correctly resolves to 16. `next_experiment` is still a required `submit_discovery` field (preserved for downstream analysis) but unscored — the prompt's Stage 6 ask was simplified accordingly to "1–3 sentence sketch, not budget-spend."
+
+### OS Discovery Track — Phase 1 (7 components, 16 pts)
 
 | Component | Weight | Method |
 |-----------|-------:|--------|
 | `structure_validity` | 2 | Same as TCGA — bootstrap silhouette + ARI |
 | `survival_stratification` | 3 | Multi-group log-rank p (1.5 pts, `-log10(p)/4` scaled) + Cox max-vs-min HR magnitude (1.5 pts, `log(HR)/log(4)` scaled) |
 | `provenance_integrity` | 3 | Per-gene audit of the prompt's 2-of-3 test: DE FDR<0.05 BH between groups, survival correlation FDR<0.05 BH, methylation-CpG correlation OR CNA Fisher per group. Score = fraction of `top_genes` passing ≥2 |
+| `pathway_validity` | 1 | Added 2026-06-15. Reused TCGA stack (`components.score_pathway_validity`): submitted pathway names must be real GMT entries (validates against MSigDB Hallmarks, Reactome, GO, KEGG); ORA enrichment of `top_genes` in those pathways adds a bonus. Direction-neutral — catches hallucinated pathway names without rewarding recovery of known biology |
 | `mechanistic_grounding` | 3 | OS-specific LLM judge — 3 axes: `prior_data_discipline` (labels + cited computations), `causal_chain_from_data`, `discovery_beyond_priors` |
 | `cross_modal_support` | 2 | Stricter than provenance test 3: per gene, requires RNA evidence (DE OR survival, nominal p<0.05) **AND** non-RNA evidence (methylation correlation OR CNA enrichment) |
 | `validation_experiment` | 2 | Reused TCGA judge — 4 binary criteria for proposed next experiment |

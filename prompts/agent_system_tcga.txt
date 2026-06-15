@@ -189,19 +189,10 @@ Produce:
     GENE_X disrupts pathway Y → transcriptional upregulation of GENE_Z →
     downstream phenotype W"). Pathway-level claims without per-step actors
     score lower than complete chains.
-  - One mechanistic follow-up experiment. Specify ALL of:
-      (i)   Model system — a specific named cell line, organoid, PDX, or animal
-            model (e.g. "MCF7", "PDX-XYZ"; NOT "breast cancer cell lines")
-      (ii)  Perturbation — specific gene/protein target + method + expected
-            direction (e.g. "CRISPR KO of GENE_X", "inhibit Y with drug Z at 1 µM",
-            "overexpress W"). Target without method scores 0; method without
-            direction scores 0.
-      (iii) Measurement — specific assay or readout (e.g. "western blot for pAKT",
-            "IC50 by CellTiter-Glo", "RNA-seq of subtype markers"). "Cell
-            viability" without an assay is not specific.
-      (iv)  Quantitative outcome — expected direction AND magnitude or threshold
-            (e.g. "≥2-fold reduction", "IC50 <1 µM", "p<0.05 by log-rank").
-            "Significant" without a value is not quantitative.
+  - A brief next_experiment string (submit_discovery requires the field).
+    A 1–3 sentence sketch is sufficient — name a model, a perturbation,
+    and an expected direction. The experiment is recorded in the discovery
+    payload but not scored on this track; do not spend budget elaborating it.
   - Call submit_discovery with all required fields
 
   IMPORTANT — top_genes content:

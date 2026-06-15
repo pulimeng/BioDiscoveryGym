@@ -126,8 +126,8 @@ python scripts/run_episode.py --cohort OS --seed 42 --explicit-retrieval
 python scripts/run_episode.py --cohort OS --seed 42 --gene-codebook-gate 0
 
 # Score a completed episode (cohort-specific track)
-python scripts/score_os_episode.py results/external/<run>/<uuid>/<label>.json --save        # OS discovery rubric (23 pts, 18 if no exam)
-python scripts/score_tcga_episode.py results/tcga/<run>/<uuid>/<label>.json --cohort BRCA --save  # TCGA faithfulness rubric (18 pts)
+python scripts/score_os_episode.py results/external/<run>/<uuid>/<label>.json --save        # OS discovery rubric (24 pts)
+python scripts/score_tcga_episode.py results/tcga/<run>/<uuid>/<label>.json --cohort BRCA --save  # TCGA faithfulness rubric (16 pts)
 
 # Pipeline smoke test (1 seed/mode, 15 calls, no exam — ~$1, ~15 min)
 bash scripts/run_cohort.sh --smoke-test --cohort OS

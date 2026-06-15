@@ -1,9 +1,9 @@
 """
-BioDiscoveryGym v2 scoring orchestrator.
+BioDiscoveryGym v2 scoring orchestrator (TCGA faithfulness rubric).
 
 Calls all component scorers, applies weights, returns a ScoreReport.
 
-Phase 1 component weights (sum = 18):
+Phase 1 component weights (sum = 16):
   structure_validity          2
   clinical_signal             3
   genomic_coherence_drivers   2  ─┐ "genomic coherence" block
@@ -11,10 +11,18 @@ Phase 1 component weights (sum = 18):
   reference_concordance       2
   marker_evidence             2
   pathway_validity            1
-  mechanism_grounding         2
-  experiment_quality          2
+  mechanism_grounding         2  ← only LLM judge for TCGA; tests data-grounding axis
 
-Examination component weights (sum = 5) — only scored when Examination data exists:
+experiment_quality removed 2026-06-15: it scored "scientific competence at
+experimental design" (named model + CRISPR + assay + magnitude) which is
+orthogonal to faithfulness recovery of known subtypes. mechanism_grounding's
+data_grounding axis is the LLM-judge component that actually distinguishes
+data-derivation from literature recall — the signal we want for TCGA.
+
+Examination component weights (sum = 5) — only attached when Examination data
+exists (i.e., agent ran without --no-examination). TCGA runs no longer use
+Examination by default; these weights remain for back-compat scoring of
+historical episodes:
   exam_data_lock_quality      1
   exam_experiment_depth       2
   exam_mechanistic_integration 2
@@ -55,9 +63,8 @@ COMPONENT_WEIGHTS: dict[str, float] = {
     "marker_evidence": 2.0,
     "pathway_validity": 1.0,
     "mechanism_grounding": 2.0,
-    "experiment_quality": 2.0,
 }
-TOTAL_MAX: float = sum(COMPONENT_WEIGHTS.values())  # 18.0
+TOTAL_MAX: float = sum(COMPONENT_WEIGHTS.values())  # 16.0
 
 EXAMINATION_WEIGHTS: dict[str, float] = {
     "exam_data_lock_quality": 1.0,
@@ -186,7 +193,8 @@ class EvaluatorV2:
         top_genes: list[str] = discovery.get("top_genes", [])
         pathway_evidence: list[str] = discovery.get("pathway_evidence", [])
         mechanism_hypothesis: str = discovery.get("mechanism_hypothesis", "")
-        next_experiment: str = discovery.get("next_experiment", "")
+        # next_experiment is preserved in the discovery payload for downstream
+        # analysis but no longer scored (Option B, 2026-06-15).
 
         if not grouping:
             report.wall_time_s = time.time() - t0
@@ -241,9 +249,9 @@ class EvaluatorV2:
         )
         _record("mechanism_grounding", s, d)
 
-        # 9. Experiment quality (LLM judge)
-        s, d = score_experiment_quality(next_experiment, model=self.llm_model)
-        _record("experiment_quality", s, d)
+        # experiment_quality removed 2026-06-15 (Option B) — see module docstring.
+        # score_experiment_quality is still imported because the OS scorer
+        # uses it as its `validation_experiment` component.
 
         report.total_raw = sum(report.weighted_scores.values())
         report.normalized = report.total_raw / TOTAL_MAX

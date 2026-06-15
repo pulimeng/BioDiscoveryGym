@@ -36,6 +36,7 @@ import pandas as pd
 
 from .components import (
     score_exam_data_lock_quality,
+    score_pathway_validity,
     score_structure_validity,
 )
 from .components_os import (
@@ -63,11 +64,12 @@ OS_COMPONENT_WEIGHTS: dict[str, float] = {
     "structure_validity": 2.0,
     "survival_stratification": 3.0,
     "provenance_integrity": 3.0,
+    "pathway_validity": 1.0,
     "mechanistic_grounding": 3.0,
     "cross_modal_support": 2.0,
     "validation_experiment": 2.0,
 }
-OS_TOTAL_MAX: float = sum(OS_COMPONENT_WEIGHTS.values())  # 15.0
+OS_TOTAL_MAX: float = sum(OS_COMPONENT_WEIGHTS.values())  # 16.0
 
 OS_EXAMINATION_WEIGHTS: dict[str, float] = {
     "exam_data_lock_quality": 1.0,
@@ -317,6 +319,7 @@ class EvaluatorOS:
         self.data_dir = Path(data_dir)
         self.llm_model = llm_model
         self.target_data_dir = Path(target_data_dir)
+        self.genesets_dir = self.data_dir / "genesets"
 
     # ------------------------------------------------------------------
     # Phase 1
@@ -364,7 +367,12 @@ class EvaluatorOS:
         )
         _record("provenance_integrity", s, d)
 
-        # 4. Mechanistic grounding (OS-specific LLM judge)
+        # 4. Pathway validity (reused from TCGA stack — direction-neutral check
+        #    on submitted pathway_evidence: real GMT names + ORA enrichment)
+        s, d = score_pathway_validity(pathway_evidence, top_genes, self.genesets_dir)
+        _record("pathway_validity", s, d)
+
+        # 5. Mechanistic grounding (OS-specific LLM judge)
         s, d = score_mechanism_grounding_os(
             mechanism_hypothesis, pathway_evidence, top_genes, model=self.llm_model
         )
