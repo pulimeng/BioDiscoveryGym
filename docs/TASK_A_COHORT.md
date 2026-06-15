@@ -53,7 +53,7 @@ Task A has two test sets:
 
 | Set | Cohorts | Role | Scorer |
 |-----|---------|------|--------|
-| **TCGA** | BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV | Main 67-run experiment | v2 scorer vs. TCGA pancan subtypes |
+| **TCGA** | BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV | Main 55-run experiment | TCGA faithfulness scorer (Phase 1, 16 pts) |
 | **Osteosarcoma** | SGH-OS, 91 samples | Held-out test — rare pediatric cancer, absent from TCGA | v2 scorer + OS-specific reference subtypes |
 
 The osteosarcoma cohort closes the primary confound of the TCGA set: for well-characterized TCGA cancers, canonical recall and genuine discovery produce the same correct output. Osteosarcoma is a rare pediatric bone cancer absent from TCGA and underrepresented in LLM training data — an agent relying on recall will fail here.
@@ -689,5 +689,5 @@ The scoring for OS runs will need its own rubric — one that rewards survival-a
 - OS scoring rubric: current v3 scorer designed for TCGA subtypes; OS needs survival-anchored, novelty-aware rubric
 
 **TCGA benchmark (future):**
-- Run 67-episode benchmark (~$201 on Sonnet) using `prompts/agent_system_tcga.txt`
+- Run 55-episode benchmark (~$165 on Sonnet) using `prompts/agent_system_tcga.txt`
 - Action-based gate now applies to TCGA G2 as well
