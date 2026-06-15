@@ -17,11 +17,6 @@ The benchmark runs two parallel experiments that share infrastructure but answer
 | **External validation cohort** | None | TARGET-OS (n=85 with survival) — Phase 3 |
 | **Cohorts** | BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV (7) | SGH-OS only |
 | **Groups** | G0, G1, G2, G3 | G0, G1, G2 (no G3 — single cohort) |
-| **Full-run episodes** | 55 (G0×7 + G1×21 + G2×21 + G3×6) | 9 (G0/G1/G2 × 3 seeds) |
-| **Full-run cost (Sonnet)** | ~$165 | ~$30 |
-| **Prompt** | `prompts/agent_system_tcga.txt` | `prompts/agent_system_os.txt` |
-| **Runner** | `scripts/run_tcga.sh` | `scripts/run_cohort.sh --cohort OS` |
-| **Scorer** | `scripts/score_tcga_episode.py` → `scripts/score_all_tcga.sh` | `scripts/score_sghos_episode.py` → `scripts/score_all_sghos.sh` |
 | **Scoring ceiling** | **16 pts** (Phase 1 only) | **24 pts** (Phase 1 + 2 + 3) |
 
 ---
@@ -213,31 +208,6 @@ python scripts/score_sghos_episode.py <...>.json --skip-llm
 ```
 
 The scoring scripts fail-fast if `ANTHROPIC_API_KEY` is missing (LLM-judge components otherwise silently zero). Pass `--skip-llm` for explicit opt-out.
-
----
-
-## Results
-
-### SGH-OS Discovery Benchmark (Jia et al. 2022)
-
-**Latest run9_marker (2026-06-08).** All episodes converged on residual prognostic structure (CX3CL1, EPHA2, FAM110D, ZBTB42, TRIM9) rather than the dominant SP7/RUNX2 axis from earlier prompt revisions.
-
-**External validation in TARGET-OS (2026-06-11).**
-
-| Layer | Result |
-|---|---|
-| Co-expression structure | **Replicates** — matrix ρ=0.81 vs SGH-OS; 84% sign concordance; OS-specific (TARGET non-OS control ρ=−0.14) |
-| Prognostic signature | **Does NOT replicate** — Cox HR=1.08, p=0.70 in TARGET-OS (vs SGH-OS HR=0.42, p=1e-6) |
-| Signed-correlation diagnostic | Mean ρ = −0.064 across 13 episodes; Wilcoxon p=0.008 against 0 but biologically tiny effect — signatures are **uninformative in TARGET-OS, not actively wrong** |
-| Positive controls in TARGET-OS | cytolytic, hypoxia, metastasis_at_dx all detected → null on candidates is **genuine**, not cohort underpowering |
-
-**Bottom line:** the co-expressed biology is real; the prognostic claim was in-sample optimism. A sharper statement of the rare-cohort biomarker problem than the literature usually makes — and the calibration framework is what made the empirical floor visible.
-
-See `docs/TASK_A_COHORT.md` § External Validation and § Signed-correlation diagnostic for the full writeup.
-
-### TCGA Benchmark
-
-Not yet run at multi-seed scale. Smoke-test pipeline verified end-to-end (4 episodes × 100 calls × ~$3). The 55-episode full run is queued.
 
 ---
 
