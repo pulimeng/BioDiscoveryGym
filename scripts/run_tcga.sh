@@ -4,10 +4,19 @@
 # Runs G0/G1/G2/G3 across all 7 TCGA cohorts (BRCA PRAD UCEC LUAD LIHC LUSC OV),
 # then scores every episode. Resume-safe: skips runs whose JSON already exists.
 #
+# G3 splits into two sub-arms that share the wrong-barcode mechanic but differ
+# in WHEN the fake sample codebook subtly drops:
+#   G3a (ro_gate=3) — fake codebook arrives alongside the gene codebook at the
+#                     3rd record_observation. Mimics old gate=0 "not fooled" regime.
+#   G3b (ro_gate=5) — fake codebook arrives mid-Stage 3, after gene-based
+#                     interpretation is formed. Mimics old gate=30 "fooled" regime.
+#
 # Usage:
-#   bash scripts/run_tcga.sh --smoke-test                    # 1 cohort × 1 seed × G0/G1/G2/G3 at default 100-call budget, scored (~$12, ~1 hr)
-#   bash scripts/run_tcga.sh --tag run10                     # full benchmark (55 episodes) + scoring (~$165)
+#   bash scripts/run_tcga.sh --smoke-test                    # 1 cohort × 1 seed × G0/G1/G2/G3a/G3b at default 100-call budget, scored (~$15, ~1.25 hr)
+#   bash scripts/run_tcga.sh --tag run10                     # full benchmark (61 episodes) + scoring (~$183)
 #   bash scripts/run_tcga.sh --tag run10 --group G2          # one group only
+#   bash scripts/run_tcga.sh --tag run10 --group G3          # both G3a + G3b
+#   bash scripts/run_tcga.sh --tag run10 --group G3a         # one sub-arm only
 #   bash scripts/run_tcga.sh --tag run10 --score-only        # score existing results
 #   bash scripts/run_tcga.sh --tag run10 --skip-score        # run only, no scoring
 #   bash scripts/run_tcga.sh --tag run10 --dry-run           # print commands only
@@ -164,14 +173,28 @@ run_g2() {
     done
 }
 
-run_g3() {
-    echo "=== G3: Mislead — wrong barcodes injected (${#G3_PAIRS[@]} pairs × ${#SEEDS[@]} seeds) ==="
+run_g3a() {
+    echo "=== G3a: Mislead, early drop — fake sample codebook at 3rd record_observation (${#G3_PAIRS[@]} pairs × ${#SEEDS[@]} seeds) ==="
     for pair in "${G3_PAIRS[@]}"; do
         local true_cohort="${pair%%:*}"
         local mislead_cohort="${pair##*:}"
         for seed in "${SEEDS[@]}"; do
-            run_episode "g3_$(lower $true_cohort)_mislead_$(lower $mislead_cohort)_s${seed}" \
-                --cohort "$true_cohort" --mislead-cohort "$mislead_cohort" --seed "$seed"
+            run_episode "g3a_$(lower $true_cohort)_mislead_$(lower $mislead_cohort)_s${seed}" \
+                --cohort "$true_cohort" --mislead-cohort "$mislead_cohort" --seed "$seed" \
+                --sample-codebook-ro-gate 3
+        done
+    done
+}
+
+run_g3b() {
+    echo "=== G3b: Mislead, late drop — fake sample codebook at 5th record_observation (${#G3_PAIRS[@]} pairs × ${#SEEDS[@]} seeds) ==="
+    for pair in "${G3_PAIRS[@]}"; do
+        local true_cohort="${pair%%:*}"
+        local mislead_cohort="${pair##*:}"
+        for seed in "${SEEDS[@]}"; do
+            run_episode "g3b_$(lower $true_cohort)_mislead_$(lower $mislead_cohort)_s${seed}" \
+                --cohort "$true_cohort" --mislead-cohort "$mislead_cohort" --seed "$seed" \
+                --sample-codebook-ro-gate 5
         done
     done
 }
@@ -191,17 +214,20 @@ score_all() {
 # ── Main ─────────────────────────────────────────────────────────────────────
 if [[ $SCORE_ONLY -eq 0 ]]; then
     case "$RUN_GROUP" in
-        G0) run_g0 ;;
-        G1) run_g1 ;;
-        G2) run_g2 ;;
-        G3) run_g3 ;;
+        G0)  run_g0 ;;
+        G1)  run_g1 ;;
+        G2)  run_g2 ;;
+        G3)  run_g3a; echo ""; run_g3b ;;
+        G3a) run_g3a ;;
+        G3b) run_g3b ;;
         "")
-            run_g0; echo ""
-            run_g1; echo ""
-            run_g2; echo ""
-            run_g3
+            run_g0;  echo ""
+            run_g1;  echo ""
+            run_g2;  echo ""
+            run_g3a; echo ""
+            run_g3b
             ;;
-        *) echo "Unknown group: $RUN_GROUP. Use G0, G1, G2, or G3." >&2; exit 1 ;;
+        *) echo "Unknown group: $RUN_GROUP. Use G0, G1, G2, G3, G3a, or G3b." >&2; exit 1 ;;
     esac
 fi
 

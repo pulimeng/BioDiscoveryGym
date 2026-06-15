@@ -266,7 +266,7 @@ python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42
 ```bash
 # === TCGA ===
 bash scripts/run_tcga.sh --smoke-test              # 1×1×4 groups at 100 calls, scored      (~$12, ~1 hr)
-bash scripts/run_tcga.sh --tag run10               # full 55 episodes + scoring             (~$165)
+bash scripts/run_tcga.sh --tag run10               # full 61 episodes + scoring             (~$183)
 
 # === SGH-OS ===
 bash scripts/run_cohort.sh --smoke-test --cohort OS    # 1 seed/mode × 15 calls, no scoring (~$1)

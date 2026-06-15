@@ -2,7 +2,7 @@
 
 **Part of:** BioDiscoveryGym → Part 2 (Benchmark)
 **Last updated:** 2026-06-15
-**Status:** Infrastructure complete. OS 9-run benchmark complete + externally validated in TARGET-OS (prognosis did not replicate; empirical finding documented). TCGA scoring track simplified to 16-pt Phase 1; smoke-test runner wired; 55-episode benchmark ready to launch.
+**Status:** Infrastructure complete. OS 9-run benchmark complete + externally validated in TARGET-OS (prognosis did not replicate; empirical finding documented). TCGA scoring track simplified to 16-pt Phase 1; smoke-test runner wired; 61-episode benchmark ready to launch (G3 split into G3a + G3b sub-arms 2026-06-15).
 
 ---
 
@@ -62,15 +62,16 @@ The osteosarcoma cohort closes the primary confound of the TCGA set: for well-ch
 
 ## TCGA Experiment Design
 
-**55 runs total across 4 groups. 7 cohorts: BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV.**
+**61 runs total across 4 groups (G3 splits into G3a + G3b sub-arms). 7 cohorts: BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV.**
 
-| Group | Label | Gene codebook | Cohort name | Seeds | Runs | Cost (~$3/ep) |
-|-------|-------|---------------|-------------|-------|------|---------------|
-| **G0** | Explicit retrieval | Episode start | **Revealed** | 42 | 7 × 1 = 7 | ~$21 |
-| **G1** | Implicit retrieval | Episode start | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
-| **G2** | Data-driven | 3rd `record_observation` (action-based) | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
-| **G3** | Mislead | 3rd `record_observation` (action-based) | Hidden + wrong barcodes | 42, 7, 123 | 2 pairs × 3 = 6 | ~$18 |
-| **Total** | | | | | **55** | **~$165** |
+| Group | Label | Gene codebook | Cohort name / sample-codebook drop | Seeds | Runs | Cost (~$3/ep) |
+|-------|-------|---------------|-------------------------------------|-------|------|---------------|
+| **G0**  | Explicit retrieval | Episode start | **Revealed** | 42 | 7 × 1 = 7 | ~$21 |
+| **G1**  | Implicit retrieval | Episode start | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
+| **G2**  | Data-driven | 3rd `record_observation` (action-based) | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
+| **G3a** | Mislead, early drop | 3rd `record_observation` (action-based) | Hidden + fake barcodes subtly dropped at **3rd RO** alongside gene codebook | 42, 7, 123 | 2 pairs × 3 = 6 | ~$18 |
+| **G3b** | Mislead, late drop | 3rd `record_observation` (action-based) | Hidden + fake barcodes subtly dropped at **5th RO** (mid-Stage 3) | 42, 7, 123 | 2 pairs × 3 = 6 | ~$18 |
+| **Total** | | | | | **61** | **~$183** |
 
 ### Group definitions
 
@@ -107,7 +108,7 @@ Three changes locked in preparation for the multi-seed TCGA run, mirroring the O
 - `scripts/run_tcga.sh` now passes `--no-examination` automatically on every episode invocation
 - `biodiscoverygym/scoring/evaluator_v3.py` only attaches the examination report when actual Data Lock content exists in the messages — so the grand-total ceiling correctly resolves to 16 pts (was 23 with phantom Phase 2)
 - TCGA prompt's "After submit_discovery" block removed; replaced with single line: "submit_discovery ends the session"
-- Cost savings: ~$28 across the 55-episode plan
+- Cost savings: ~$31 across the 61-episode plan
 
 **2. TCGA prompt audited against scorer; 3 alignment fixes applied to Stage 6.** Same audit pattern as the OS session caught 5 mismatches; 2 are now moot (Q4/Q1-Q4 criteria removed with the examination phase), 3 still applied:
 - *Stage 6 next_experiment ask expanded* — was "real gene targets, model system, and expected outcome" (3 things, mismatched to the judge's 4-criteria rubric). Now explicitly lists model + perturbation + measurement + quantitative outcome with examples of what scores 0 vs 1. Worth 2 pts of `experiment_quality`.
@@ -693,5 +694,5 @@ The scoring for OS runs will need its own rubric — one that rewards survival-a
 - OS scoring rubric: current v3 scorer designed for TCGA subtypes; OS needs survival-anchored, novelty-aware rubric
 
 **TCGA benchmark (future):**
-- Run 55-episode benchmark (~$165 on Sonnet) using `prompts/agent_system_tcga.txt`
+- Run 61-episode benchmark (~$183 on Sonnet) using `prompts/agent_system_tcga.txt`
 - Action-based gate now applies to TCGA G2 as well

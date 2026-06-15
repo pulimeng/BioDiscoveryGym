@@ -25,14 +25,15 @@ Each episode: agent receives an anonymized patient cohort (expression ± mutatio
 
 **Identity blinding (5 layers):** cancer-type columns stripped, demographics removed, sample IDs → `SAMPLE_XXXX`, gene symbols → `GENE_XXXXX`, data served from neutral path.
 
-**4 experimental groups (55 runs, TCGA set):**
+**4 experimental groups (61 runs, TCGA set; G3 splits into G3a + G3b sub-arms):**
 
 | Group | Label | Gene names | Cohort name | Gate | Seeds | Runs |
 |-------|-------|------------|-------------|------|-------|------|
 | G0 | Explicit retrieval | Real (forced) | **Revealed** | episode start | 42 | 7 |
 | G1 | Implicit retrieval | Real | Hidden | episode start | 42, 7, 123 | 21 |
 | G2 | Data-driven | GENE_XXXXX → real at 3rd `record_observation` | Hidden | action-based | 42, 7, 123 | 21 |
-| G3 | Mislead | GENE_XXXXX → real at 3rd `record_observation` | Hidden + fake barcodes (OV:BRCA, LUAD:LIHC) subtly dropped at Nth RO (default 5th; configurable via `--sample-codebook-ro-gate`) | action-based | 42, 7, 123 | 6 |
+| G3a | Mislead, early drop | GENE_XXXXX → real at 3rd `record_observation` | Hidden + fake barcodes (OV:BRCA, LUAD:LIHC) subtly dropped at **3rd RO** alongside gene codebook | action-based | 42, 7, 123 | 6 |
+| G3b | Mislead, late drop | GENE_XXXXX → real at 3rd `record_observation` | Hidden + fake barcodes (OV:BRCA, LUAD:LIHC) subtly dropped at **5th RO** (mid-Stage 3) | action-based | 42, 7, 123 | 6 |
 
 **7 TCGA cohorts:** BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV
 
@@ -42,13 +43,13 @@ Each episode: agent receives an anonymized patient cohort (expression ± mutatio
 
 | # | Model | Family | API ID | Role | Episodes |
 |---|-------|--------|--------|------|----------|
-| M1 | Claude Sonnet 4.6 | Claude | `claude-sonnet-4-6` | Fast/cheap reference | 55 |
-| M2 | Claude Opus 4.7 | Claude | `claude-opus-4-7` | High-capability Claude | 55 |
-| M3 | GPT-5.4 | OpenAI | `gpt-5.4-2026-03-05` | Cross-family reference | 55 |
-| M4 | GPT-5.5 | OpenAI | `gpt-5.5-2026-04-23` | High-capability OpenAI | 55 |
-| M5 | Gemini 3.1 Pro | Google | `gemini-3.1-pro` | Cross-family reference | 55 |
+| M1 | Claude Sonnet 4.6 | Claude | `claude-sonnet-4-6` | Fast/cheap reference | 61 |
+| M2 | Claude Opus 4.7 | Claude | `claude-opus-4-7` | High-capability Claude | 61 |
+| M3 | GPT-5.4 | OpenAI | `gpt-5.4-2026-03-05` | Cross-family reference | 61 |
+| M4 | GPT-5.5 | OpenAI | `gpt-5.5-2026-04-23` | High-capability OpenAI | 61 |
+| M5 | Gemini 3.1 Pro | Google | `gemini-3.1-pro` | Cross-family reference | 61 |
 
-**Total episodes:** 55 × 5 models = **275 episodes**
+**Total episodes:** 61 × 5 models = **305 episodes**
 
 ### Infrastructure
 
@@ -78,23 +79,23 @@ Scoring is now bifurcated between the two experiments. See `docs/TASK_A_COHORT.m
 
 ## Budget
 
-After the G3 mislead-pair reduction (4 TBD pairs dropped), the per-model TCGA episode count is **55** (G0×7 + G1×21 + G2×21 + G3×6).
+After the G3 mislead-pair reduction (4 TBD pairs dropped) and the G3a/G3b sub-arm split (2026-06-15), the per-model TCGA episode count is **61** (G0×7 + G1×21 + G2×21 + G3a×6 + G3b×6).
 
-| Model | API pricing | Est. cost/ep | 55 episodes (1 model) |
+| Model | API pricing | Est. cost/ep | 61 episodes (1 model) |
 |-------|------------|-------------|-------------|
-| Claude Sonnet 4.6 (M1) | $3/M in · $15/M out | ~$3 | ~$165 |
-| Claude Opus 4.7 (M2) | $15/M in · $75/M out | ~$15 | ~$825 |
-| GPT-5.4 (M3) | $2.50/M in · $15/M out | ~$3 | ~$165 |
-| GPT-5.5 (M4) | $5/M in · $30/M out | ~$6 | ~$330 |
-| Gemini 3.1 Pro (M5) | $2/M in · $12/M out | ~$2 | ~$110 |
+| Claude Sonnet 4.6 (M1) | $3/M in · $15/M out | ~$3 | ~$183 |
+| Claude Opus 4.7 (M2) | $15/M in · $75/M out | ~$15 | ~$915 |
+| GPT-5.4 (M3) | $2.50/M in · $15/M out | ~$3 | ~$183 |
+| GPT-5.5 (M4) | $5/M in · $30/M out | ~$6 | ~$366 |
+| Gemini 3.1 Pro (M5) | $2/M in · $12/M out | ~$2 | ~$122 |
 
 | Line item | Amount |
 |-----------|--------|
-| TCGA 5-model × 55 episodes (275 episodes) | ~$1,595 |
+| TCGA 5-model × 61 episodes (305 episodes) | ~$1,769 |
 | Osteosarcoma — 5 models × 9 episodes (45 episodes), incl. Phase 3 | ~$300 |
 | Scoring API cost (LLM judge) — all episodes | ~$80 |
 | Reruns / debugging | ~$100 |
-| **Total budget** | **~$2,075** |
+| **Total budget** | **~$2,249** |
 
 ---
 
@@ -102,7 +103,7 @@ After the G3 mislead-pair reduction (4 TBD pairs dropped), the per-model TCGA ep
 
 | Milestone | Dependency |
 |-----------|-----------|
-| Run M1 (Sonnet) — all 55 eps | Budget approved |
+| Run M1 (Sonnet) — all 61 eps | Budget approved |
 | Score M1, verify pipeline end-to-end | M1 complete |
 | Run M2–M5 in parallel | M1 pipeline verified |
 | Osteosarcoma data ready → build scorer | Data collection complete |
