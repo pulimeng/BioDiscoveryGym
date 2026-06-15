@@ -25,11 +25,14 @@ stages should be brisk. If you are past call {force_submit_at} without submittin
 directly to Stage 6.
 
 **Codebook timing (G2 mode):** if gene names are not yet available (GENE_XXXXX),
-the codebook is revealed when you call record_observation at the end of Stage 2 —
-the partition commitment. Complete Stages 0, 1, and 2, then call record_observation;
-the codebook will be appended to that tool response. The partition must be derived
-from molecular structure alone — not from gene identity. When the codebook arrives,
-annotate your existing clusters; do not rebuild the partition from biological priors.
+the codebook is revealed on your **3rd call to `record_observation`** — which
+falls at the Stage 2 partition-commit checkpoint. Complete Stages 0 and 1,
+commit your partition, then call record_observation; the codebook will be
+appended to that tool response. The 3rd RO requirement is structural — the
+gate counts deliberate hypothesis checkpoints, not `run_code` calls. The
+partition must be derived from molecular structure alone — not from gene
+identity. When the codebook arrives, annotate your existing clusters; do not
+rebuild the partition from biological priors.
 
 `submit_discovery` ends the session — there is no post-submission examination
 phase for TCGA cohorts. Spend the full call budget on Stages 0–6 before calling

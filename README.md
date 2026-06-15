@@ -33,8 +33,8 @@ Each group dials the same channels (cohort identity, gene symbols, sample barcod
 | Group | Cohort name | Gene codebook (real symbols) | Sample IDs → real barcodes | Special |
 |---|---|---|---|---|
 | **G0** — explicit retrieval | **Revealed in system prompt** | Revealed at episode start | Revealed at episode start | Recall ceiling |
-| **G1** — implicit retrieval | Redacted | Revealed at episode start (`gene_codebook_gate=0`) | Gated at run_code call #25 | Tests gene-name-mediated recall |
-| **G2** — data-driven blind | Redacted | **Subtle drop**: appended to the agent's 3rd `record_observation` tool result (Stage 2 partition-commit checkpoint) | Gated at run_code call #25 | Tests pure data-driven reasoning |
+| **G1** — implicit retrieval | Redacted | Revealed at episode start (`gene_codebook_gate=0`) | Via `request_sample_codebook()` after tool call #25 | Tests gene-name-mediated recall |
+| **G2** — data-driven blind | Redacted | **Subtle drop**: appended to the agent's 3rd `record_observation` tool result (Stage 2 partition-commit checkpoint) | Via `request_sample_codebook()` after tool call #25 | Tests pure data-driven reasoning |
 | **G3** — mislead (TCGA only) | Redacted | Same as G2 | Same as G2, BUT barcodes are from a **different cohort** (e.g., OV samples labeled as BRCA-style) | Tests whether the agent trusts data over misleading provenance |
 
 **Always stripped** (regardless of group): cancer-type columns in metadata; subtype/cluster labels (the paper's answer); cohort-fingerprinting categorical values (e.g. Enneking stage `IIB`/`III` → `CAT_0`/`CAT_1`).

@@ -155,7 +155,7 @@ run_g1() {
 }
 
 run_g2() {
-    echo "=== G2: Data-driven — gene codebook gated at call 25 (${#COHORTS[@]}×${#SEEDS[@]} runs) ==="
+    echo "=== G2: Data-driven — gene codebook on 3rd record_observation (Stage 2 commit) (${#COHORTS[@]}×${#SEEDS[@]} runs) ==="
     for cohort in "${COHORTS[@]}"; do
         for seed in "${SEEDS[@]}"; do
             run_episode "g2_$(lower $cohort)_s${seed}" \

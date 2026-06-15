@@ -68,8 +68,8 @@ The osteosarcoma cohort closes the primary confound of the TCGA set: for well-ch
 |-------|-------|---------------|-------------|-------|------|---------------|
 | **G0** | Explicit retrieval | Episode start | **Revealed** | 42 | 7 × 1 = 7 | ~$21 |
 | **G1** | Implicit retrieval | Episode start | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
-| **G2** | Data-driven | run_code #8 | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
-| **G3** | Mislead | run_code #8 | Hidden + wrong barcodes | 42, 7, 123 | 2 pairs × 3 = 6 | ~$18 |
+| **G2** | Data-driven | 3rd `record_observation` (action-based) | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
+| **G3** | Mislead | 3rd `record_observation` (action-based) | Hidden + wrong barcodes | 42, 7, 123 | 2 pairs × 3 = 6 | ~$18 |
 | **Total** | | | | | **55** | **~$165** |
 
 ### Group definitions
@@ -80,11 +80,11 @@ The three groups form a clean ablation over what recall channels are open:
 
 - **G1 (implicit retrieval) — gene-biology-mediated recall.** Cohort identity is hidden; gene codebook is pre-revealed (call 0). The agent can infer the cancer type from gene signatures (e.g., H3F3A → pediatric bone tumor, SP7 → osteoblast) and recall subtype structure indirectly. Staging values are remapped to CAT_X to prevent Enneking-specific leakage.
 
-- **G2 (data-driven) — data-first discovery.** Genes are anonymized as GENE_XXXXX until the 8th `run_code` call; cohort is hidden. The codebook is auto-injected into that run_code result — no tool call needed. The agent must form its grouping from expression patterns, correlations, and clustering before any biological context is available. G1→G2 isolates the effect of gene-biology recall.
+- **G2 (data-driven) — data-first discovery.** Genes are anonymized as GENE_XXXXX until the agent's **3rd `record_observation` call** (typically around tool call #25–35, after Stage 0 → Stage 1 → Stage 2 partition-commit checkpoints). The codebook is auto-injected into that 3rd RO tool result — no tool call needed. Action-based rather than time-based: the gate fires once the agent has done enough hypothesis-update work to commit a partition, regardless of how many `run_code` calls were spent. The agent must form its grouping from expression patterns, correlations, and clustering before any biological context is available. G1→G2 isolates the effect of gene-biology recall.
 
-- **G3 (mislead):** Same as G2, but sample barcodes suggest the wrong cancer type. Tests whether the agent correctly overrides misleading provenance signals with data evidence.
+- **G3 (mislead, TCGA only):** Same codebook gate as G2 (3rd `record_observation`), but sample barcodes injected from a different cohort suggest the wrong cancer type. Tests whether the agent correctly overrides misleading provenance signals with data evidence. Keeping the gate identical to G2 makes the G2→G3 delta a clean single-variable test: only the barcode provenance differs.
 
-**What differs between G0 and G1:** cohort identity in the system prompt and clinical value remapping (G0 sees real staging values; G1/G2 see CAT_X). The G1→G2 delta is a clean single-variable test: gene codebook timing (call 0 vs call 25).
+**What differs between G0 and G1:** cohort identity in the system prompt and clinical value remapping (G0 sees real staging values; G1/G2 see CAT_X). The G1→G2 delta is a clean single-variable test: gene codebook timing (episode start vs after the 3rd `record_observation`).
 
 ### G3 cohort pairs
 
