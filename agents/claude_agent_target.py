@@ -21,6 +21,7 @@ import anthropic
 from biodiscoverygym.phases.target_discovery import (
     TASK_PROMPT, SUBMIT_TOOL, REVISE_TOOL, format_revelation_prompt,
 )
+from biodiscoverygym.utils.skills import CONSULT_SKILL_TOOL as _CONSULT_SKILL_TOOL
 
 # Defaults — can be overridden per-run for v2
 _DEFAULT_TASK_PROMPT = TASK_PROMPT
@@ -76,6 +77,7 @@ class ClaudeAgentTarget:
         phase3_max_calls: int = 20,
         task_prompt: str | None = None,
         submit_tool: dict | None = None,
+        skill: str | None = None,
     ):
         self.model = model
         self.max_tool_calls = max_tool_calls
@@ -94,7 +96,23 @@ class ClaudeAgentTarget:
             force_submit_at=int(max_tool_calls * 0.85),
             indication=indication,
         )
+        # Optional reasoning skill (progressive disclosure via consult_skill tool): the
+        # agent sees only a name+description pitch and decides for itself whether to call
+        # consult_skill to load the SKILL.md body. The tool call is an authoritative,
+        # confound-free signal of whether the agent consulted it. Nothing is forced.
+        self.skill = skill
+        self._skill_name = None
+        self._skill_consulted = False
+        if self.skill:
+            from biodiscoverygym.utils.skills import resolve, skill_pitch, load_meta
+            resolve(self.skill)  # fail fast on a bad name/path
+            self._skill_name = load_meta(self.skill).get("name", self.skill)
+            self._system_prompt += skill_pitch(self.skill)
+            if verbose:
+                print(f"[ClaudeAgentTarget] Skill offered (agent-invoked via consult_skill): {self._skill_name}")
         self._tools = [_RUN_CODE_TOOL, _tool]
+        if self.skill:
+            self._tools.append(_CONSULT_SKILL_TOOL)
         self._submit_tool = _tool
 
     def run(
@@ -131,6 +149,8 @@ class ClaudeAgentTarget:
         phase3_call_count = 0
 
         current_tools = [_RUN_CODE_TOOL, self._submit_tool]
+        if self.skill:
+            current_tools.append(_CONSULT_SKILL_TOOL)
         self._log(f"[ClaudeAgentTarget] Starting session {session_id} (model={self.model})")
 
         while True:
@@ -240,7 +260,23 @@ class ClaudeAgentTarget:
                 else:
                     tool_call_count += 1
 
-                if block.name == "run_code":
+                if block.name == "consult_skill":
+                    from biodiscoverygym.utils.skills import load_body
+                    requested = block.input.get("name", "") or self.skill
+                    try:
+                        content = load_body(self.skill)
+                        self._skill_consulted = True
+                        self._log(f"[consult_skill] Agent loaded skill {self._skill_name!r}")
+                    except Exception as e:  # noqa: BLE001 — surface to the agent
+                        content = f"Could not load skill {requested!r}: {e}"
+                        self._log(f"[consult_skill] Load failed: {e}")
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": content,
+                    })
+
+                elif block.name == "run_code":
                     code = block.input.get("code", "")
                     total = tool_call_count + phase2_call_count + phase3_call_count
                     self._log(f"[run_code #{total}] {code[:120].strip()!r}")

@@ -16,6 +16,7 @@ import anthropic
 
 from biodiscoverygym.executor import CodeExecutor
 from biodiscoverygym.utils.prompts import load as _load_prompt
+from biodiscoverygym.utils.skills import CONSULT_SKILL_TOOL as _CONSULT_SKILL_TOOL
 
 _COHORT_FULL_NAMES: dict[str, str] = {
     "BRCA": "Breast Invasive Carcinoma",
@@ -231,6 +232,7 @@ class ClaudeAgentCohort:
         data_lock_max_calls: int = 20,
         cohort: str | None = None,
         action_based_gate: bool = False,
+        skill: str | None = None,
     ):
         self.model = model
         self.max_tool_calls = max_tool_calls
@@ -250,6 +252,7 @@ class ClaudeAgentCohort:
         self.data_lock_max_calls = data_lock_max_calls
         self.cohort = cohort.upper() if cohort else None
         self.action_based_gate = action_based_gate
+        self.skill = skill
 
         # Load examination prompts (always-on unless --no-examination)
         if not no_examination:
@@ -328,7 +331,24 @@ class ClaudeAgentCohort:
             sample_codebook_stage5_hint=sample_codebook_stage5_hint,
         )
 
+        # Optional reasoning skill (progressive disclosure via consult_skill tool): the
+        # agent sees only a name+description pitch appended after .format(); the SKILL.md
+        # body enters context only if the agent calls consult_skill. The tool call is an
+        # authoritative, confound-free signal of whether the agent consulted it — chosen
+        # over a filesystem read for clean benchmark measurement. Nothing is forced.
+        # Appended post-.format() so the pitch never collides with the template vars.
+        self._skill_name = None
+        if self.skill:
+            from biodiscoverygym.utils.skills import resolve, skill_pitch, load_meta
+            resolve(self.skill)  # fail fast on a bad name/path
+            self._skill_name = load_meta(self.skill).get("name", self.skill)
+            self._system_prompt += skill_pitch(self.skill)
+            self._log(f"[ClaudeAgentCohort] Skill offered (agent-invoked via consult_skill): {self._skill_name}")
+        self._skill_consulted = False  # set True when the agent calls consult_skill
+
         self._tools = list(_TOOLS) + [_RECORD_OBSERVATION_TOOL]
+        if self.skill:
+            self._tools.append(_CONSULT_SKILL_TOOL)
         # request_sample_codebook is only registered when the tool-based gate is in
         # play. With sample_codebook_ro_gate (action-based subtle drop), the fake
         # codebook arrives unsolicited at the Nth record_observation — no tool path.
@@ -566,6 +586,23 @@ class ClaudeAgentCohort:
                         self._log(
                             f"[request_sample_codebook] Released ({self.mislead_cohort} barcodes) → {sc_path}"
                         )
+                    tool_results.append(
+                        {"type": "tool_result", "tool_use_id": block.id, "content": content}
+                    )
+
+                elif block.name == "consult_skill":
+                    from biodiscoverygym.utils.skills import load_body
+                    requested = block.input.get("name", "") or self.skill
+                    try:
+                        content = load_body(self.skill)
+                        self._skill_consulted = True
+                        self._log(
+                            f"[consult_skill] Agent loaded skill {self._skill_name!r} "
+                            f"on tool call #{tool_call_count}"
+                        )
+                    except Exception as e:  # noqa: BLE001 — surface to the agent, don't crash
+                        content = f"Could not load skill {requested!r}: {e}"
+                        self._log(f"[consult_skill] Load failed: {e}")
                     tool_results.append(
                         {"type": "tool_result", "tool_use_id": block.id, "content": content}
                     )

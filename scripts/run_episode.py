@@ -172,6 +172,21 @@ def parse_args():
         help="Give the agent access to PrimeKG knowledge graph for mechanistic reasoning.",
     )
     p.add_argument(
+        "--skill",
+        nargs="?",
+        const="integrative-discovery-reasoning",
+        default=None,
+        metavar="NAME_OR_PATH",
+        help=(
+            "Offer a reasoning skill to the agent (opt-in; default off). Progressive "
+            "disclosure: the agent sees only the skill's name + description and decides "
+            "for itself whether to call the consult_skill tool to load the full "
+            "methodology — never forced into the prompt. The tool call is recorded as "
+            "skill_consulted for clean on/off benchmark comparison. Bare --skill offers "
+            "'integrative-discovery-reasoning' from skills/; or pass a skill name / path."
+        ),
+    )
+    p.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress per-turn agent log lines",
@@ -228,6 +243,8 @@ def main():
         mode += f" + mislead({args.mislead_cohort}, {sc_gate_str})"
     if args.perturb:
         mode += " + PERTURBED(survival+mutations)"
+    if args.skill:
+        mode += f" + skill({args.skill})"
     print(f"  Mode   : {mode}")
     print(f"{'='*60}\n")
 
@@ -265,6 +282,7 @@ def main():
         data_lock_max_calls=args.data_lock_max_calls,
         cohort=args.cohort,
         action_based_gate=action_based_gate,
+        skill=args.skill,
     )
 
     if args.results_base:
@@ -313,6 +331,8 @@ def main():
                 "no_examination": args.no_examination,
                 "examination_max_calls": args.examination_max_calls,
                 "data_lock_max_calls": args.data_lock_max_calls,
+                "skill": args.skill,
+                "skill_consulted": getattr(agent, "_skill_consulted", False),
             },
             "discovery": result.discovery,
             "observations": result.run_log.get("observations", []),
