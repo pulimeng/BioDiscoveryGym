@@ -152,11 +152,6 @@ def score_experiment_quality(
 # survival, driver/RPPA coherence, reference concordance, markers) stand — a fooled
 # agent can still have produced a valid partition. It contributes no points of its own;
 # COMPONENT_WEIGHTS / TOTAL_MAX are unchanged.
-#
-# Because one verdict flips an episode between its full score and 0.0, the decision is
-# made by MAJORITY VOTE over several independent judge calls (default 3), and the gate
-# fires only on a strict majority of "fooled" votes — conservative by design, so a
-# single stray classification cannot zero an episode.
 # ──────────────────────────────────────────────────────────────────────────────
 
 _COHORT_FULL_NAMES: dict[str, str] = {
@@ -202,39 +197,21 @@ Respond ONLY with valid JSON:
 """
 
 
-def _classify_cohort_identity(user_msg: str, model: str) -> dict:
-    """One judge call → parsed verdict dict (raises on API/parse failure)."""
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=model,
-        max_tokens=512,
-        system=_COHORT_IDENTITY_SYSTEM,
-        messages=[{"role": "user", "content": user_msg}],
-    )
-    return _parse_json(response.content[0].text)
-
-
 def score_cohort_identity(
     mechanism_hypothesis: str,
     subtype_labels: list[str],
     true_cohort: str,
     mislead_cohort: str | None = None,
     model: str = _DEFAULT_MODEL,
-    votes: int = 3,
 ) -> tuple[float, dict]:
-    """Majority-vote judge of the agent's stated cohort identity (the fooling gate).
+    """Single-call judge of the agent's stated cohort identity (the fooling gate).
 
-    Runs `votes` independent judge calls and decides by majority. Returns (score, diag);
-    `score` is vestigial (the evaluator uses the gate, not a component score) and kept
-    only for signature parity with the other judges. diag carries:
-      - "verdict": the modal verdict {true_cohort | mislead_cohort | other | hedged}
-      - "fooled": True iff a STRICT MAJORITY of votes are wrong-cancer commitments
-                  (mislead_cohort/other) — the evaluator zeros all components when True
-      - "votes": the per-call verdicts, and "fooled_votes"/"n_votes" tally
-
-    Conservative by design: the gate fires only on a strict majority of fooled votes, so
-    one stray classification cannot zero an episode. On total judge failure (every call
-    errors) NO `fooled` flag is set, so a flaky API can never trigger the gate.
+    Returns (score, diag); `score` is vestigial (the evaluator uses the gate, not a
+    component score) and kept only for signature parity with the other judges. diag
+    carries "verdict" ∈ {true_cohort | mislead_cohort | other | hedged} and "fooled"
+    (True iff the agent committed to a wrong cancer type) — the evaluator zeros the
+    narrative dims when fooled. On error, no `fooled` flag is set, so a failed judge
+    call can never trigger the gate.
     """
     if not mechanism_hypothesis and not subtype_labels:
         return 0.0, {"verdict": "hedged", "fooled": False, "reason": "no submission text"}
@@ -244,46 +221,26 @@ def score_cohort_identity(
         _COHORT_FULL_NAMES.get((mislead_cohort or "").upper(), mislead_cohort)
         if mislead_cohort else "none"
     )
-    user_msg = (
-        f"TRUE cancer type: {true_name}\n"
-        f"MISLEAD cancer type: {mislead_name}\n\n"
-        f"SUBTYPE LABELS: {', '.join(subtype_labels) if subtype_labels else 'none'}\n\n"
-        f"MECHANISM HYPOTHESIS:\n{mechanism_hypothesis or '(none)'}"
-    )
-
-    n_requested = max(1, votes)
-    results: list[dict] = []
-    errors: list[str] = []
-    for _ in range(n_requested):
-        try:
-            results.append(_classify_cohort_identity(user_msg, model))
-        except Exception as e:  # noqa: BLE001 — tolerate per-call failures, vote on the rest
-            errors.append(str(e))
-
-    if not results:
-        # Every judge call failed — do NOT set `fooled`, so the gate cannot fire.
-        return 0.0, {"verdict": "error", "errors": errors}
-
-    verdicts = [str(r.get("verdict", "hedged")) for r in results]
-    fooled_votes = sum(1 for v in verdicts if v in _FOOLED_VERDICTS)
-    # Gate on a strict majority of REQUESTED votes — errored calls abstain (never count
-    # toward fooling), so a partial-failure run can only UNDER-gate, never falsely zero.
-    fooled = fooled_votes > n_requested / 2
-    modal_verdict = max(set(verdicts), key=verdicts.count)
-
-    diag = dict(results[0])  # keep claimed_identity/evidence from the first call
-    diag.update({
-        "verdict": modal_verdict,
-        "fooled": fooled,
-        "votes": verdicts,
-        "fooled_votes": fooled_votes,
-        "n_requested": n_requested,
-        "n_succeeded": len(verdicts),
-    })
-    if errors:
-        # Fewer votes than requested — verdict may under-gate; re-score for a clean call.
-        diag["vote_errors"] = errors
-    return 0.0, diag
+    try:
+        client = anthropic.Anthropic()
+        user_msg = (
+            f"TRUE cancer type: {true_name}\n"
+            f"MISLEAD cancer type: {mislead_name}\n\n"
+            f"SUBTYPE LABELS: {', '.join(subtype_labels) if subtype_labels else 'none'}\n\n"
+            f"MECHANISM HYPOTHESIS:\n{mechanism_hypothesis or '(none)'}"
+        )
+        response = client.messages.create(
+            model=model,
+            max_tokens=512,
+            system=_COHORT_IDENTITY_SYSTEM,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        result = _parse_json(response.content[0].text)
+        verdict = str(result.get("verdict", "hedged"))
+        result["fooled"] = verdict in _FOOLED_VERDICTS
+        return 0.0, result
+    except Exception as e:
+        return 0.0, {"error": str(e), "verdict": "error"}
 
 
 def _parse_json(text: str) -> dict:

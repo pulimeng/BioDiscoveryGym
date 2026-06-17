@@ -277,7 +277,7 @@ class EvaluatorV2:
         # uses it as its `validation_experiment` component.
 
         # --- Cohort-identity gate ---
-        # Detect (via majority-vote LLM judge) which cancer type the agent committed to.
+        # Detect (via LLM judge) which cancer type the agent committed to.
         # If it is the WRONG one (the mislead, or any other wrong cancer), the disease-
         # interpretation dims rest on a false premise → zero mechanism_grounding +
         # pathway_validity. The objective computational dims (clustering, survival,
