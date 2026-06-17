@@ -370,6 +370,7 @@ class EvaluatorV3(EvaluatorV2):
         cohort: str,
         messages: list[dict],
         run_log: dict | None = None,
+        mislead_cohort: str | None = None,
     ) -> tuple[ScoreReport, TraceReport]:
         score_report = self.score(
             discovery=discovery,
@@ -379,6 +380,7 @@ class EvaluatorV3(EvaluatorV2):
             rppa=rppa,
             sample_id_map=sample_id_map,
             cohort=cohort,
+            mislead_cohort=mislead_cohort,
         )
 
         # Examination: prefer data_lock_report captured at runtime; fall back to extraction.

@@ -140,6 +140,110 @@ def score_experiment_quality(
         return 0.0, {"error": str(e)}
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# cohort_identity  (weight 3) — the "did the agent get fooled?" dimension
+#
+# Reads the agent's free-text identity claim (submit_discovery has no disease field)
+# and classifies which cancer type it committed to, vs the TRUE cohort and the
+# (optional) MISLEAD cohort. Returns a discrete verdict; the evaluator uses the
+# `fooled` flag to cap the interpretive dimensions (mechanism_grounding,
+# pathway_validity) so a coherent wrong-cancer narrative can't earn full marks.
+# ──────────────────────────────────────────────────────────────────────────────
+
+_COHORT_FULL_NAMES: dict[str, str] = {
+    "BRCA": "Breast Invasive Carcinoma",
+    "PRAD": "Prostate Adenocarcinoma",
+    "UCEC": "Uterine Corpus Endometrial Carcinoma",
+    "LUAD": "Lung Adenocarcinoma",
+    "LIHC": "Liver Hepatocellular Carcinoma",
+    "LUSC": "Lung Squamous Cell Carcinoma",
+    "OV":   "Ovarian Serous Cystadenocarcinoma",
+    "OS":   "Osteosarcoma",
+}
+
+# verdict → component score (0-1)
+_IDENTITY_SCORE: dict[str, float] = {
+    "true_cohort": 1.0,
+    "hedged": 0.5,
+    "mislead_cohort": 0.0,
+    "other": 0.0,
+}
+
+_COHORT_IDENTITY_SYSTEM = """\
+You are evaluating whether a cancer-genomics agent correctly identified the cancer
+type of a blinded patient cohort from its own data analysis.
+
+You are given the agent's submitted MECHANISM HYPOTHESIS and SUBTYPE LABELS, plus the
+candidate cancer identities (TRUE = the actual type; MISLEAD = a wrong type the agent
+may have been nudged toward; MISLEAD may be "none"). Determine which cancer type the
+agent COMMITTED TO as the identity of this cohort.
+
+Classify into exactly one verdict:
+- "true_cohort"    — commits to the TRUE cancer type (its name, its subtype scheme, or
+                     unambiguous markers for it)
+- "mislead_cohort" — commits to the MISLEAD cancer type
+- "other"          — commits to some other wrong cancer type
+- "hedged"         — does not commit / explicitly uncertain / names multiple without choosing
+
+Judge what the agent COMMITS TO, not passing mentions. "Unlike breast cancer, this is
+ovarian" is true_cohort, not mislead_cohort. Subtype-label vocabulary is strong evidence
+(e.g. Luminal/Basal/Claudin-low → breast; Immunoreactive/Proliferative/Mesenchymal/
+Differentiated → ovarian HGSOC).
+
+Respond ONLY with valid JSON:
+{
+  "claimed_identity": "<the cancer type the agent stated, verbatim or paraphrased>",
+  "verdict": "true_cohort" | "mislead_cohort" | "other" | "hedged",
+  "evidence": "<one sentence quoting the deciding text>"
+}
+"""
+
+
+def score_cohort_identity(
+    mechanism_hypothesis: str,
+    subtype_labels: list[str],
+    true_cohort: str,
+    mislead_cohort: str | None = None,
+    model: str = _DEFAULT_MODEL,
+) -> tuple[float, dict]:
+    """Discrete-verdict judge of the agent's stated cohort identity.
+
+    Returns (score, diag). diag["verdict"] ∈ {true_cohort, mislead_cohort, other,
+    hedged}; diag["fooled"] is True iff the agent committed to a wrong cancer type
+    (mislead_cohort or other) — the evaluator uses it to cap interpretive dimensions.
+    On error/skip, no `fooled` flag is set so capping is never triggered by a failure.
+    """
+    if not mechanism_hypothesis and not subtype_labels:
+        return 0.0, {"verdict": "hedged", "reason": "no submission text"}
+
+    true_name = _COHORT_FULL_NAMES.get((true_cohort or "").upper(), true_cohort or "unknown")
+    mislead_name = (
+        _COHORT_FULL_NAMES.get((mislead_cohort or "").upper(), mislead_cohort)
+        if mislead_cohort else "none"
+    )
+    try:
+        client = anthropic.Anthropic()
+        user_msg = (
+            f"TRUE cancer type: {true_name}\n"
+            f"MISLEAD cancer type: {mislead_name}\n\n"
+            f"SUBTYPE LABELS: {', '.join(subtype_labels) if subtype_labels else 'none'}\n\n"
+            f"MECHANISM HYPOTHESIS:\n{mechanism_hypothesis or '(none)'}"
+        )
+        response = client.messages.create(
+            model=model,
+            max_tokens=512,
+            system=_COHORT_IDENTITY_SYSTEM,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        result = _parse_json(response.content[0].text)
+        verdict = str(result.get("verdict", "hedged"))
+        score = _IDENTITY_SCORE.get(verdict, 0.0)
+        result["fooled"] = verdict in ("mislead_cohort", "other")
+        return score, result
+    except Exception as e:
+        return 0.0, {"error": str(e), "verdict": "error"}
+
+
 def _parse_json(text: str) -> dict:
     text = text.strip()
     if "```" in text:

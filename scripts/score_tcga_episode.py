@@ -89,6 +89,9 @@ def main():
     discovery: dict = episode.get("discovery") or {}
     messages: list[dict] = episode.get("messages", [])
     run_log: dict = episode.get("run_log", {})
+    # Mislead cohort (G3 arms) drives the cohort-identity gate: if the agent committed
+    # to this wrong cancer type, the whole discovery is zeroed.
+    mislead_cohort: str | None = (episode.get("cli") or {}).get("mislead_cohort")
 
     print(f"\n{'='*60}")
     print(f"  BioDiscoveryGym v3 Scorer (scores + trace)")
@@ -140,11 +143,14 @@ def main():
         _judge.score_experiment_quality = lambda *a, **k: (0.0, {"skipped": True})
         _judge.score_exam_experiment_depth = lambda *a, **k: (0.0, {"skipped": True})
         _judge.score_exam_mechanistic_integration = lambda *a, **k: (0.0, {"skipped": True})
+        # cohort-identity judge stub: no `fooled` flag → gate never fires under --skip-llm
+        _judge.score_cohort_identity = lambda *a, **k: (0.0, {"verdict": "skipped"})
         import biodiscoverygym.scoring.evaluator_v2 as _ev2
         _ev2.score_mechanism_grounding = _judge.score_mechanism_grounding
         _ev2.score_experiment_quality = _judge.score_experiment_quality
         _ev2.score_exam_experiment_depth = _judge.score_exam_experiment_depth
         _ev2.score_exam_mechanistic_integration = _judge.score_exam_mechanistic_integration
+        _ev2.score_cohort_identity = _judge.score_cohort_identity
 
     from biodiscoverygym.scoring import EvaluatorV3
 
@@ -161,6 +167,7 @@ def main():
         cohort=cohort,
         messages=messages,
         run_log=run_log or None,
+        mislead_cohort=mislead_cohort,
     )
 
     print(f"\n{score_report.pretty_print()}")

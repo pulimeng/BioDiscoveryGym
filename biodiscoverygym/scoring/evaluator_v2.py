@@ -48,6 +48,7 @@ from .components import (
     score_structure_validity,
 )
 from .judge import (
+    score_cohort_identity,
     score_exam_experiment_depth,
     score_exam_mechanistic_integration,
     score_experiment_quality,
@@ -65,6 +66,12 @@ COMPONENT_WEIGHTS: dict[str, float] = {
     "mechanism_grounding": 2.0,
 }
 TOTAL_MAX: float = sum(COMPONENT_WEIGHTS.values())  # 16.0
+
+# Cohort-identity gate (NOT a scored dimension — it would be meaningless for G0-G2,
+# where the cohort is given or uncontested). Instead it acts as a hard gate: if the
+# agent commits to the WRONG cancer type, the entire discovery rests on a false premise
+# and every component is zeroed. In practice this fires only in the G3 mislead arms.
+# The un-gated raw component scores are retained in `raw_scores` for transparency.
 
 EXAMINATION_WEIGHTS: dict[str, float] = {
     "exam_data_lock_quality": 1.0,
@@ -127,6 +134,9 @@ class ScoreReport:
     normalized: float = 0.0
     wall_time_s: float = 0.0
     examination: ExaminationReport | None = None
+    # Cohort-identity gate
+    gated: bool = False                 # True → all components zeroed (wrong cohort)
+    cohort_identity_verdict: str = ""   # true_cohort | mislead_cohort | other | hedged | error
 
     def to_dict(self) -> dict:
         d = {
@@ -137,6 +147,8 @@ class ScoreReport:
             "total_max": self.total_max,
             "normalized": self.normalized,
             "wall_time_s": self.wall_time_s,
+            "gated": self.gated,
+            "cohort_identity_verdict": self.cohort_identity_verdict,
         }
         if self.examination is not None:
             d["examination"] = self.examination.to_dict()
@@ -151,11 +163,18 @@ class ScoreReport:
             w = COMPONENT_WEIGHTS.get(key, 0)
             pts = self.weighted_scores.get(key, 0)
             lines.append(f"  {key:<33} {raw:>6.3f}  {w:>6.1f}  {pts:>6.3f}")
+        if self.gated:
+            lines.append(
+                f"  >> GATED: wrong cohort identity ({self.cohort_identity_verdict}) "
+                f"— all components zeroed (raw shown above)"
+            )
         lines += [
             "-" * 60,
             f"  {'TOTAL':<33} {'':>6}  {self.total_max:>6.1f}  {self.total_raw:>6.3f}",
             f"  {'NORMALIZED (0-1)':<33} {'':>6}  {'':>6}  {self.normalized:>6.4f}",
         ]
+        if self.gated:
+            lines.append(f"  {'(cohort identity verdict)':<33} {self.cohort_identity_verdict:>21}")
         if self.examination is not None:
             lines += ["", self.examination.pretty_print()]
         return "\n".join(lines)
@@ -184,6 +203,7 @@ class EvaluatorV2:
         rppa: pd.DataFrame | None,
         sample_id_map: dict[str, str],
         cohort: str,
+        mislead_cohort: str | None = None,
     ) -> ScoreReport:
         t0 = time.time()
         report = ScoreReport()
@@ -252,6 +272,27 @@ class EvaluatorV2:
         # experiment_quality removed 2026-06-15 (Option B) — see module docstring.
         # score_experiment_quality is still imported because the OS scorer
         # uses it as its `validation_experiment` component.
+
+        # --- Cohort-identity gate ---
+        # Detect (via LLM judge) which cancer type the agent committed to. If it is the
+        # WRONG one (the mislead, or any other wrong cancer), the whole discovery rests on
+        # a false premise → zero every component. Not a scored dimension; a hard gate.
+        # raw_scores are kept intact so the un-gated component breakdown stays visible.
+        subtype_labels = sorted({str(v) for v in grouping.values()}) if grouping else []
+        _, id_diag = score_cohort_identity(
+            mechanism_hypothesis,
+            subtype_labels,
+            cohort,
+            mislead_cohort,
+            model=self.llm_model,
+        )
+        report.diagnostics["cohort_identity"] = id_diag
+        report.cohort_identity_verdict = str(id_diag.get("verdict", ""))
+        if id_diag.get("fooled"):
+            report.gated = True
+            for key in list(report.weighted_scores):
+                report.weighted_scores[key] = 0.0
+            id_diag["gate"] = "ZEROED — agent committed to the wrong cohort identity"
 
         report.total_raw = sum(report.weighted_scores.values())
         report.normalized = report.total_raw / TOTAL_MAX
