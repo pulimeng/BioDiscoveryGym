@@ -70,11 +70,12 @@ done
 #   --smoke-test --max-calls 100       → 100 calls, scored   (~$12, ~1 hr)     — depth check
 # Auto-skips scoring only when MAX_CALLS ≤ 30 (too few to produce meaningful scores).
 if [[ $SMOKE_TEST -eq 1 ]]; then
-    TAG="smoke-test"
+    [[ -z "$TAG" ]] && TAG="smoke-test"   # default tag, but respect an explicit --tag
     COHORTS=(OV)
     SEEDS=(42)
     G3_PAIRS=("OV:BRCA")
-    RUN_GROUP=""             # always all 4 groups
+    # RUN_GROUP left as parsed: empty = all groups (full pipeline check);
+    # --group G3 / G3a / G3b runs only those at smoke scale (1 cohort × 1 seed).
 fi
 
 # ── Resolve MAX_CALLS from sentinel ───────────────────────────────────────────
