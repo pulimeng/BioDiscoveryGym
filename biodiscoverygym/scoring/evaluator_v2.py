@@ -68,10 +68,12 @@ COMPONENT_WEIGHTS: dict[str, float] = {
 TOTAL_MAX: float = sum(COMPONENT_WEIGHTS.values())  # 16.0
 
 # Cohort-identity gate (NOT a scored dimension — it would be meaningless for G0-G2,
-# where the cohort is given or uncontested). Instead it acts as a hard gate: if the
-# agent commits to the WRONG cancer type, the entire discovery rests on a false premise
-# and every component is zeroed. In practice this fires only in the G3 mislead arms.
-# The un-gated raw component scores are retained in `raw_scores` for transparency.
+# where the cohort is given or uncontested). If the agent commits to the WRONG cancer
+# type, the disease-INTERPRETATION dimensions are built on a false premise and are
+# zeroed; the objective computational dims stand, since a fooled agent can still have
+# produced a valid partition. In practice this fires only in the G3 mislead arms. The
+# un-gated raw component scores are retained in `raw_scores` for transparency.
+_FOOLED_NARRATIVE_KEYS: tuple[str, ...] = ("mechanism_grounding", "pathway_validity")
 
 EXAMINATION_WEIGHTS: dict[str, float] = {
     "exam_data_lock_quality": 1.0,
@@ -135,7 +137,7 @@ class ScoreReport:
     wall_time_s: float = 0.0
     examination: ExaminationReport | None = None
     # Cohort-identity gate
-    gated: bool = False                 # True → all components zeroed (wrong cohort)
+    gated: bool = False                 # True → narrative dims zeroed (wrong cohort)
     cohort_identity_verdict: str = ""   # true_cohort | mislead_cohort | other | hedged | error
 
     def to_dict(self) -> dict:
@@ -166,7 +168,8 @@ class ScoreReport:
         if self.gated:
             lines.append(
                 f"  >> GATED: wrong cohort identity ({self.cohort_identity_verdict}) "
-                f"— all components zeroed (raw shown above)"
+                f"— narrative dims (mechanism_grounding, pathway_validity) zeroed "
+                f"(raw shown above)"
             )
         lines += [
             "-" * 60,
@@ -274,9 +277,12 @@ class EvaluatorV2:
         # uses it as its `validation_experiment` component.
 
         # --- Cohort-identity gate ---
-        # Detect (via LLM judge) which cancer type the agent committed to. If it is the
-        # WRONG one (the mislead, or any other wrong cancer), the whole discovery rests on
-        # a false premise → zero every component. Not a scored dimension; a hard gate.
+        # Detect (via majority-vote LLM judge) which cancer type the agent committed to.
+        # If it is the WRONG one (the mislead, or any other wrong cancer), the disease-
+        # interpretation dims rest on a false premise → zero mechanism_grounding +
+        # pathway_validity. The objective computational dims (clustering, survival,
+        # driver/RPPA coherence, reference concordance, markers) stand — a fooled agent
+        # can still have produced a valid partition. Not a scored dimension; a gate.
         # raw_scores are kept intact so the un-gated component breakdown stays visible.
         subtype_labels = sorted({str(v) for v in grouping.values()}) if grouping else []
         _, id_diag = score_cohort_identity(
@@ -290,9 +296,13 @@ class EvaluatorV2:
         report.cohort_identity_verdict = str(id_diag.get("verdict", ""))
         if id_diag.get("fooled"):
             report.gated = True
-            for key in list(report.weighted_scores):
-                report.weighted_scores[key] = 0.0
-            id_diag["gate"] = "ZEROED — agent committed to the wrong cohort identity"
+            for key in _FOOLED_NARRATIVE_KEYS:
+                if key in report.weighted_scores:
+                    report.weighted_scores[key] = 0.0
+            id_diag["gate"] = (
+                "narrative dims (mechanism_grounding, pathway_validity) ZEROED — "
+                "agent committed to the wrong cohort identity"
+            )
 
         report.total_raw = sum(report.weighted_scores.values())
         report.normalized = report.total_raw / TOTAL_MAX
