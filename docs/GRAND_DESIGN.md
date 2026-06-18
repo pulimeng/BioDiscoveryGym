@@ -35,7 +35,7 @@ Skills are injected into the benchmark to test whether they improve agent perfor
 
 Given an anonymized patient cohort (expression ± mutations ± RPPA), can an LLM discover real molecular subtypes without being told the cancer type, number of groups, or scoring criteria?
 
-Six-layer identity blinding: clinical columns stripped, demographics removed, TCGA barcodes → `SAMPLE_XXXX`, gene symbols → `GENE_XXXXX`, staging values remapped to `CAT_X`, data served from neutral path. The core instrument is the 4-group experiment (G0/G1/G2/G3, 61 runs with G3 split into G3a/G3b sub-arms, 3 seeds).
+Six-layer identity blinding: clinical columns stripped, demographics removed, TCGA barcodes → `SAMPLE_XXXX`, gene symbols → `GENE_XXXXX`, staging values remapped to `CAT_X`, data served from neutral path. The core instrument is the 4-group experiment (G0/G1/G2/G3, 40 runs with G3 split into G3a/G3b sub-arms, 3 seeds, 4 cohorts).
 
 **Full design and run commands: `docs/TASK_A_COHORT.md`**
 
@@ -114,8 +114,8 @@ An LLM judge for benchmark components that cannot be scored quantitatively: biol
 
 | Component | Status |
 |-----------|--------|
-| Task A: 7-cohort benchmark (BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV) | Implemented |
-| Task A: 4-group design (G0/G1/G2/G3, 61 runs, 3 seeds; G3 = G3a + G3b) | Designed — awaiting budget |
+| Task A: TCGA benchmark data + infra (7 cohorts downloaded; run set trimmed to 4: BRCA, LIHC, LUAD, OV) | Implemented |
+| Task A: 4-group design (G0/G1/G2/G3, 40 runs, 3 seeds, 4 cohorts; G3 = G3a + G3b) | Designed — awaiting budget |
 | Task A: OS benchmark (SGH-OS, 9 runs G0/G1/G2) | **run6 complete** — unified prompt + bug fixes ready for run7 |
 | Task A: v3 scoring (9 components, 3-axis LLM judge) | Implemented, validated on OS |
 | Task A: Examination phase (Data Lock → Q1-Q3 → Q4) | Implemented |
@@ -132,6 +132,6 @@ An LLM judge for benchmark components that cannot be scored quantitatively: biol
 ## Immediate Next Steps
 
 1. Run **run7** (smoke-test first: `bash scripts/run_cohort.sh --smoke-test --cohort OS`)
-2. Run the 61-episode Task A TCGA benchmark (G0/G1/G2/G3a/G3b, ~$183 on Sonnet)
+2. Run the 40-episode Task A TCGA benchmark (G0/G1/G2/G3a/G3b, 4 cohorts, ~$120 on Sonnet)
 3. Finalize G3 mislead pairs — OV→BRCA and LUAD→LIHC confirmed; 4 more TBD
 4. First systematic Task B runs across 2–3 indications

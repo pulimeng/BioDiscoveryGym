@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # run_tcga.sh — TCGA multi-cohort benchmark runner + scorer
 #
-# Runs G0/G1/G2/G3 across all 7 TCGA cohorts (BRCA PRAD UCEC LUAD LIHC LUSC OV),
-# then scores every episode. Resume-safe: skips runs whose JSON already exists.
+# Runs G0/G1/G2/G3 across 4 TCGA cohorts (BRCA LIHC LUAD OV) — trimmed from 7 for
+# cost; G3 pairs depend on OV + LUAD. Then scores every episode. Resume-safe: skips
+# runs whose JSON already exists.
 #
 # G3 splits into two sub-arms that share the wrong-barcode mechanic but differ
 # in WHEN the fake sample codebook subtly drops:
@@ -13,7 +14,7 @@
 #
 # Usage:
 #   bash scripts/run_tcga.sh --smoke-test                    # 1 cohort × 1 seed × G0/G1/G2/G3a/G3b at default 100-call budget, scored (~$15, ~1.25 hr)
-#   bash scripts/run_tcga.sh --tag run10                     # full benchmark (61 episodes) + scoring (~$183)
+#   bash scripts/run_tcga.sh --tag run10                     # full benchmark (40 episodes) + scoring (~$120)
 #   bash scripts/run_tcga.sh --tag run10 --group G2          # one group only
 #   bash scripts/run_tcga.sh --tag run10 --group G3          # both G3a + G3b
 #   bash scripts/run_tcga.sh --tag run10 --group G3a         # one sub-arm only
@@ -31,7 +32,10 @@ TAG=""
 MODEL="${TASK_A_MODEL:-claude-sonnet-4-6}"
 # MAX_CALLS resolved later from USER_MAX_CALLS sentinel + smoke-test mode
 BASE_DIR="results/tcga"
-COHORTS=(BRCA PRAD UCEC LUAD LIHC LUSC OV)
+# G0/G1/G2 cohorts. Trimmed 2026-06-18 from 7 → 4 for cost (dropped LUSC/PRAD/UCEC:
+# LUSC redundant with LUAD, PRAD weak survival signal, UCEC mutation/CN-driven subtypes).
+# OV + LUAD are retained because G3_PAIRS depends on them as the true cohorts.
+COHORTS=(BRCA LIHC LUAD OV)
 SEEDS=(42 7 123)
 G3_PAIRS=("OV:BRCA" "LUAD:LIHC")   # locked 2026-06-13 — see docs/TASK_A_COHORT.md § G3 cohort pairs
 

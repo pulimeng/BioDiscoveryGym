@@ -48,7 +48,7 @@ bash scripts/run_tcga.sh --smoke-test
 | **Scoring intent** | Faithfulness — did the agent recover the known TCGA subtype answer via data-driven reasoning rather than literature recall? | Discovery — did the agent find prognostic biomarkers in n=91 SGH-OS that generalize to TARGET-OS, beyond what Jia et al. 2022 reports? |
 | **Reference answer exists** | ✅ TCGA pancan subtype calls | ❌ The paper's marker list is the literature baseline to *go past* |
 | **External validation cohort** | None | TARGET-OS (n=85 with survival) — Phase 3 |
-| **Cohorts** | BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV (7) | SGH-OS only |
+| **Cohorts** | BRCA, LIHC, LUAD, OV (4; data for 7 downloaded) | SGH-OS only |
 | **Groups** | G0 / G1 / G2 / G3 | G0 / G1 / G2 (no G3 — single cohort) |
 | **Scoring ceiling** | **16 pts** (Phase 1 only) | **24 pts** (Phase 1 + 2 + 3) |
 
@@ -266,7 +266,7 @@ python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42
 ```bash
 # === TCGA ===
 bash scripts/run_tcga.sh --smoke-test              # 1×1×4 groups at 100 calls, scored      (~$12, ~1 hr)
-bash scripts/run_tcga.sh --tag run10               # full 61 episodes + scoring             (~$183)
+bash scripts/run_tcga.sh --tag run10               # full 40 episodes + scoring             (~$120)
 
 # === SGH-OS ===
 bash scripts/run_cohort.sh --smoke-test --cohort OS    # 1 seed/mode × 15 calls, no scoring (~$1)

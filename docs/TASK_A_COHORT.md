@@ -53,7 +53,7 @@ Task A has two test sets:
 
 | Set | Cohorts | Role | Scorer |
 |-----|---------|------|--------|
-| **TCGA** | BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV | Main 55-run experiment | TCGA faithfulness scorer (Phase 1, 16 pts) |
+| **TCGA** | BRCA, LIHC, LUAD, OV (data for 7 downloaded; LUSC/PRAD/UCEC dropped 2026-06-18 for cost) | Main 40-run experiment | TCGA faithfulness scorer (Phase 1, 16 pts) |
 | **Osteosarcoma** | SGH-OS, 91 samples | Held-out test — rare pediatric cancer, absent from TCGA | v2 scorer + OS-specific reference subtypes |
 
 The osteosarcoma cohort closes the primary confound of the TCGA set: for well-characterized TCGA cancers, canonical recall and genuine discovery produce the same correct output. Osteosarcoma is a rare pediatric bone cancer absent from TCGA and underrepresented in LLM training data — an agent relying on recall will fail here.
@@ -62,16 +62,16 @@ The osteosarcoma cohort closes the primary confound of the TCGA set: for well-ch
 
 ## TCGA Experiment Design
 
-**61 runs total across 4 groups (G3 splits into G3a + G3b sub-arms). 7 cohorts: BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV.**
+**40 runs total across 4 groups (G3 splits into G3a + G3b sub-arms). 4 cohorts: BRCA, LIHC, LUAD, OV (trimmed from 7 on 2026-06-18 for cost — dropped LUSC/PRAD/UCEC; OV + LUAD retained as the G3 true cohorts).**
 
 | Group | Label | Gene codebook | Cohort name / sample-codebook drop | Seeds | Runs | Cost (~$3/ep) |
 |-------|-------|---------------|-------------------------------------|-------|------|---------------|
-| **G0**  | Explicit retrieval | Episode start | **Revealed** | 42 | 7 × 1 = 7 | ~$21 |
-| **G1**  | Implicit retrieval | Episode start | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
-| **G2**  | Data-driven | 3rd `record_observation` (action-based) | Hidden | 42, 7, 123 | 7 × 3 = 21 | ~$63 |
+| **G0**  | Explicit retrieval | Episode start | **Revealed** | 42 | 4 × 1 = 4 | ~$12 |
+| **G1**  | Implicit retrieval | Episode start | Hidden | 42, 7, 123 | 4 × 3 = 12 | ~$36 |
+| **G2**  | Data-driven | 3rd `record_observation` (action-based) | Hidden | 42, 7, 123 | 4 × 3 = 12 | ~$36 |
 | **G3a** | Mislead, early drop | 3rd `record_observation` (action-based) | Hidden + fake barcodes subtly dropped at **3rd RO** alongside gene codebook | 42, 7, 123 | 2 pairs × 3 = 6 | ~$18 |
 | **G3b** | Mislead, late drop | 3rd `record_observation` (action-based) | Hidden + fake barcodes subtly dropped at **5th RO** (mid-Stage 3) | 42, 7, 123 | 2 pairs × 3 = 6 | ~$18 |
-| **Total** | | | | | **61** | **~$183** |
+| **Total** | | | | | **40** | **~$120** |
 
 ### Group definitions
 
@@ -694,5 +694,5 @@ The scoring for OS runs will need its own rubric — one that rewards survival-a
 - OS scoring rubric: current v3 scorer designed for TCGA subtypes; OS needs survival-anchored, novelty-aware rubric
 
 **TCGA benchmark (future):**
-- Run 61-episode benchmark (~$183 on Sonnet) using `prompts/agent_system_tcga.txt`
+- Run 40-episode benchmark (~$120 on Sonnet) using `prompts/agent_system_tcga.txt`
 - Action-based gate now applies to TCGA G2 as well
