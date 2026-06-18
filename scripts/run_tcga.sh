@@ -42,6 +42,7 @@ G3_PAIRS=("OV:BRCA" "LUAD:LIHC")   # locked 2026-06-13 — see docs/TASK_A_COHOR
 RUN_GROUP=""
 DRY_RUN=0
 SCORE_ONLY=0
+FAILED_EPISODES=()   # episodes that errored/OOM'd — reported at the end, don't abort the batch
 SKIP_SCORE=0
 SMOKE_TEST=0
 USER_MAX_CALLS=""             # sentinel: tracks whether --max-calls was explicitly passed
@@ -145,7 +146,15 @@ run_episode() {
     if [[ $DRY_RUN -eq 1 ]]; then
         echo "        $cmd"
     else
-        eval "$cmd"
+        # Resilient: one episode failing (incl. OOM 'Killed: 9', exit 137) must NOT
+        # abort the whole batch — log it and continue. Resume-safe skip means a later
+        # re-run retries only the failed/missing episodes.
+        local rc=0
+        eval "$cmd" || rc=$?
+        if [[ $rc -ne 0 ]]; then
+            echo "  !! FAILED  $label (exit $rc)$( [[ $rc -eq 137 ]] && echo ' — likely OOM (SIGKILL); see memory notes' )" >&2
+            FAILED_EPISODES+=("$label (exit $rc)")
+        fi
     fi
 }
 
@@ -234,6 +243,15 @@ if [[ $SCORE_ONLY -eq 0 ]]; then
             ;;
         *) echo "Unknown group: $RUN_GROUP. Use G0, G1, G2, G3, G3a, or G3b." >&2; exit 1 ;;
     esac
+fi
+
+if [[ ${#FAILED_EPISODES[@]} -gt 0 ]]; then
+    echo ""
+    echo "============================================================"
+    echo "  ${#FAILED_EPISODES[@]} episode(s) FAILED (batch continued):"
+    printf '    - %s\n' "${FAILED_EPISODES[@]}"
+    echo "  Re-run the same command to retry them (completed episodes are skipped)."
+    echo "============================================================"
 fi
 
 if [[ $SKIP_SCORE -eq 0 ]]; then

@@ -114,6 +114,13 @@ class CodeExecutor:
         except Exception:
             buf.write(traceback.format_exc())
             is_error = True
+        finally:
+            # Free any matplotlib figures the call created. pyplot keeps every figure
+            # alive in its global registry until explicitly closed; across ~100 stateful
+            # run_code calls on a large cohort that accumulation is a real memory leak
+            # (a contributor to OOM kills on big cohorts like BRCA). Agents save figures
+            # within the same call, so closing here is safe.
+            plt.close("all")
         exec_time = time.perf_counter() - t0
 
         output = buf.getvalue()
