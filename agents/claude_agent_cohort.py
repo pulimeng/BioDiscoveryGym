@@ -625,14 +625,9 @@ class ClaudeAgentCohort:
                     if discovery is not None:
                         new_submission["data_lock_report"] = discovery.get("data_lock_report", "")
                     discovery = new_submission
-                    pg = discovery.get("proposed_grouping")
-                    if isinstance(pg, str):
-                        try:
-                            with open(pg) as f:
-                                discovery["proposed_grouping"] = json.load(f)
-                        except Exception as e:
-                            self._log(f"[submit_discovery] Could not read grouping file {pg!r}: {e}")
-                            discovery["proposed_grouping"] = {}
+                    discovery["proposed_grouping"] = self._resolve_grouping(
+                        discovery.get("proposed_grouping"), output_dir
+                    )
                     self._log(
                         f"[submit_discovery] grouping size={len(discovery.get('proposed_grouping', {}))}"
                     )
@@ -828,13 +823,9 @@ class ClaudeAgentCohort:
                     continue
                 if block.name == "submit_discovery":
                     discovery = dict(block.input)
-                    pg = discovery.get("proposed_grouping")
-                    if isinstance(pg, str):
-                        try:
-                            with open(pg) as f:
-                                discovery["proposed_grouping"] = json.load(f)
-                        except Exception:
-                            discovery["proposed_grouping"] = {}
+                    discovery["proposed_grouping"] = self._resolve_grouping(
+                        discovery.get("proposed_grouping"), output_dir
+                    )
                     self._log(f"[ClaudeAgentCohort] Forced submit received (attempt {attempt+1})")
                     results.append({
                         "type": "tool_result",
@@ -855,6 +846,36 @@ class ClaudeAgentCohort:
 
         self._log("[ClaudeAgentCohort] Forced submission failed — returning empty discovery.")
         return None
+
+    def _resolve_grouping(self, pg, output_dir) -> dict:
+        """Resolve submit_discovery's proposed_grouping to a sample→label dict.
+
+        The tool takes a path string, but the agent sometimes hallucinates the output
+        dir (e.g. an extra path segment, or /tmp/...) so open() fails and the grouping
+        it actually computed — saved to output_dir/grouping.json — would be discarded.
+        Fall back to that canonical file so a path typo doesn't zero a real submission.
+        """
+        if isinstance(pg, dict) and pg:
+            return pg
+        if isinstance(pg, str) and pg:
+            try:
+                with open(pg) as f:
+                    d = json.load(f)
+                if d:
+                    return d
+                self._log(f"[submit_discovery] grouping file {pg!r} was empty")
+            except Exception as e:
+                self._log(f"[submit_discovery] grouping path {pg!r} unreadable: {e}")
+        if output_dir is not None:
+            fb = Path(output_dir) / "grouping.json"
+            if fb.exists():
+                try:
+                    d = json.load(open(fb))
+                    self._log(f"[submit_discovery] recovered grouping from {fb} ({len(d)} samples)")
+                    return d
+                except Exception as e:
+                    self._log(f"[submit_discovery] fallback {fb} unreadable: {e}")
+        return {}
 
     def _do_reveal_codebook(self, output_dir: Path, executor) -> str:
         """Write codebook to disk, inject into namespace, unblock genesets. Returns narrative."""

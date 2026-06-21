@@ -135,6 +135,18 @@ def main():
             pg = json.loads(Path(pg).read_text())
         except Exception:
             pg = {}
+    if not pg:
+        # Recovery: the agent computed a grouping but passed a wrong/empty path to
+        # submit_discovery (it sometimes hallucinates the output dir), so the saved
+        # submission has an empty proposed_grouping. Fall back to the canonical
+        # grouping.json the agent wrote into the episode dir — the work it actually did.
+        fallback = episode_path.parent / "grouping.json"
+        if fallback.exists():
+            try:
+                pg = json.loads(fallback.read_text())
+                print(f"  [recovered] empty proposed_grouping → loaded {len(pg)} samples from {fallback.name}")
+            except Exception:
+                pass
     discovery["proposed_grouping"] = pg
 
     if args.skip_llm:
