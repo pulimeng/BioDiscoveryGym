@@ -538,6 +538,14 @@ Hard-won failure modes from the first real TCGA runs (run1, 2026-06), and the gu
 - `--g0-seed N` — run G0 on a non-default seed (default 42); label becomes `g0_<cohort>_s<N>` so it doesn't collide with a standard-seed G0.
 - `--group G0|G1|G2|G3|G3a|G3b` — a single group; `--smoke-test --group G3` runs G3 at smoke scale.
 
+### Scorer "skipped" count is normal (not failures)
+
+`score_all_tcga.sh` reports `N scored, M skipped, K failed`. **Skipped ≠ failed.** Two things land in the skipped bucket:
+- **Non-episode artifact JSONs** the agent saved into the run dir via `run_code` — e.g. `grouping_named.json`, `grouping_k4.json`, `subtype_labels.json`. The scorer's shape guard skips any JSON without a top-level `messages` key, so these are correctly ignored. (run1 showed `35 scored, 2 skipped` — the 2 were `grouping_named.json` + `grouping_k4.json`, not episodes.)
+- **Already-scored episodes** (a `_v3scores.json` exists) when `--rescore` is not passed — the resume-safe skip. Use `--rescore` to force-recompute them (needed after a scoring-logic change).
+
+Only the **failed** count signals a real problem (a non-zero scorer exit, e.g. a genuine error or a missing dataset).
+
 ---
 
 ## Key Files
