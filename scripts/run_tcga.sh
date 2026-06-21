@@ -18,6 +18,8 @@
 #   bash scripts/run_tcga.sh --tag run10 --group G2          # one group only
 #   bash scripts/run_tcga.sh --tag run10 --group G3          # both G3a + G3b
 #   bash scripts/run_tcga.sh --tag run10 --group G3a         # one sub-arm only
+#   bash scripts/run_tcga.sh --tag run10 --no-g3             # G0/G1/G2 only — skip the G3 mislead arms (cost-saving)
+#   bash scripts/run_tcga.sh --tag run10 --g0-seed 100       # run G0 on a different seed (default 42)
 #   bash scripts/run_tcga.sh --tag run10 --score-only        # score existing results
 #   bash scripts/run_tcga.sh --tag run10 --skip-score        # run only, no scoring
 #   bash scripts/run_tcga.sh --tag run10 --dry-run           # print commands only
@@ -37,9 +39,11 @@ BASE_DIR="results/tcga"
 # OV + LUAD are retained because G3_PAIRS depends on them as the true cohorts.
 COHORTS=(BRCA LIHC LUAD OV)
 SEEDS=(42 7 123)
+G0_SEED=42                          # G0 runs a single seed; override with --g0-seed
 G3_PAIRS=("OV:BRCA" "LUAD:LIHC")   # locked 2026-06-13 — see docs/TASK_A_COHORT.md § G3 cohort pairs
 
 RUN_GROUP=""
+NO_G3=0                             # --no-g3: skip the G3 mislead arms (cost-saving)
 DRY_RUN=0
 SCORE_ONLY=0
 FAILED_EPISODES=()   # episodes that errored/OOM'd — reported at the end, don't abort the batch
@@ -54,6 +58,8 @@ while [[ $# -gt 0 ]]; do
         --model)       MODEL="$2";       shift 2 ;;
         --max-calls)   USER_MAX_CALLS="$2"; shift 2 ;;
         --group)       RUN_GROUP="$2";   shift 2 ;;
+        --g0-seed)     G0_SEED="$2";     shift 2 ;;
+        --no-g3)       NO_G3=1;          shift ;;
         --dry-run)     DRY_RUN=1;        shift ;;
         --score-only)  SCORE_ONLY=1;     shift ;;
         --skip-score)  SKIP_SCORE=1;     shift ;;
@@ -160,10 +166,10 @@ run_episode() {
 
 # ── Groups ────────────────────────────────────────────────────────────────────
 run_g0() {
-    echo "=== G0: Explicit retrieval (${#COHORTS[@]} runs, seed 42) ==="
+    echo "=== G0: Explicit retrieval (${#COHORTS[@]} runs, seed ${G0_SEED}) ==="
     for cohort in "${COHORTS[@]}"; do
-        run_episode "g0_$(lower $cohort)_s42" \
-            --cohort "$cohort" --seed 42 --explicit-retrieval
+        run_episode "g0_$(lower $cohort)_s${G0_SEED}" \
+            --cohort "$cohort" --seed "$G0_SEED" --explicit-retrieval
     done
 }
 
@@ -237,9 +243,12 @@ if [[ $SCORE_ONLY -eq 0 ]]; then
         "")
             run_g0;  echo ""
             run_g1;  echo ""
-            run_g2;  echo ""
-            run_g3a; echo ""
-            run_g3b
+            run_g2
+            if [[ $NO_G3 -eq 1 ]]; then
+                echo ""; echo "=== G3 skipped (--no-g3) ==="
+            else
+                echo ""; run_g3a; echo ""; run_g3b
+            fi
             ;;
         *) echo "Unknown group: $RUN_GROUP. Use G0, G1, G2, G3, G3a, or G3b." >&2; exit 1 ;;
     esac

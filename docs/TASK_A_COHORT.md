@@ -505,6 +505,41 @@ bash scripts/score_all_sghos.sh results/external/run9_marker/
 
 ---
 
+## Run Robustness & Known Failure Modes
+
+Hard-won failure modes from the first real TCGA runs (run1, 2026-06), and the guards now in place.
+
+### 1. `submit_discovery` path confabulation → grouping lost (zeroed episode)
+
+**Symptom:** an episode scores 0 even though the agent did the work — `grouping.json` sits in the episode dir with a full, correct partition, but the saved submission has `proposed_grouping: {}`. Seen in run1 on `g1_lihc_s7` (371 samples) and `g2_luad_s42` (518 samples).
+
+**Cause:** `submit_discovery` takes a *path string* for `proposed_grouping`. The agent saves the grouping correctly in `run_code` (real Python: `json.dump(g, open(output_dir/'grouping.json'))` — `output_dir` always resolves), but to fill the *tool argument* it must transcribe the **literal value** of `output_dir` (an opaque UUID path like `results/tcga/run1/4de3aaa0/`) as free text. If that value was never `print()`ed, it isn't in context, so the model confabulates a plausible path — e.g. an extra `biodiscoverygym/` segment, or `/tmp/biodiscovery_output/`. The handler can't open it → silently `{}`. **Models use opaque variables correctly in code but confabulate their literal values in free text; a stringly-typed path argument is the fragile seam.**
+
+**Guard (two layers, both commited):**
+- *Agent* (`claude_agent_cohort.py` `_resolve_grouping`): if the submitted path is wrong/empty, fall back to `output_dir/grouping.json` at submission time, so the episode JSON carries the real grouping.
+- *Scorer* (`score_tcga_episode.py`): if `proposed_grouping` is empty, load `grouping.json` from the episode dir. Rescues already-saved episodes without re-running (re-score with `--rescore`).
+
+**Better long-term fix (not yet done):** drop the path argument entirely — have `submit_discovery` read `output_dir/grouping.json` directly, or accept the grouping dict inline. Removes the confabulation seam.
+
+### 2. OOM kill on large cohorts (BRCA)
+
+**Symptom:** `run_tcga.sh: line N: <pid> Killed: 9 python scripts/run_episode.py ...` (exit 137) — the macOS OOM killer. With `set -e` this aborted the entire batch.
+
+**Cause:** memory pressure on the largest cohort (BRCA, 1095×19938). Contributors: the agent computing a full gene×gene correlation/covariance (~20k² × 8 ≈ 3.2 GB, `np.cov` copies it several times), matplotlib figures never freed, and a persistent namespace accumulating large arrays across ~100 calls.
+
+**Guards:**
+- `executor.py`: `plt.close("all")` after every `run_code` (pyplot kept every figure alive otherwise).
+- `run_tcga.sh`: resilient batch — a failed/OOM'd episode is logged and the run continues (no whole-batch abort); failures summarized at the end; re-run retries them (resume-safe).
+- Operational: free RAM (quit browsers/Docker/VMs) before running; the gene×gene matrix can still OOM a clean 32 GB on a bad draw.
+
+### Runner flags for cost control
+
+- `--no-g3` — run G0/G1/G2 only (skip the mislead arms). 28 episodes (~$84 Sonnet) vs 40.
+- `--g0-seed N` — run G0 on a non-default seed (default 42); label becomes `g0_<cohort>_s<N>` so it doesn't collide with a standard-seed G0.
+- `--group G0|G1|G2|G3|G3a|G3b` — a single group; `--smoke-test --group G3` runs G3 at smoke scale.
+
+---
+
 ## Key Files
 
 | File | Purpose |
