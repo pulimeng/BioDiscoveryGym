@@ -203,7 +203,14 @@ def _run_snf(
     mu = 0.5
 
     def _full_affinity(X_scaled: np.ndarray) -> np.ndarray:
-        dists = np.sum((X_scaled[:, None, :] - X_scaled[None, :, :]) ** 2, axis=2)
+        # Pairwise squared Euclidean distances via ‖a-b‖² = ‖a‖² + ‖b‖² - 2·a·b.
+        # The naive broadcasting form X[:,None,:]-X[None,:,:] materializes an (n,n,d)
+        # tensor first — for d≈20k features that's ~190 GB and OOM-kills the process
+        # (observed on BRCA, 1095×19938). This form only builds n×n matrices (and the
+        # n×n Gram matrix), and is numerically identical.
+        sq = np.einsum("ij,ij->i", X_scaled, X_scaled)
+        dists = sq[:, None] + sq[None, :] - 2.0 * (X_scaled @ X_scaled.T)
+        np.maximum(dists, 0.0, out=dists)  # clip tiny negatives from float round-off
         np.fill_diagonal(dists, np.inf)
         row_sigma = np.sort(dists, axis=1)[:, :K].mean(axis=1)
         sigma = (row_sigma[:, None] + row_sigma[None, :]) / 2 + 1e-10
