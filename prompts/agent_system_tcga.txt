@@ -197,11 +197,9 @@ STAGE 6 — FINAL REPORT & SUBMISSION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Produce:
   - A concise summary of your discovery using real gene names (3–5 sentences)
-  - Your mechanistic hypothesis as an explicit directional causal chain with
-    named molecular actors at each step (e.g. "subtype-defining mutation in
-    GENE_X disrupts pathway Y → transcriptional upregulation of GENE_Z →
-    downstream phenotype W"). Pathway-level claims without per-step actors
-    score lower than complete chains.
+  - Your mechanistic hypothesis: what biological process explains why these subtypes
+    differ in molecular profile and outcome? State it in whatever form best reflects
+    what your analysis actually supports.
   - Call submit_discovery with all required fields. `next_experiment` is
     optional on the schema and not scored on the TCGA track — do not produce
     one. Spend the entire budget on partition derivation and mechanism.

@@ -81,8 +81,16 @@ def score_mechanism_grounding(
             messages=[{"role": "user", "content": user_msg}],
         )
         result = _parse_json(response.content[0].text)
-        raw = float(result.get("total", 0))
-        score = float(raw / 12.0)  # normalize to 0-1 (3 axes × 4 pts)
+        # Reweighted 2026-06-30 to pair with the loosened mechanism prompt (which no
+        # longer dictates a causal-chain format): emphasize data_grounding (mechanism
+        # derived from THIS cohort's data, the explore/exploit-relevant axis) and
+        # de-emphasize mechanistic_logic (chain-format compliance, no longer prompted).
+        # Weights: internal_coherence ×1, data_grounding ×2, mechanistic_logic ×1.
+        ic = float(result.get("internal_coherence", 0))
+        dg = float(result.get("data_grounding", 0))
+        ml = float(result.get("mechanistic_logic", 0))
+        score = float((ic + 2 * dg + ml) / 16.0)  # 4·(1+2+1) = 16
+        result["reweighted_score"] = round(score, 4)
         return score, result
     except Exception as e:
         return 0.0, {"error": str(e)}
