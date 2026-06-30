@@ -3,11 +3,10 @@ BioDiscoveryGym v2 scoring orchestrator (TCGA faithfulness rubric).
 
 Calls all component scorers, applies weights, returns a ScoreReport.
 
-Phase 1 component weights (sum = 16):
+Phase 1 component weights (sum = 14):
   structure_validity          2
   clinical_signal             3
-  genomic_coherence_drivers   2  ─┐ "genomic coherence" block
-  genomic_coherence_rppa      2  ─┘
+  genomic_coherence_drivers   2
   reference_concordance       2
   marker_evidence             2
   pathway_validity            1
@@ -44,7 +43,6 @@ from .components import (
     score_marker_evidence,
     score_pathway_validity,
     score_reference_concordance,
-    score_rppa_concordance,
     score_structure_validity,
 )
 from .judge import (
@@ -59,13 +57,12 @@ COMPONENT_WEIGHTS: dict[str, float] = {
     "structure_validity": 2.0,
     "clinical_signal": 3.0,
     "genomic_coherence_drivers": 2.0,
-    "genomic_coherence_rppa": 2.0,
     "reference_concordance": 2.0,
     "marker_evidence": 2.0,
     "pathway_validity": 1.0,
     "mechanism_grounding": 2.0,
 }
-TOTAL_MAX: float = sum(COMPONENT_WEIGHTS.values())  # 16.0
+TOTAL_MAX: float = sum(COMPONENT_WEIGHTS.values())  # 14.0 (RPPA component removed 2026-06-30)
 
 # Cohort-identity gate (NOT a scored dimension — it would be meaningless for G0-G2,
 # where the cohort is given or uncontested). If the agent commits to the WRONG cancer
@@ -203,7 +200,6 @@ class EvaluatorV2:
         expression: pd.DataFrame,
         metadata: pd.DataFrame,
         mutation: pd.DataFrame | None,
-        rppa: pd.DataFrame | None,
         sample_id_map: dict[str, str],
         cohort: str,
         mislead_cohort: str | None = None,
@@ -241,10 +237,6 @@ class EvaluatorV2:
         s, d = score_driver_enrichment(grouping, mutation, self.cancer_genes_path)
         _record("genomic_coherence_drivers", s, d)
 
-        # 4. Genomic coherence — RPPA
-        s, d = score_rppa_concordance(grouping, rppa)
-        _record("genomic_coherence_rppa", s, d)
-
         # 5. Reference concordance
         s, d = score_reference_concordance(
             grouping,
@@ -281,7 +273,7 @@ class EvaluatorV2:
         # If it is the WRONG one (the mislead, or any other wrong cancer), the disease-
         # interpretation dims rest on a false premise → zero mechanism_grounding +
         # pathway_validity. The objective computational dims (clustering, survival,
-        # driver/RPPA coherence, reference concordance, markers) stand — a fooled agent
+        # driver coherence, reference concordance, markers) stand — a fooled agent
         # can still have produced a valid partition. Not a scored dimension; a gate.
         # raw_scores are kept intact so the un-gated component breakdown stays visible.
         subtype_labels = sorted({str(v) for v in grouping.values()}) if grouping else []

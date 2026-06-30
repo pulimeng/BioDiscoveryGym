@@ -264,10 +264,6 @@ class Episode:
             elif key in ("expression", "mutation", "cna"):
                 # Columns are gene symbols — rename directly
                 anon_dataset[key] = val.rename(columns=symbol_to_anon)
-            elif key == "rppa":
-                # RPPA uses protein aliases (ERALPHA, BETACATENIN) not gene symbols —
-                # leave column names intact to avoid inconsistent partial anonymization
-                anon_dataset[key] = val
             elif key == "methylation":
                 # CpG IDs (cg######) are not gene symbols — pass through unchanged
                 anon_dataset[key] = val
@@ -301,11 +297,6 @@ class Episode:
         if mut is not None:
             mut.to_parquet(self.episode_data_dir / "mutations.parquet")
             written.append(f"mutations({mut.shape[0]}×{mut.shape[1]})")
-
-        rppa = self.dataset.get("rppa")
-        if rppa is not None:
-            rppa.to_parquet(self.episode_data_dir / "rppa.parquet")
-            written.append(f"rppa({rppa.shape[0]}×{rppa.shape[1]})")
 
         meth = self.dataset.get("methylation")
         if meth is not None:

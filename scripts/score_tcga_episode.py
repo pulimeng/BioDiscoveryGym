@@ -124,7 +124,6 @@ def main():
     expression = anon_dataset.get("expression")
     metadata = anon_dataset.get("metadata")
     mutation = anon_dataset.get("mutation")
-    rppa = anon_dataset.get("rppa")
 
     print(f"  Samples : {len(expression)}, genes : {expression.shape[1]}")
 
@@ -174,7 +173,6 @@ def main():
         expression=expression,
         metadata=metadata,
         mutation=mutation,
-        rppa=rppa,
         sample_id_map=sample_id_map,
         cohort=cohort,
         messages=messages,

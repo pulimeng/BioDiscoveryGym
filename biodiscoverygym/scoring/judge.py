@@ -149,7 +149,7 @@ def score_experiment_quality(
 # evaluator uses `fooled` as a GATE on the NARRATIVE dimensions: a wrong-cancer
 # commitment zeros mechanism_grounding + pathway_validity (the disease-interpretation
 # dims, built on a false premise), while the objective computational dims (clustering,
-# survival, driver/RPPA coherence, reference concordance, markers) stand — a fooled
+# survival, driver coherence, reference concordance, markers) stand — a fooled
 # agent can still have produced a valid partition. It contributes no points of its own;
 # COMPONENT_WEIGHTS / TOTAL_MAX are unchanged.
 # ──────────────────────────────────────────────────────────────────────────────

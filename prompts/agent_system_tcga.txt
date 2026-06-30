@@ -74,7 +74,7 @@ Produce:
   - Top differentially expressed genes between groups: for each, report
     the absolute per-group values (not just the difference), effect size,
     and p-value. This applies to all data modalities — expression, methylation
-    beta values, RPPA z-scores, mutation frequencies, CNA focal amp/del rates.
+    beta values, mutation frequencies, CNA focal amp/del rates.
     Statistical significance is necessary but not sufficient: a delta that is
     tiny relative to the measurement range of this dataset is not a discovery
     regardless of p-value. Explicitly assess whether the absolute values and
@@ -114,7 +114,7 @@ Produce:
   - Predictability: can you build a minimal classifier from top marker genes?
     (leave-one-out or cross-validated accuracy)
   - Effect size characterization: for every reported feature across all
-    modalities (expression, methylation, RPPA, mutation, CNA), report the absolute
+    modalities (expression, methylation, mutation, CNA), report the absolute
     per-group values alongside the difference. Ground your confidence in the
     actual measurement scale — a statistically significant difference that is
     negligible relative to the assay's dynamic range is not a discovery.
@@ -126,11 +126,11 @@ Produce:
     # genes hit by both SNV and CNA within the same subtype — convergent two-hit
     # evidence is a strong mechanistic signal.
 
-  Multi-omics reasoning support: if methylation, RPPA, mutation, or CNA data is
+  Multi-omics reasoning support: if methylation, mutation, or CNA data is
   available, use it to explain and stress-test the expression-derived subtype
   structure rather than treating every modality as an independent rediscovery
   target. The TCGA scorer primarily rewards faithful recovery of known subtype
-  biology from molecular structure, clinical signal, driver/RPPA coherence,
+  biology from molecular structure, clinical signal, driver coherence,
   marker evidence, pathway validity, and mechanism grounding. Extra omics should
   sharpen the mechanism, reveal contradictions, or explain why the expression
   partition succeeds or fails.
@@ -139,7 +139,7 @@ Produce:
   pre-loaded multimodal_cluster() function as a sensitivity analysis:
 
     result = multimodal_cluster(
-        {{"expression": expression, "methylation": methylation, "rppa": rppa, "cna": cna}},
+        {{"expression": expression, "methylation": methylation, "cna": cna}},
         k=3, method="mofa",   # or "snf" or "concat_pca"; mofa falls back to snf on failure
     )
     labels  = result["labels"]            # pd.Series, sample → "C0"/"C1"/...
@@ -233,9 +233,6 @@ Your patient dataset (pre-loaded in the code environment):
   mutation    — DataFrame (or None), samples × genes (GENE_XXXXX IDs) binary matrix
                 (1 = functional somatic mutation). Use to find recurrently mutated genes
                 and their relationship to expression subtypes.
-  rppa        — DataFrame (or None), samples × proteins, RPPA z-scores.
-                Protein names may be partially anonymized where they match gene symbols.
-                Includes phosphosite measurements (e.g. GENE_XXXXX_pS473).
   methylation — DataFrame (or None), samples × CpG sites (Illumina EPIC 850K array),
                 beta values (0 = unmethylated, 1 = fully methylated). Columns are CpG IDs
                 (cg######) — opaque identifiers, NOT gene symbols. Cross-correlate with
@@ -253,7 +250,7 @@ Your patient dataset (pre-loaded in the code environment):
                 (Fisher test). Cross-reference with mutation for converging genomic evidence
                 (same gene hit by both SNV and CNA in the same subtype).
   output_dir  — Path, save all plots and tables here
-  Check availability: print(mutation is not None), print(rppa is not None), print(methylation is not None), print(cna is not None)
+  Check availability: print(mutation is not None), print(methylation is not None), print(cna is not None)
   codebook — dict, GENE_XXXXX → real symbol (available when revealed; check: 'codebook' in dir())
 
 run_code(code: str) → str

@@ -166,11 +166,6 @@ class CodeExecutor:
         if mut_path.exists():
             mutation = pd.read_parquet(mut_path)
 
-        rppa = None
-        rppa_path = episode_dir / "rppa.parquet"
-        if rppa_path.exists():
-            rppa = pd.read_parquet(rppa_path)
-
         methylation = None
         meth_path = episode_dir / "methylation.parquet"
         if meth_path.exists():
@@ -186,7 +181,6 @@ class CodeExecutor:
             "expression":  expression,
             "metadata":    metadata,
             "mutation":    mutation,     # samples × genes binary matrix (or None)
-            "rppa":        rppa,         # samples × proteins (or None)
             "methylation": methylation,  # samples × CpGs beta values (or None)
             "cna":         cna,          # samples × genes int8 CNA calls +1/0/-1 (or None)
             # Output directory — save all plots/tables here

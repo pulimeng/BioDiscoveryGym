@@ -58,7 +58,7 @@ _SUBMIT_DATA_LOCK_TOOL: dict = {
                 "type": "string",
                 "description": (
                     "Your full structured data report: PC loadings, survival by subtype, "
-                    "mutation enrichment, RPPA comparisons, and unexpected finding. "
+                    "mutation enrichment, and unexpected finding. "
                     "Data only — no mechanistic conclusions."
                 ),
             }
