@@ -187,6 +187,13 @@ def parse_args():
         ),
     )
     p.add_argument(
+        "--prompt-file",
+        default=None,
+        metavar="PATH_OR_NAME",
+        help="Override the system prompt (path or prompts/-relative name). For prompt "
+             "ablations, e.g. the mechanism old-vs-new A/B.",
+    )
+    p.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress per-turn agent log lines",
@@ -283,6 +290,7 @@ def main():
         cohort=args.cohort,
         action_based_gate=action_based_gate,
         skill=args.skill,
+        prompt_file=args.prompt_file,
     )
 
     if args.results_base:

@@ -233,6 +233,7 @@ class ClaudeAgentCohort:
         cohort: str | None = None,
         action_based_gate: bool = False,
         skill: str | None = None,
+        prompt_file: str | None = None,
     ):
         self.model = model
         self.max_tool_calls = max_tool_calls
@@ -269,12 +270,20 @@ class ClaudeAgentCohort:
             self._q1_q3_prompt = None
             self._q4_prompt = None
 
-        # Select prompt based on cohort: OS → agent_system_os.txt, TCGA → agent_system_tcga.txt
-        _prompt_name = self._COHORT_PROMPTS.get(self.cohort or "", self._DEFAULT_TCGA_PROMPT)
-        try:
-            _system_prompt_template = _load_prompt(_prompt_name)
-        except FileNotFoundError:
-            _system_prompt_template = _load_prompt(self._FALLBACK_PROMPT)
+        # Prompt selection. prompt_file (a path or prompts/-relative name) overrides the
+        # cohort default — used for prompt ablations (e.g. the mechanism old-vs-new A/B).
+        if prompt_file:
+            _pf = Path(prompt_file)
+            _system_prompt_template = (
+                _pf.read_text() if _pf.is_file() else _load_prompt(prompt_file)
+            )
+        else:
+            # OS → agent_system_os.txt, TCGA → agent_system_tcga.txt
+            _prompt_name = self._COHORT_PROMPTS.get(self.cohort or "", self._DEFAULT_TCGA_PROMPT)
+            try:
+                _system_prompt_template = _load_prompt(_prompt_name)
+            except FileNotFoundError:
+                _system_prompt_template = _load_prompt(self._FALLBACK_PROMPT)
 
         import httpx
         self.client = anthropic.Anthropic(
