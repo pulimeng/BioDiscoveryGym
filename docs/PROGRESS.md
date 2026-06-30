@@ -1,6 +1,6 @@
 # BioDiscoveryGym — Status
 
-**Last updated:** 2026-06-01
+**Last updated:** 2026-06-30
 
 ---
 
@@ -12,7 +12,9 @@
 | Task A OS benchmark | run6 complete (bugs found + fixed); **run7 ready** |
 | Task A TCGA benchmark | Designed (40 runs: G3 split into G3a ro_gate=3 + G3b ro_gate=5 sub-arms 2026-06-15; cohorts trimmed 7→4 on 2026-06-18); awaiting budget (~$120 on Sonnet) |
 | Task B target discovery | Archived (`scripts/archive/run_target_discovery*.py`) |
-| TCGA scorer (Phase 1) | Complete — 8 components, 16 pts (experiment_quality dropped 2026-06-15) |
+| TCGA scorer (outcome) | Complete — **7 components, 14 pts** (RPPA removed 2026-06-30) + cohort-identity gate |
+| Explore/exploit scoring (process) | **New (2026-06-30)** — decision-point judge (D1 partition / D2 identity / D3 mechanism, derived-vs-recalled) → `_dpscores.json`; 2×2 cross-tab join. Validated on run1+2 (59 eps): partition derived-rate **g0 14%→g1 50%→g2 81%**. See `docs/EXPLORE_EXPLOIT_SCORING.md` + `docs/DECISION_POINT_RUBRIC.md` |
+| Mechanism prompt loosening | Committed but **dormant** (`690b3db`) — Stage-6 chain format dropped + judge reweighted to data-grounding; cheap A/B (`run_mech_ab.sh`) before any full re-run |
 | SGH-OS scorer (Phase 1+2+3) | Complete — 11 components, 24 pts, with TARGET-OS external validation |
 | Unified prompt | `agent_system.txt` replaces g0/g1/g2_system.txt; codebook auto-injected |
 | multimodal_cluster() | Pre-loaded in executor namespace (MOFA+/SNF/concat_pca) |
