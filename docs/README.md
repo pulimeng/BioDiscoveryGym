@@ -18,9 +18,40 @@ describe→judge.
 | **Outcome** | *Is the discovery correct?* | `scripts/score_tcga_episode.py` (EvaluatorV3) | `_v3scores.json` | `biodiscoverygym/scoring/judge.py` | current — 7 components /14 + cohort-identity gate |
 | **Grounding** | *Calibration: how did it get there, and was recall warranted?* | `scripts/score_grounding.py` | `_gscores.json` | `scripts/grounding_judge.py` | current — judge validated ~95% |
 
-The tracks are complementary: outcome = *right or wrong*; grounding = *earned or recalled*.
-Together they form the strategy × grounding cross-tab, with `exploit × anchored` = the
-miscalibration failure cell.
+The tracks are complementary and measure orthogonal things:
+- **Outcome** = *right ↔ wrong*.
+- **Grounding** = a *quality* axis, `grounded ↔ anchored` (earned ↔ unearned), `unsupported`
+  between. **Strategy** (`explore / exploit`) is a **separate neutral tag** — unscored, no
+  good/bad direction. Do NOT put `recalled` on the quality axis: recall can be grounded
+  (efficient) or anchored (lazy), so it is not the opposite of "earned."
+
+**The payload is the joint cell — outcome × grounding** (neither scorer answers "was recall
+warranted?" alone):
+
+|  | grounded | anchored |
+|---|---|---|
+| **correct** | genuine discovery | right for the wrong reason (lucky recall) |
+| **wrong** | honest miss (fine) | **confidently wrong recall — the failure** |
+
+(`strategy × grounding` is a second, within-grounding view where `exploit × anchored` flags
+miscalibration; but the correct-vs-wrong failure cell above only exists in the outcome join.)
+
+**Warranted ≠ correct.** Grounding measures *process legitimacy* — was the claim justified by
+the evidence *at decision time* — deliberately independent of whether it landed right. So the
+off-diagonals are meaningful, not noise: `grounded + wrong` = honest miss, good process,
+unlucky (**fine**); `anchored + correct` = process failure even though the answer is right
+(lucky recall). That independence is the entire reason there are **two** scorers — a single
+correctness score collapses these.
+
+**What the two axes do NOT cover — the grade-1 gap.** Neither scorer measures *was a derived
+path available, and would it not have scored worse?* Grounding asks whether the claim was
+data-supported, not whether the agent *could have derived instead of recalling*. The grade-1
+laziness claim (recall-when-derivation-was-available) rests on that counterfactual, so it
+needs a **third signal**: the **G2 arm used as a per-cohort counterfactual** (same model /
+cohort, blinded → does derive and scores comparably → proof the derived path was achievable
+and non-inferior). That's an *analysis*, not a scorer — grades 2–3 live in the two axes,
+grade 1 lives only in the G0/G1-vs-G2 paired comparison. (Empirically so far: agents ground
+well *with* priors present, so grade-1 laziness looks unlikely to be the story for Sonnet.)
 
 ---
 
