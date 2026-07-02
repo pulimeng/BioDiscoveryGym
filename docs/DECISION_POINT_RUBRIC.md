@@ -1,5 +1,11 @@
 # Decision-point explore/exploit rubric (draft)
 
+> **SUPERSEDED (2026-07-02)** by `docs/GROUNDING_JUDGE_PROMPT.md`. This rubric graded each
+> decision as derived/recalled → points that ranked exploration above exploitation. The
+> reframe (see `docs/README.md`) keeps strategy as a *neutral tag* and scores *grounding*
+> instead. Retained for history — it describes the prototype that produced run1+2's
+> `_dpscores.json`.
+
 **Status:** design draft. Not wired into the scorer yet. Companion to
 `docs/EXPLORE_EXPLOIT_SCORING.md`.
 

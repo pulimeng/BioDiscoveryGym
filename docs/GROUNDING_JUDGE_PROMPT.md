@@ -36,6 +36,22 @@ independent check instead of an answer the judge echoes.
 
 ---
 
+## Post-validation revision (probe run 1)
+
+The first probe run (76% grounding) surfaced two under-specified rules — mostly the judge
+being *stricter/more correct* than the hand-authored answer key. Three clarifications, now
+live in `scripts/grounding_judge.py` (**the module is canonical for the exact prompt text;
+this doc is the rationale**):
+1. **Strategy = provenance**, independent of later verification or naming — verifying a
+   recalled claim ≠ explore; naming a derived cluster "basal-like" ≠ exploit.
+2. **D1 grounded requires validation** (survival / marker coherence / stability), not just
+   that a clustering function ran; and **D1 is structure only** — cluster *labels* belong to
+   D2/D3 (fixes the judge bleeding an identity contradiction into the partition decision).
+3. **D2 grounded requires a cohort-*specific* marker** — a pan-cancer gene (TP53, CTNNB1)
+   alone does not confirm identity.
+Four probe keys were corrected to match (they were too generous, agreeing with the judge's
+stricter read). The prompt block below reflects these.
+
 ## System prompt
 
 ```

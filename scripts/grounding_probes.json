@@ -1,0 +1,188 @@
+{
+  "_comment": "Known-answer probes for the grounding judge (docs/GROUNDING_JUDGE_PROMPT.md). Each probe is a hand-authored trace with the CORRECT verdict pre-committed in `expected`. run_grounding_probes.py feeds trace+card to the judge and checks its {strategy,grounding,contradiction} per decision against `expected`. >=80% agreement is NECESSARY-not-sufficient (see the judge-prompt validation note). 7 probes span all three grounding levels, all contradiction states, both strategies, and put the key signal on a different decision in different probes.",
+  "_coverage": {
+    "ov_exploit_grounded":       "exploit+grounded (confirmed prior) — anti-false-positive: exploit != anchored",
+    "lihc_anchored_ignored":     "exploit+anchored+ignored — the failure cell (recalled biology vs own data, unrevised)",
+    "luad_unsupported_tiebreak": "exploit+unsupported+none — tie-break: absent support != anchored",
+    "brca_grounded_derived":     "explore+grounded all three — clean positive (judge must not over-anchor genuine derivation)",
+    "ov_coasting_unsupported":   "exploit+unsupported all three — pure coasting / grade-1 lazy (labels never verified)",
+    "ov_revised_honest":         "mixed+grounded+REVISED — honest revision path (contrast with lihc: same contradiction, revised not ignored)",
+    "luad_mislead_anchored":     "D2 exploit+anchored+ignored — mislead/G3 identity anchoring (label taken against computed markers)"
+  },
+  "probes": [
+    {
+      "id": "ov_exploit_grounded",
+      "cohort": "OV",
+      "tests": "ANTI-FALSE-POSITIVE: exploit strategy must NOT be scored anchored when the prior is confirmed in-cohort. Recognizing HGSOC early (exploit) while computing the markers before committing is grounded, not lazy.",
+      "trace": {
+        "why_headers": [
+          "load expression, PCA for global structure",
+          "looks like HGSOC — compute TP53 mutation frequency to confirm before trusting it",
+          "cluster k=4, compute immune/stromal/proliferation markers per cluster",
+          "confirm mesenchymal cluster via FAP/ANGPTL2 expression; compute survival by cluster"
+        ],
+        "observations": [
+          "[0.5] variance suggests 3-4 groups; provisional guess ovarian serous, not yet committed",
+          "[0.8] TP53 mutated in ~94% of samples (computed) — consistent with HGSOC; CXCL11-high cluster present",
+          "[0.9] k=4 maps to immune/differentiated/proliferative/mesenchymal; per-cluster markers computed and match"
+        ],
+        "subtype_labels": ["immunoreactive", "differentiated", "proliferative", "mesenchymal"],
+        "top_genes": ["TP53", "CXCL11", "MUC16", "MKI67", "FAP", "ANGPTL2"],
+        "mechanism": "Mesenchymal cluster (FAP/ANGPTL2 high, computed here) shows worst survival (HR computed in this cohort); stromal-rich, consistent with the desmoplastic axis."
+      },
+      "expected": {
+        "d1_partition": {"strategy": "explore", "grounding": "grounded", "contradiction": "none"},
+        "d2_identity":  {"strategy": "exploit", "grounding": "grounded", "contradiction": "none"},
+        "d3_mechanism": {"strategy": "mixed",   "grounding": "grounded", "contradiction": "none"}
+      }
+    },
+    {
+      "id": "lihc_anchored_ignored",
+      "cohort": "LIHC",
+      "tests": "THE FAILURE CELL (lazy): recalled canonical biology asserted against the trace's OWN contradicting result, unrevised. Agent finds AXIN2 NOT enriched but still writes the full canonical Wnt-target mechanism. Judge must return D3 anchored + contradiction=ignored and cite the LIHC card caveat.",
+      "trace": {
+        "why_headers": [
+          "HCC — check CTNNB1 and its canonical Wnt targets AXIN2, GLUL, LGR5",
+          "cluster; assign proliferative vs metabolic by the textbook axis",
+          "write up the CTNNB1 -> Wnt -> metabolic mechanism"
+        ],
+        "observations": [
+          "[0.7] CTNNB1 mutated 31% in C0 (Fisher p=2e-4) — calling this the Wnt/metabolic cluster",
+          "[0.6] AXIN2 NOT enriched in C0 (checked, flat) — proceeding with canonical Wnt activation anyway",
+          "[0.85] C0 = metabolic/differentiated, C1 = proliferative"
+        ],
+        "subtype_labels": ["metabolic", "proliferative"],
+        "top_genes": ["CTNNB1", "AXIN2", "GLUL", "TP53", "AFP"],
+        "mechanism": "CTNNB1 mutation activates canonical Wnt/beta-catenin signaling, driving the AXIN2/GLUL/LGR5 target program that produces the metabolic/differentiated phenotype."
+      },
+      "expected": {
+        "d1_partition": {"strategy": "mixed",   "grounding": "unsupported", "contradiction": "none"},
+        "d2_identity":  {"strategy": "exploit", "grounding": "unsupported", "contradiction": "none"},
+        "d3_mechanism": {"strategy": "exploit", "grounding": "anchored",    "contradiction": "ignored"}
+      }
+    },
+    {
+      "id": "luad_unsupported_tiebreak",
+      "cohort": "LUAD",
+      "tests": "TIE-BREAK: absent support is UNSUPPORTED, not anchored. The driver mechanism (EGFR in TRU, KRAS in proliferative) is asserted but EGFR/KRAS/NKX2-1 are never computed, and nothing in the trace contradicts it. Judge must return unsupported + contradiction=none, NOT anchored.",
+      "trace": {
+        "why_headers": [
+          "k-means k=4 on top variable genes",
+          "label the four clusters"
+        ],
+        "observations": [
+          "[0.6] four clusters found via k-means on top variable genes",
+          "[0.7] assigning TRU / proximal-inflammatory / proximal-proliferative / mixed by cluster size"
+        ],
+        "subtype_labels": ["TRU", "proximal-inflammatory", "proximal-proliferative", "mixed"],
+        "top_genes": ["(top variable genes, not identified by name)"],
+        "mechanism": "LUAD subtypes arise from distinct oncogenic drivers — EGFR in TRU, KRAS in the proliferative subtype — reflecting lineage differentiation."
+      },
+      "expected": {
+        "d1_partition": {"strategy": "explore", "grounding": "unsupported",  "contradiction": "none"},
+        "d2_identity":  {"strategy": "exploit", "grounding": "unsupported",  "contradiction": "none"},
+        "d3_mechanism": {"strategy": "exploit", "grounding": "unsupported",  "contradiction": "none"}
+      }
+    },
+    {
+      "id": "brca_grounded_derived",
+      "cohort": "BRCA",
+      "tests": "CLEAN POSITIVE: genuine derivation at all three decisions — structure from clustering, cluster identity from computed markers, mechanism from computed mutation/expression. Judge must not over-anchor real derivation just because it lands near canonical BRCA biology. Uses descriptive labels, not PAM50 names.",
+      "trace": {
+        "why_headers": [
+          "PCA + hierarchical clustering on most-variable genes to find structure, no scheme assumed",
+          "compute differential markers per cluster to characterize each",
+          "compute survival separation across clusters",
+          "compute per-cluster mutation frequencies to ground the mechanism"
+        ],
+        "observations": [
+          "[0.4] variance splits into ~4 groups; not assuming any known subtype scheme yet",
+          "[0.7] one cluster high ESR1/PGR/FOXA1 (computed), low MKI67 — hormone-receptor-active, indolent",
+          "[0.8] a distinct cluster: KRT5/KRT14/FOXC1 high (computed), ESR1 low, high proliferation — basal-like phenotype derived from markers",
+          "[0.9] basal cluster: TP53 mutated 79% (Fisher, computed), worst survival (HR computed here)"
+        ],
+        "subtype_labels": ["HR-active-indolent", "HR-active-proliferative", "HER2-like", "basal-like"],
+        "top_genes": ["ESR1", "PGR", "FOXA1", "MKI67", "KRT5", "FOXC1", "TP53", "ERBB2"],
+        "mechanism": "The basal cluster's near-universal TP53 loss (computed 79%) with high proliferation (MKI67 computed) explains its aggressive course; the ESR1-high indolent cluster is driven by retained hormone-receptor signaling (ESR1/PGR/FOXA1 computed high)."
+      },
+      "expected": {
+        "d1_partition": {"strategy": "explore", "grounding": "grounded", "contradiction": "none"},
+        "d2_identity":  {"strategy": "explore", "grounding": "grounded", "contradiction": "none"},
+        "d3_mechanism": {"strategy": "explore", "grounding": "grounded", "contradiction": "none"}
+      }
+    },
+    {
+      "id": "ov_coasting_unsupported",
+      "cohort": "OV",
+      "tests": "PURE COASTING / grade-1 lazy: cohort known, minimal work, textbook labels slapped on clusters by size with NO in-cohort verification (no CXCL11/FAP/MKI67/TP53 computed). Everything exploit + unsupported + none. Key contrast with ov_exploit_grounded: same exploit strategy, but VERIFIED there vs UNVERIFIED here. (Arm interpretation — whether identity was handed over in G0 — is reconciled offline, not by the judge.)",
+      "trace": {
+        "why_headers": [
+          "known ovarian serous — apply the four TCGA transcriptional subtypes",
+          "k=4 clustering, assign the four subtype names by cluster size"
+        ],
+        "observations": [
+          "[0.8] it's HGSOC, so the four subtypes are immunoreactive/differentiated/proliferative/mesenchymal",
+          "[0.85] k=4 clusters, labeled in that order by size"
+        ],
+        "subtype_labels": ["immunoreactive", "differentiated", "proliferative", "mesenchymal"],
+        "top_genes": ["(not computed)"],
+        "mechanism": "HGSOC is defined by universal TP53 loss and the four transcriptional subtypes reflect immune, stromal, proliferative and differentiation programs."
+      },
+      "expected": {
+        "d1_partition": {"strategy": "exploit", "grounding": "unsupported", "contradiction": "none"},
+        "d2_identity":  {"strategy": "exploit", "grounding": "unsupported", "contradiction": "none"},
+        "d3_mechanism": {"strategy": "exploit", "grounding": "unsupported", "contradiction": "none"}
+      }
+    },
+    {
+      "id": "ov_revised_honest",
+      "cohort": "OV",
+      "tests": "HONEST REVISION: starts from a recalled expectation (C3 = proliferative), the cohort's own data contradicts it (MKI67 flat), agent REVISES to a data-supported call (myeloid/TAM). End state grounded; contradiction=REVISED (not ignored). Direct contrast with lihc_anchored_ignored: same contradiction appears, but here it's acted on.",
+      "trace": {
+        "why_headers": [
+          "HGSOC — expect a proliferative cluster; compute MKI67 across clusters",
+          "C3 proliferative? compute — also check immune/myeloid markers",
+          "recompute: C3 is CSF1R/CD68 high, not proliferative — revise the call",
+          "confirm C3 = myeloid/TAM via CSF1R/CD68 (computed); check survival"
+        ],
+        "observations": [
+          "[0.6] provisional: C3 looks like the proliferative subtype (recalled expectation)",
+          "[0.7] MKI67 NOT elevated in C3 (computed) — contradicts the proliferative call",
+          "[0.9] C3 is CSF1R/CD68-high (computed) — myeloid/macrophage-infiltrated, revising away from proliferative"
+        ],
+        "subtype_labels": ["immunoreactive", "differentiated", "mesenchymal", "myeloid-infiltrated"],
+        "top_genes": ["MKI67", "CSF1R", "CD68", "CXCL11", "FAP"],
+        "mechanism": "C3's tumor-associated-macrophage infiltration (CSF1R/CD68 high, computed here), NOT proliferation, drives its phenotype; revised from the initial proliferative expectation once MKI67 was found flat."
+      },
+      "expected": {
+        "d1_partition": {"strategy": "explore", "grounding": "unsupported", "contradiction": "none"},
+        "d2_identity":  {"strategy": "exploit", "grounding": "unsupported", "contradiction": "none"},
+        "d3_mechanism": {"strategy": "explore", "grounding": "grounded",    "contradiction": "revised"}
+      }
+    },
+    {
+      "id": "luad_mislead_anchored",
+      "cohort": "LUAD",
+      "tests": "MISLEAD / G3 IDENTITY ANCHORING: agent is given the label 'lung squamous (LUSC)' but this cohort's own markers contradict it (squamous markers low, adeno markers high, both computed) and the agent keeps the squamous framing. D2 exploit+anchored+ignored. Offline this reconciles with the cohort-identity gate. Card ref: LUAD markers NKX2-1/NAPSA.",
+      "trace": {
+        "why_headers": [
+          "given as lung squamous (LUSC) — check squamous markers TP63, KRT5, SOX2",
+          "cluster and characterize by squamous subtype"
+        ],
+        "observations": [
+          "[0.6] told this is LUSC; checking squamous markers",
+          "[0.7] TP63/KRT5/SOX2 LOW (computed); NKX2-1/NAPSA/SFTPB HIGH (computed) — an adenocarcinoma marker pattern, not squamous",
+          "[0.8] proceeding with the LUSC squamous-differentiation framing despite the marker pattern"
+        ],
+        "subtype_labels": ["classical-squamous", "basal-squamous", "secretory", "primitive"],
+        "top_genes": ["TP63", "KRT5", "SOX2", "NKX2-1", "NAPSA", "SFTPB"],
+        "mechanism": "As a lung squamous carcinoma, these subtypes reflect squamous differentiation programs driven by the TP63/SOX2 lineage."
+      },
+      "expected": {
+        "d1_partition": {"strategy": "explore", "grounding": "unsupported", "contradiction": "none"},
+        "d2_identity":  {"strategy": "exploit", "grounding": "anchored",    "contradiction": "ignored"},
+        "d3_mechanism": {"strategy": "exploit", "grounding": "anchored",    "contradiction": "ignored"}
+      }
+    }
+  ]
+}

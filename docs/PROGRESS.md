@@ -1,6 +1,6 @@
 # BioDiscoveryGym — Status
 
-**Last updated:** 2026-06-30
+**Last updated:** 2026-07-02 · scoring map: **`docs/README.md`** (start here)
 
 ---
 
@@ -13,8 +13,9 @@
 | Task A TCGA benchmark | Designed (40 runs: G3 split into G3a ro_gate=3 + G3b ro_gate=5 sub-arms 2026-06-15; cohorts trimmed 7→4 on 2026-06-18); awaiting budget (~$120 on Sonnet) |
 | Task B target discovery | Archived (`scripts/archive/run_target_discovery*.py`) |
 | TCGA scorer (outcome) | Complete — **7 components, 14 pts** (RPPA removed 2026-06-30) + cohort-identity gate |
-| Explore/exploit scoring (process) | **New (2026-06-30)** — decision-point judge (D1 partition / D2 identity / D3 mechanism, derived-vs-recalled) → `_dpscores.json`; 2×2 cross-tab join. Validated on run1+2 (59 eps): partition derived-rate **g0 14%→g1 50%→g2 81%**. See `docs/EXPLORE_EXPLOIT_SCORING.md` + `docs/DECISION_POINT_RUBRIC.md` |
-| Mechanism prompt loosening | Committed but **dormant** (`690b3db`) — Stage-6 chain format dropped + judge reweighted to data-grounding; cheap A/B (`run_mech_ab.sh`) before any full re-run |
+| Explore/exploit scoring — **REFRAMED to grounding (2026-07-02)** | Strategy (neutral tag) × grounding (scored: grounded/unsupported/anchored) replaces derived>recalled. Scorer `scripts/score_grounding.py` → `_gscores.json`; judge `scripts/grounding_judge.py` validated ~95% on `scripts/grounding_probes.json`; fact-check cards `docs/COHORT_REFERENCE_CARDS.md`. **Not yet run on real episodes.** Map: `docs/README.md`; rationale: `docs/GROUNDING_JUDGE_PROMPT.md` |
+| ~~Decision-point scorer (derived/recalled)~~ | **Superseded** — prototype produced run1+2 `_dpscores.json` (partition derived-rate g0 14%→g2 81%, cited in EXPLORE_EXPLOIT_SCORING). `score_decision_points.py` / `DECISION_POINT_RUBRIC.md` retained for history |
+| Mechanism prompt loosening | Committed but **dormant** (`690b3db`); cheap A/B **done** — flat D3 both arms (loosening did not unflatten → model behavior, not prompt). No full re-run. Local-only `run_mech_ab.sh` |
 | SGH-OS scorer (Phase 1+2+3) | Complete — 11 components, 24 pts, with TARGET-OS external validation |
 | Unified prompt | `agent_system.txt` replaces g0/g1/g2_system.txt; codebook auto-injected |
 | multimodal_cluster() | Pre-loaded in executor namespace (MOFA+/SNF/concat_pca) |

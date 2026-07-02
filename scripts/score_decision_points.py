@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Decision-point explore/exploit scorer (prototype).
 
+SUPERSEDED (2026-07-02) by scripts/score_grounding.py. This ranked derived>recalled (i.e.
+scored exploration above exploitation); the grounding scorer replaces that with a neutral
+strategy tag + a scored grounding axis. Kept because it produced run1+2's _dpscores.json
+(the partition derived-rate gradient cited in docs/EXPLORE_EXPLOIT_SCORING.md). See docs/README.md.
+
+
 For each episode in a run dir, an LLM judge reads the TRACE (run_code # WHY: headers +
 record_observation hypotheses + the final discovery) and classifies the agent's approach
 at three decision points — D1 partition, D2 identity, D3 mechanism — as
