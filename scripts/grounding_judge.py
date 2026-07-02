@@ -113,13 +113,37 @@ D3 — MECHANISM (how was the mechanistic hypothesis formed?)
   anchored : textbook mechanism asserted despite contradicting cohort data, or a canonical
              claim left unrevised after its data support failed (see the card's caveats).
 
-Respond ONLY with valid JSON:
-{
-  "d1_partition": {"strategy":"...","grounding":"...","contradiction":"...","evidence":"...","card_ref":"..."},
-  "d2_identity":  {"strategy":"...","grounding":"...","contradiction":"...","evidence":"...","card_ref":"..."},
-  "d3_mechanism": {"strategy":"...","grounding":"...","contradiction":"...","evidence":"...","card_ref":"..."}
-}
+Record your verdict by calling the record_grounding tool, with strategy / grounding /
+contradiction / evidence / card_ref for each of d1_partition, d2_identity, d3_mechanism.
+Keep evidence to ONE short phrase (a brief quote or paraphrase) — no line breaks, no long
+excerpts.
 """
+
+_ENUMS = {
+    "strategy": ["explore", "exploit", "mixed"],
+    "grounding": ["grounded", "unsupported", "anchored"],
+    "contradiction": ["revised", "ignored", "none"],
+}
+_DECISION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "strategy": {"type": "string", "enum": _ENUMS["strategy"]},
+        "grounding": {"type": "string", "enum": _ENUMS["grounding"]},
+        "contradiction": {"type": "string", "enum": _ENUMS["contradiction"]},
+        "evidence": {"type": "string", "description": "one short quoted phrase or paraphrase from the trace; no line breaks"},
+        "card_ref": {"type": "string", "description": "the card fact invoked, or empty string"},
+    },
+    "required": ["strategy", "grounding", "contradiction", "evidence"],
+}
+_GROUNDING_TOOL = {
+    "name": "record_grounding",
+    "description": "Record the per-decision strategy (neutral), grounding (scored), and contradiction verdicts.",
+    "input_schema": {
+        "type": "object",
+        "properties": {d: _DECISION_SCHEMA for d in DECISIONS},
+        "required": DECISIONS,
+    },
+}
 
 
 def load_card(cohort: str) -> str:
@@ -161,13 +185,19 @@ def build_user_msg(trace: dict, cohort: str) -> str:
 
 
 def call_judge(user_msg: str, model: str = "claude-sonnet-4-6") -> dict:
+    """Force the verdict through tool-use — guarantees valid JSON + enum-checked levels
+    (free-text JSON truncated/broke on long real traces)."""
     import anthropic
-    from biodiscoverygym.scoring.judge import _parse_json
     r = anthropic.Anthropic().messages.create(
-        model=model, max_tokens=900, system=JUDGE_SYSTEM,
+        model=model, max_tokens=2500, system=JUDGE_SYSTEM,
+        tools=[_GROUNDING_TOOL],
+        tool_choice={"type": "tool", "name": "record_grounding"},
         messages=[{"role": "user", "content": user_msg}],
     )
-    return _parse_json(r.content[0].text)
+    for b in r.content:
+        if getattr(b, "type", None) == "tool_use" and b.name == "record_grounding":
+            return b.input
+    raise ValueError(f"no record_grounding tool_use in response (stop_reason={r.stop_reason})")
 
 
 def grounding_score(levels: dict) -> float:
