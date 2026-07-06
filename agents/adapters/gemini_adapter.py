@@ -73,12 +73,19 @@ class GeminiAdapter(Adapter):
 
     def create(self, *, model, system, messages, tools, max_tokens, thinking=None) -> Response:
         t = self._t
-        config = t.GenerateContentConfig(
+        cfg = dict(
             system_instruction=system,
             tools=self._tools(tools),
             max_output_tokens=min(max_tokens, self.max_output_cap),
             automatic_function_calling=t.AutomaticFunctionCallingConfig(disable=True),
         )
+        # Parity: disable Gemini 2.5's default "thinking" (thinking=None -> budget 0), or map
+        # an explicit budget through. NOTE: 2.5 Flash honors 0 (fully off); 2.5 Pro has a
+        # floor (~128 tokens) and cannot be fully disabled.
+        if hasattr(t, "ThinkingConfig"):
+            budget = int(thinking.get("budget_tokens", 0)) if thinking else 0
+            cfg["thinking_config"] = t.ThinkingConfig(thinking_budget=budget)
+        config = t.GenerateContentConfig(**cfg)
         resp = self._client.models.generate_content(
             model=model, contents=self._contents(messages), config=config)
 
