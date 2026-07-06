@@ -19,7 +19,8 @@ _FINISH = {"tool_calls": "tool_use", "stop": "end_turn", "length": "max_tokens",
 
 class OpenAIAdapter(Adapter):
     provider = "openai"
-    max_output_cap = 16384
+    max_output_cap = 32768   # gpt-4.1 max output; agent requests 32k -> uniform across the ladder
+                             # (drop to 16384 if you run gpt-4o, whose ceiling is lower)
 
     def __init__(self, api_key: str | None = None, **kw):
         super().__init__(api_key=api_key, **kw)

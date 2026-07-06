@@ -62,9 +62,9 @@ The paper figure is the **outcome × support cross-tab per model** — does the 
 
 - ✅ prompt / tools / loop / codebook-reveal gate — shared by construction (one agent)
 - ✅ reasoning off — Claude budget 0, GPT-4.1 has none, Gemini budget 0 (Pro floor noted)
-- ⚠️ **output-token cap differs** — adapters clamp to native ceilings (Anthropic 64k, OpenAI 16k,
-  Gemini 8k). Gemini's 8k could truncate a long submission. Decide: accept native, or set a
-  uniform cap in the adapters for strict parity.
+- ✅ **output-token cap uniform** — the agent requests 32k/turn and every adapter's ceiling is
+  ≥ that (Anthropic 64k, OpenAI 32768 for gpt-4.1, Gemini 65536), so all four get a uniform
+  32k output cap. (If you swap to `gpt-4o`, lower `OpenAIAdapter.max_output_cap` to 16384.)
 - ⚠️ verify `reveal@RO` matches in the smoke output before the full run.
 
 ## Cost

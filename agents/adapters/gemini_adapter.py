@@ -19,7 +19,7 @@ from .base import Adapter, Block, Response, iter_blocks
 
 class GeminiAdapter(Adapter):
     provider = "gemini"
-    max_output_cap = 8192
+    max_output_cap = 65536   # gemini-2.5 max output; agent requests 32k -> uniform across the ladder
 
     def __init__(self, api_key: str | None = None, **kw):
         super().__init__(api_key=api_key, **kw)
