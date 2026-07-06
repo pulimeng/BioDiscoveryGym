@@ -12,9 +12,10 @@
 #         export ANTHROPIC_API_KEY=... OPENAI_API_KEY=... GEMINI_API_KEY=...   (or GOOGLE_API_KEY)
 # Usage:  bash scripts/smoke_ladder.sh
 #         SMOKE_MODELS="claude-opus-4-8 gpt-4.1" SMOKE_CALLS=40 bash scripts/smoke_ladder.sh
-set -uo pipefail
+set -o pipefail   # not -u: macOS bash 3.2 errors on empty-array expansion under -u
 
 COHORT="${SMOKE_COHORT:-BRCA}"
+COHORT_LC="$(echo "$COHORT" | tr '[:upper:]' '[:lower:]')"   # bash 3.2 has no ${var,,}
 SEED="${SMOKE_SEED:-42}"
 CALLS="${SMOKE_CALLS:-50}"
 read -r -a MODELS <<< "${SMOKE_MODELS:-claude-sonnet-4-6 claude-opus-4-8 gpt-4.1 gemini-2.5-pro}"
@@ -39,7 +40,7 @@ key_name() {
 declare -a SUMMARY
 for m in "${MODELS[@]}"; do
     tag="${m//[^a-zA-Z0-9]/_}"
-    label="g2_${COHORT,,}_s${SEED}_${tag}"
+    label="g2_${COHORT_LC}_s${SEED}_${tag}"
     if ! key_ok "$m"; then
         echo ">>> SKIP $m — $(key_name "$m") not set"
         SUMMARY+=("$m|SKIP (no key)|-|-|-|-")
