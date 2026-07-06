@@ -101,13 +101,18 @@ default), and the **strategy × support cross-tab** (how much prior-available re
 
 ## Superseded / prototype — do NOT use for new work
 
+Superseded pieces are moved to `scripts/archive/` and `docs/archive/`.
+
 | File | Was | Now |
 |---|---|---|
-| `scripts/score_decision_points.py` → `_dpscores.json` | derived>recalled scorer (ranked exploration) | **superseded** by `score_support.py` (still produced run1+2's `_dpscores`, cited in EXPLORE_EXPLOIT_SCORING) |
-| `docs/DECISION_POINT_RUBRIC.md` | derived/recalled rubric | **superseded** by `SUPPORT_JUDGE_PROMPT.md` |
-| `scripts/crosstab_explore_exploit.py` | joined old `_dpscores` + `_v3scores` | prototype; support cross-tab now built into `score_support.py` |
-| `scripts/proto_belief_metrics.py` | belief-trail (effort) metrics | prototype; still relevant as the **conditional corroborator** (ttc/n_obs inside ungrounded cells), not yet wired |
+| `scripts/archive/score_decision_points.py` → `_dpscores.json` | derived>recalled scorer (ranked exploration) | **archived** — superseded by `score_support.py` (produced run1+2's `_dpscores`, cited in EXPLORE_EXPLOIT_SCORING) |
+| `docs/archive/DECISION_POINT_RUBRIC.md` | derived/recalled rubric | **archived** — superseded by `SUPPORT_JUDGE_PROMPT.md` |
+| `scripts/archive/crosstab_explore_exploit.py` | joined old `_dpscores` + `_v3scores` | **archived** — template for the pending outcome×support join (needs repointing to `_supportscores`) |
+| `scripts/proto_belief_metrics.py` | belief-trail (effort) metrics | prototype, kept top-level; the **conditional corroborator** (ttc/n_obs inside ungrounded cells), not yet wired |
 | `docs/EXPLORE_EXPLOIT_SCORING.md` | the design-history record (the reframe reasoning) | keep as rationale; its "pre-commit" header is stale |
+
+**Repo layout:** data-download scripts grouped under `scripts/download/`; superseded code in
+`scripts/archive/`, superseded docs in `docs/archive/`.
 
 **Local-only (not on GitHub):** `run_mech_ab.sh`, `gen_run1_report.py`, `gen_run2_report.py`,
 `gen_merged_report.py`, `run_tcga_missings.sh`.

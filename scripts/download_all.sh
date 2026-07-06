@@ -3,10 +3,10 @@
 # Safe to re-run — all scripts skip already-downloaded files.
 #
 # Usage:
-#   bash scripts/download_all.sh                           # full setup (both benchmarks)
-#   bash scripts/download_all.sh --skip-tcga               # skip large TCGA downloads
-#   bash scripts/download_all.sh --depmap-release 24Q2
-#   bash scripts/download_all.sh --target-discovery-only   # skip anomaly-benchmark-only steps
+#   bash scripts/download/download_all.sh                           # full setup (both benchmarks)
+#   bash scripts/download/download_all.sh --skip-tcga               # skip large TCGA downloads
+#   bash scripts/download/download_all.sh --depmap-release 24Q2
+#   bash scripts/download/download_all.sh --target-discovery-only   # skip anomaly-benchmark-only steps
 #
 # After TCGA downloads, build expression.parquet caches:
 #   python scripts/process_tcga.py    # all target-discovery cohorts
@@ -69,37 +69,37 @@ run_step() {
 # 1. DepMap / CCLE  (used by target discovery)
 # ------------------------------------------------------------------
 run_step "DepMap ${DEPMAP_RELEASE}" \
-    scripts/download_depmap.py --release "$DEPMAP_RELEASE"
+    scripts/download/download_depmap.py --release "$DEPMAP_RELEASE"
 
 # ------------------------------------------------------------------
 # 2. PRISM drug response  (used by target discovery)
 # ------------------------------------------------------------------
 run_step "PRISM" \
-    scripts/download_prism.py
+    scripts/download/download_prism.py
 
 # ------------------------------------------------------------------
 # 3. GTEx normal-tissue baseline  (used by target discovery)
 # ------------------------------------------------------------------
 run_step "GTEx v8" \
-    scripts/download_gtex.py
+    scripts/download/download_gtex.py
 
 # ------------------------------------------------------------------
 # 4. gnomAD gene constraint  (used by target discovery)
 # ------------------------------------------------------------------
 run_step "gnomAD v2.1.1 constraint" \
-    scripts/download_gnomad.py
+    scripts/download/download_gnomad.py
 
 # ------------------------------------------------------------------
 # 5. HPA normal tissue protein expression  (used by target discovery)
 # ------------------------------------------------------------------
 run_step "Human Protein Atlas — normal tissue" \
-    scripts/download_hpa.py
+    scripts/download/download_hpa.py
 
 # ------------------------------------------------------------------
 # 5b. CCLE proteomics — mass-spec protein abundance  (used by target discovery)
 # ------------------------------------------------------------------
 run_step "CCLE proteomics (Nusinow 2020)" \
-    scripts/download_ccle_proteomics.py
+    scripts/download/download_ccle_proteomics.py
 
 # ------------------------------------------------------------------
 # 6. TCGA expression + clinical
@@ -110,7 +110,7 @@ if [[ $SKIP_TCGA -eq 1 ]]; then
     warn "Skipping TCGA downloads (--skip-tcga set)"
 else
     run_step "TCGA expression + clinical (11 cohorts)" \
-        scripts/download_tcga.py --cohorts BRCA COAD HNSC KIRC LIHC LUAD LUSC OV PRAD SKCM UCEC
+        scripts/download/download_tcga.py --cohorts BRCA COAD HNSC KIRC LIHC LUAD LUSC OV PRAD SKCM UCEC
 fi
 
 # ------------------------------------------------------------------
@@ -118,7 +118,7 @@ fi
 # ------------------------------------------------------------------
 if [[ $SKIP_TCGA -eq 0 ]]; then
     run_step "TCGA mutations (11 cohorts)" \
-        scripts/download_mutations.py --cohorts BRCA COAD HNSC KIRC LIHC LUAD LUSC OV PRAD SKCM UCEC
+        scripts/download/download_mutations.py --cohorts BRCA COAD HNSC KIRC LIHC LUAD LUSC OV PRAD SKCM UCEC
 fi
 
 # ------------------------------------------------------------------
@@ -135,7 +135,7 @@ fi
 # ------------------------------------------------------------------
 if [[ -n "${COSMIC_EMAIL:-}" && -n "${COSMIC_PASSWORD:-}" ]]; then
     run_step "COSMIC Cancer Gene Census" \
-        scripts/download_cosmic.py
+        scripts/download/download_cosmic.py
 else
     warn "Skipping COSMIC CGC — set COSMIC_EMAIL and COSMIC_PASSWORD to include it."
 fi
@@ -145,7 +145,7 @@ fi
 # ------------------------------------------------------------------
 if [[ $TARGET_DISCOVERY_ONLY -eq 0 ]]; then
     run_step "GDSC" \
-        scripts/download_gdsc.py
+        scripts/download/download_gdsc.py
 fi
 
 # ------------------------------------------------------------------
@@ -153,7 +153,7 @@ fi
 # ------------------------------------------------------------------
 if [[ $SKIP_TCGA -eq 0 && $TARGET_DISCOVERY_ONLY -eq 0 ]]; then
     run_step "TCGA RPPA (anomaly benchmark cohorts)" \
-        scripts/download_rppa.py --cohorts BRCA PRAD UCEC LUAD LIHC LUSC OV
+        scripts/download/download_rppa.py --cohorts BRCA PRAD UCEC LUAD LIHC LUSC OV
 fi
 
 # ------------------------------------------------------------------
@@ -161,7 +161,7 @@ fi
 # ------------------------------------------------------------------
 if [[ $SKIP_TCGA -eq 0 && $TARGET_DISCOVERY_ONLY -eq 0 ]]; then
     run_step "TCGA molecular subtypes" \
-        scripts/download_subtypes.py
+        scripts/download/download_subtypes.py
 fi
 
 # ------------------------------------------------------------------
@@ -169,9 +169,9 @@ fi
 # ------------------------------------------------------------------
 if [[ $TARGET_DISCOVERY_ONLY -eq 0 ]]; then
     run_step "MSigDB + STRING DB" \
-        scripts/download_genesets.py
+        scripts/download/download_genesets.py
     run_step "OncoKB + cancer genes" \
-        scripts/download_cancer_genes.py
+        scripts/download/download_cancer_genes.py
 fi
 
 # ------------------------------------------------------------------
@@ -180,7 +180,7 @@ fi
 #     Pass --skip-download /path/to/kg.csv to use a local file
 # ------------------------------------------------------------------
 run_step "PrimeKG (gene_gene / gene_drug / gene_disease / gene_pathway)" \
-    scripts/download_primekg.py
+    scripts/download/download_primekg.py
 
 # ------------------------------------------------------------------
 # 14. OpenTargets actionability  (tractability + known drugs)
@@ -188,7 +188,7 @@ run_step "PrimeKG (gene_gene / gene_drug / gene_disease / gene_pathway)" \
 #     Saves data/opentargets/ot_tractability.parquet + ot_known_drugs.parquet
 # ------------------------------------------------------------------
 run_step "OpenTargets (tractability + known drugs for ~700 cancer genes)" \
-    scripts/download_opentargets.py
+    scripts/download/download_opentargets.py
 
 # ------------------------------------------------------------------
 # Summary

@@ -52,14 +52,14 @@ Key findings:
 - Stale seed-42 runs scored under the old judge; re-scoring needed if comparing directly
 
 ### PrimeKG integration
-- Download: `python scripts/download_primekg.py` (Harvard Dataverse doi:10.7910/DVN/IXA7BM)
+- Download: `python scripts/download/download_primekg.py` (Harvard Dataverse doi:10.7910/DVN/IXA7BM)
 - 4 splits: gene-gene (~642k edges), gene-drug (~24k), gene-disease (~95k), gene-pathway (~84k)
 - Agent access: `--primekg` flag → pre-reveal with PCST instructions in initial message
 - PCST tool: `biodiscoverygym/tools/pcst.py` — networkx KMB approximation, degree-penalized weights
 - Purpose: find minimal connected subgraph (Steiner tree) linking top differential genes; Steiner nodes = mechanistic intermediates
 
 ### OpenTargets integration
-- Download: `python scripts/download_opentargets.py` (OpenTargets Platform GraphQL API, no auth)
+- Download: `python scripts/download/download_opentargets.py` (OpenTargets Platform GraphQL API, no auth)
 - 1,227 OncoKB genes: 32,424 tractability rows, 45,842 drug rows, 147 genes with approved drugs
 - Agent access: automatically revealed inside `request_codebook` response (no flag needed)
 - Tool: `biodiscoverygym/tools/opentargets.py` — `get_actionability(gene)`, `batch_actionability([genes])`
