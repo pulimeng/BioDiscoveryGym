@@ -124,6 +124,11 @@ NatureBench `2606.24530v1` (method-translation = exploit, the content).
 
 ## Current state → next
 
-Judge validated (~95% support on probes). Scorer ready. **Not yet run on real episodes.**
-Next: run `score_support.py` on run1+2 G0/G1 → read the cross-tab. Downstream: add G0 seeds
-(grade-1 evidence is thin at n=8), wire the effort corroborator, then the G0/G1-vs-G2 contrast.
+**Sonnet run1+2 is fully scored** (62 eps, both tracks). Result: the two axes are orthogonal
+(support ≠ correctness — the design works), Sonnet grounds well, and anchoring is adversarial
+(G3), not spontaneous — the "unwarranted recall is common" thesis did **not** hold for a
+frontier model. So the next move is **discriminate across models**: the **model ladder**
+(Sonnet / Opus / GPT-4.1 / Gemini) tests whether the correct-but-unwarranted cell fills for
+weaker models. One agent, provider adapters (`agents/adapters/`) — see **`docs/MODEL_LADDER.md`**
+(setup, smoke test, full run). Downstream: add G0 seeds (grade-1 counterfactual), wire the
+effort corroborator (ttc/n_obs), build the outcome×support join script.

@@ -69,7 +69,8 @@ def parse_args():
     p.add_argument(
         "--model",
         default="claude-sonnet-4-6",
-        help="Anthropic model ID (default: claude-sonnet-4-6 ~$3/ep; use claude-opus-4-7 ~$15/ep for final runs)",
+        help="Model ID; routed to a provider adapter by prefix: claude-* (Anthropic), "
+             "gpt-*/o1/o3/o4 (OpenAI), gemini-* (Google). Default: claude-sonnet-4-6.",
     )
     p.add_argument(
         "--max-tool-calls",
