@@ -43,3 +43,10 @@ scripts/gen_run1_report.py
 scripts/gen_run2_report.py
 scripts/gen_merged_report.py
 scripts/run_tcga_missings.sh
+
+# API keys — NEVER commit
+keys.txt
+set_keys.sh
+.env
+.env.*
+*.keys

@@ -9,11 +9,19 @@ adapter automatically.
 
 ```bash
 pip install anthropic openai google-genai
-export ANTHROPIC_API_KEY=...      # Claude (Sonnet, Opus)
-export OPENAI_API_KEY=...         # GPT
-export GEMINI_API_KEY=...         # Gemini   (GOOGLE_API_KEY also works)
 ```
-Keys are per-provider (separate billing). Anthropic you already have.
+Put your keys in `keys.txt` (gitignored, one per line) then source the loader:
+```
+# keys.txt
+Anthropic:sk-ant-...
+OpenAI:sk-proj-...
+Gemini:AIza...
+```
+```bash
+source load_keys.sh     # exports ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY(+GOOGLE_API_KEY)
+```
+Keys are per-provider (separate billing). Anthropic you already have. `load_keys.sh` holds no
+secrets (committable); `keys.txt` is gitignored — never commit it.
 
 ## 2. Models (matched frontier tier, reasoning OFF)
 
