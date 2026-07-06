@@ -7,11 +7,12 @@
 #     OpenAI:sk-proj-...
 #     Gemini:AIza...
 #
-# Usage:  source load_keys.sh                 # reads ./keys.txt
-#         source load_keys.sh /path/keys.txt  # or a custom path
+# Usage:  source load_keys.sh                    # reads ./keys.txt
+#         source load_keys.sh "/path with spaces/keys.txt"   # explicit path (quote it)
+#         KEYS_FILE="/path/keys.txt" source load_keys.sh     # or set once via env
 # Must be `source`d (not executed) so the exports persist in your shell.
 
-KEYS_FILE="${1:-keys.txt}"
+KEYS_FILE="${1:-${KEYS_FILE:-keys.txt}}"
 if [[ ! -f "$KEYS_FILE" ]]; then
     echo "load_keys: '$KEYS_FILE' not found — create it with lines like 'Anthropic:sk-ant-...'" >&2
     return 1 2>/dev/null || exit 1
