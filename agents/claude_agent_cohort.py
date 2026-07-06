@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-import anthropic
+from agents.adapters import get_adapter
 
 from biodiscoverygym.executor import CodeExecutor
 from biodiscoverygym.utils.prompts import load as _load_prompt
@@ -285,10 +285,9 @@ class ClaudeAgentCohort:
             except FileNotFoundError:
                 _system_prompt_template = _load_prompt(self._FALLBACK_PROMPT)
 
-        import httpx
-        self.client = anthropic.Anthropic(
-            timeout=httpx.Timeout(connect=30, read=600, write=30, pool=30)
-        )
+        # One agent, many providers: the adapter is chosen by model id (claude* / gpt*|o* /
+        # gemini*). Prompt, tools, loop and codebook-reveal timing stay identical across models.
+        self.adapter = get_adapter(self.model)
 
         if self.mislead_cohort:
             if sample_codebook_ro_gate is not None:
@@ -501,16 +500,12 @@ class ClaudeAgentCohort:
         ):
             for attempt in range(3):
                 try:
-                    with self.client.messages.stream(
-                        messages=messages,
-                        **_api_kwargs,
-                    ) as stream:
-                        response = stream.get_final_message()
+                    response = self.adapter.create(messages=messages, **_api_kwargs)
                     break
                 except Exception as e:
                     if attempt == 2:
                         raise
-                    self._log(f"[ClaudeAgentCohort] Stream error (attempt {attempt+1}/3): {e} — retrying")
+                    self._log(f"[ClaudeAgentCohort] API error (attempt {attempt+1}/3): {e} — retrying")
 
             self._log(
                 f"[ClaudeAgentCohort] Turn {tool_call_count + 1}: "
