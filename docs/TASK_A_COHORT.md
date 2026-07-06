@@ -516,7 +516,7 @@ Hard-won failure modes from the first real TCGA runs (run1, 2026-06), and the gu
 **Cause:** `submit_discovery` takes a *path string* for `proposed_grouping`. The agent saves the grouping correctly in `run_code` (real Python: `json.dump(g, open(output_dir/'grouping.json'))` — `output_dir` always resolves), but to fill the *tool argument* it must transcribe the **literal value** of `output_dir` (an opaque UUID path like `results/tcga/run1/4de3aaa0/`) as free text. If that value was never `print()`ed, it isn't in context, so the model confabulates a plausible path — e.g. an extra `biodiscoverygym/` segment, or `/tmp/biodiscovery_output/`. The handler can't open it → silently `{}`. **Models use opaque variables correctly in code but confabulate their literal values in free text; a stringly-typed path argument is the fragile seam.**
 
 **Guard (two layers, both commited):**
-- *Agent* (`claude_agent_cohort.py` `_resolve_grouping`): if the submitted path is wrong/empty, fall back to `output_dir/grouping.json` at submission time, so the episode JSON carries the real grouping.
+- *Agent* (`cohort_agent.py` `_resolve_grouping`): if the submitted path is wrong/empty, fall back to `output_dir/grouping.json` at submission time, so the episode JSON carries the real grouping.
 - *Scorer* (`score_tcga_episode.py`): if `proposed_grouping` is empty, load `grouping.json` from the episode dir. Rescues already-saved episodes without re-running (re-score with `--rescore`).
 
 **Better long-term fix (not yet done):** drop the path argument entirely — have `submit_discovery` read `output_dir/grouping.json` directly, or accept the grouping dict inline. Removes the confabulation seam.
@@ -564,7 +564,7 @@ Only the **failed** count signals a real problem (a non-zero scorer exit, e.g. a
 | `biodiscoverygym/tools/multimodal.py` | `multimodal_cluster()` — MOFA+/SNF/concat_pca, pre-loaded in namespace |
 | `biodiscoverygym/tools/pcst.py` | Prize-Collecting Steiner Tree via networkx KMB approximation |
 | `biodiscoverygym/tools/opentargets.py` | OpenTargets actionability lookup — `get_actionability()`, `batch_actionability()` |
-| `agents/claude_agent_cohort.py` | `ClaudeAgentCohort` — G0/G1/G2 unified; codebook auto-injected (episode start for G0/G1, action-based gate for G2) |
+| `agents/cohort_agent.py` | `CohortAgent` — G0/G1/G2 unified; codebook auto-injected (episode start for G0/G1, action-based gate for G2) |
 | `prompts/agent_system_tcga.txt` | TCGA faithfulness prompt (G0/G1/G2) |
 | `prompts/agent_system_os.txt` | **OS discovery prompt** — principle-driven, "follow the breakers" Stage 3 |
 | `scripts/run_episode.py` | CLI: `--cohort`, `--explicit-retrieval`, `--gene-codebook-gate`, `--mislead-cohort`, `--seed`, `--primekg` |

@@ -217,7 +217,7 @@ def main():
     check_env()
 
     from biodiscoverygym.episode import Episode
-    from agents.claude_agent_cohort import ClaudeAgentCohort
+    from agents.cohort_agent import CohortAgent
 
     print(f"\n{'='*60}")
     print(f"  BioDiscoveryGym Episode")
@@ -270,7 +270,7 @@ def main():
         rename_clinical=not args.explicit_retrieval,  # G0: real values; G1/G2: categorical values remapped to CAT_X
     )
 
-    agent = ClaudeAgentCohort(
+    agent = CohortAgent(
         model=args.model,
         max_tool_calls=args.max_tool_calls,
         data_dir=args.data_dir,

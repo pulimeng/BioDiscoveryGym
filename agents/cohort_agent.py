@@ -1,5 +1,5 @@
 """
-ClaudeAgentCohort: cohort-discovery agent with per-mode system prompts (G0/G1/G2).
+CohortAgent: cohort-discovery agent with per-mode system prompts (G0/G1/G2).
 Gene names are replaced with GENE_XXXXX identifiers; the codebook is gated or
 pre-revealed depending on mode. All reference-database lookups (DepMap, GTEx,
 MSigDB, STRING) are removed — the agent must rely on statistical structure and
@@ -196,7 +196,7 @@ _TOOLS: list[dict] = [
 ]
 
 
-class ClaudeAgentCohort:
+class CohortAgent:
     """
     Gene-anonymized cohort discovery agent.
 
@@ -351,7 +351,7 @@ class ClaudeAgentCohort:
             resolve(self.skill)  # fail fast on a bad name/path
             self._skill_name = load_meta(self.skill).get("name", self.skill)
             self._system_prompt += skill_pitch(self.skill)
-            self._log(f"[ClaudeAgentCohort] Skill offered (agent-invoked via consult_skill): {self._skill_name}")
+            self._log(f"[CohortAgent] Skill offered (agent-invoked via consult_skill): {self._skill_name}")
         self._skill_consulted = False  # set True when the agent calls consult_skill
 
         self._tools = list(_TOOLS) + [_RECORD_OBSERVATION_TOOL]
@@ -381,10 +381,10 @@ class ClaudeAgentCohort:
                     f"{tcga_prefix}{self.explicit_cohort} ({full_name}).\n\n"
                     + codebook_narrative
                 )
-                self._log(f"[ClaudeAgentCohort] Pre-revealed disease identity + gene codebook (G0)")
+                self._log(f"[CohortAgent] Pre-revealed disease identity + gene codebook (G0)")
             else:
                 pre_reveal_narrative = codebook_narrative
-                self._log(f"[ClaudeAgentCohort] Pre-revealed gene codebook (G1)")
+                self._log(f"[CohortAgent] Pre-revealed gene codebook (G1)")
 
         if self.mislead_cohort and self.sample_codebook_gate == 0:
             fake_map = self._generate_fake_sample_codebook()
@@ -396,7 +396,7 @@ class ClaudeAgentCohort:
                 f"  — {len(fake_map)} samples, available immediately."
             )
             self._log(
-                f"[ClaudeAgentCohort] Pre-revealed sample codebook ({self.mislead_cohort} barcodes) → namespace['sample_codebook']"
+                f"[CohortAgent] Pre-revealed sample codebook ({self.mislead_cohort} barcodes) → namespace['sample_codebook']"
             )
 
         if self.primekg:
@@ -439,10 +439,10 @@ class ClaudeAgentCohort:
                     f"    gd = pd.read_parquet('data/networks/primekg_gene_drug.parquet')\n"
                     f"    gd[gd['x_name'] == 'GENE_A'][['y_name', 'display_relation']]\n"
                 )
-                self._log(f"[ClaudeAgentCohort] PrimeKG enabled → {kg_base}/primekg_*.parquet")
+                self._log(f"[CohortAgent] PrimeKG enabled → {kg_base}/primekg_*.parquet")
             else:
                 missing = [k for k, p in kg_files.items() if not p.exists()]
-                self._log(f"[ClaudeAgentCohort] PrimeKG requested but missing splits: {missing} — run scripts/download_primekg.py")
+                self._log(f"[CohortAgent] PrimeKG requested but missing splits: {missing} — run scripts/download_primekg.py")
 
         begin_text = "Begin. Work through each stage in order and show your reasoning."
         if pre_reveal_narrative:
@@ -481,7 +481,7 @@ class ClaudeAgentCohort:
             or self.sample_codebook_gate == 0  # already pre-revealed above
         )
 
-        self._log(f"[ClaudeAgentCohort] Starting episode {episode_id} (model={self.model})")
+        self._log(f"[CohortAgent] Starting episode {episode_id} (model={self.model})")
 
         _api_kwargs: dict = dict(
             model=self.model,
@@ -491,7 +491,7 @@ class ClaudeAgentCohort:
         )
         if self.thinking_budget > 0:
             _api_kwargs["thinking"] = {"type": "enabled", "budget_tokens": self.thinking_budget}
-            self._log(f"[ClaudeAgentCohort] Extended thinking enabled (budget={self.thinking_budget})")
+            self._log(f"[CohortAgent] Extended thinking enabled (budget={self.thinking_budget})")
 
         while (
             tool_call_count < self.max_tool_calls
@@ -505,10 +505,10 @@ class ClaudeAgentCohort:
                 except Exception as e:
                     if attempt == 2:
                         raise
-                    self._log(f"[ClaudeAgentCohort] API error (attempt {attempt+1}/3): {e} — retrying")
+                    self._log(f"[CohortAgent] API error (attempt {attempt+1}/3): {e} — retrying")
 
             self._log(
-                f"[ClaudeAgentCohort] Turn {tool_call_count + 1}: "
+                f"[CohortAgent] Turn {tool_call_count + 1}: "
                 f"stop_reason={response.stop_reason}, "
                 f"blocks={[b.type for b in response.content]}"
             )
@@ -529,17 +529,17 @@ class ClaudeAgentCohort:
                 # instead of breaking — this guarantees Q4 gets its own dedicated turn.
                 if examination_active and not q4_injected and self._q4_prompt:
                     q4_injected = True
-                    self._log("[ClaudeAgentCohort] Q1-Q3 complete — injecting Q4 as separate turn")
+                    self._log("[CohortAgent] Q1-Q3 complete — injecting Q4 as separate turn")
                     messages.append({"role": "user", "content": self._q4_prompt})
                     continue
                 if discovery is None:
-                    self._log("[ClaudeAgentCohort] Model stopped naturally — no submission made.")
+                    self._log("[CohortAgent] Model stopped naturally — no submission made.")
                 else:
-                    self._log("[ClaudeAgentCohort] Model stopped naturally — using existing submission.")
+                    self._log("[CohortAgent] Model stopped naturally — using existing submission.")
                 break
 
             if response.stop_reason == "max_tokens":
-                self._log("[ClaudeAgentCohort] Hit max_tokens — nudging.")
+                self._log("[CohortAgent] Hit max_tokens — nudging.")
                 tool_results = [
                     {
                         "type": "tool_result",
@@ -557,7 +557,7 @@ class ClaudeAgentCohort:
                 continue
 
             if response.stop_reason != "tool_use":
-                self._log(f"[ClaudeAgentCohort] Unexpected stop_reason: {response.stop_reason}")
+                self._log(f"[CohortAgent] Unexpected stop_reason: {response.stop_reason}")
                 break
 
             tool_results = []
@@ -639,10 +639,10 @@ class ClaudeAgentCohort:
                         # Inject clinical codebook for G1/G2 at examination start
                         if not self.explicit_cohort and self.clinical_codebook:
                             executor.namespace["clinical_codebook"] = dict(self.clinical_codebook)
-                            self._log("[ClaudeAgentCohort] Examination start — injecting clinical_codebook for G1/G2")
+                            self._log("[CohortAgent] Examination start — injecting clinical_codebook for G1/G2")
                         data_lock_active = True
                         self._tools.append(_SUBMIT_DATA_LOCK_TOOL)
-                        self._log("[ClaudeAgentCohort] Discovery submitted — beginning Examination (Data Lock)")
+                        self._log("[CohortAgent] Discovery submitted — beginning Examination (Data Lock)")
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
@@ -653,7 +653,7 @@ class ClaudeAgentCohort:
                         if not self.explicit_cohort and self.clinical_codebook:
                             executor.namespace["clinical_codebook"] = dict(self.clinical_codebook)
                         examination_active = True
-                        self._log("[ClaudeAgentCohort] Skipping Data Lock — injecting Examination questions (Q1-Q3)")
+                        self._log("[CohortAgent] Skipping Data Lock — injecting Examination questions (Q1-Q3)")
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
@@ -684,7 +684,7 @@ class ClaudeAgentCohort:
                         ro_content += f"\n\n{codebook_narrative}"
                         _codebook_injected = True
                         self._log(
-                            f"[ClaudeAgentCohort] Codebook revealed on record_observation #{_ro_count} (action-based gate={self.codebook_gate})"
+                            f"[CohortAgent] Codebook revealed on record_observation #{_ro_count} (action-based gate={self.codebook_gate})"
                         )
                     # G3 subtle drop: fake sample codebook auto-injected on Nth RO
                     if (
@@ -709,7 +709,7 @@ class ClaudeAgentCohort:
                         ro_content += f"\n\n{sample_narrative}"
                         _sample_codebook_injected = True
                         self._log(
-                            f"[ClaudeAgentCohort] Sample codebook ({self.mislead_cohort}) "
+                            f"[CohortAgent] Sample codebook ({self.mislead_cohort}) "
                             f"revealed on record_observation #{_ro_count} "
                             f"(action-based ro_gate={self.sample_codebook_ro_gate}) → {sc_path}"
                         )
@@ -727,7 +727,7 @@ class ClaudeAgentCohort:
                     data_lock_active = False
                     if self._q1_q3_prompt:
                         examination_active = True
-                        self._log("[ClaudeAgentCohort] Data Lock complete — revealing Examination questions (Q1-Q3)")
+                        self._log("[CohortAgent] Data Lock complete — revealing Examination questions (Q1-Q3)")
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
@@ -755,7 +755,7 @@ class ClaudeAgentCohort:
                 )
                 last = tool_results[-1]
                 last["content"] = str(last.get("content") or "") + warning
-                self._log(f"[ClaudeAgentCohort] Budget warning injected ({remaining} remaining)")
+                self._log(f"[CohortAgent] Budget warning injected ({remaining} remaining)")
 
             if tool_results:
                 messages.append({"role": "user", "content": tool_results})
@@ -766,7 +766,7 @@ class ClaudeAgentCohort:
             if data_lock_active:
                 data_lock_call_count += 1
                 if data_lock_call_count >= self.data_lock_max_calls:
-                    self._log(f"[ClaudeAgentCohort] Data Lock budget exhausted ({self.data_lock_max_calls} calls).")
+                    self._log(f"[CohortAgent] Data Lock budget exhausted ({self.data_lock_max_calls} calls).")
                     data_lock_active = False
                     if self._q1_q3_prompt and not examination_active:
                         examination_active = True
@@ -774,12 +774,12 @@ class ClaudeAgentCohort:
             elif examination_active:
                 examination_call_count += 1
                 if examination_call_count >= self.examination_max_calls:
-                    self._log(f"[ClaudeAgentCohort] Examination budget exhausted ({self.examination_max_calls} calls).")
+                    self._log(f"[CohortAgent] Examination budget exhausted ({self.examination_max_calls} calls).")
                     break
 
         # Post-loop: if budget exhausted without a submission, do up to 3 forced turns
         if discovery is None and not data_lock_active and not examination_active:
-            self._log("[ClaudeAgentCohort] No submission — attempting forced submission (up to 3 turns).")
+            self._log("[CohortAgent] No submission — attempting forced submission (up to 3 turns).")
             discovery = self._force_submit(messages, output_dir)
 
         run_log = {
@@ -815,7 +815,7 @@ class ClaudeAgentCohort:
                 ) as stream:
                     response = stream.get_final_message()
             except Exception as e:
-                self._log(f"[ClaudeAgentCohort] Forced submit error (attempt {attempt+1}): {e}")
+                self._log(f"[CohortAgent] Forced submit error (attempt {attempt+1}): {e}")
                 break
 
             messages.append({"role": "assistant", "content": response.content})
@@ -830,7 +830,7 @@ class ClaudeAgentCohort:
                     discovery["proposed_grouping"] = self._resolve_grouping(
                         discovery.get("proposed_grouping"), output_dir
                     )
-                    self._log(f"[ClaudeAgentCohort] Forced submit received (attempt {attempt+1})")
+                    self._log(f"[CohortAgent] Forced submit received (attempt {attempt+1})")
                     results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
@@ -848,7 +848,7 @@ class ClaudeAgentCohort:
             if discovery is not None:
                 return discovery
 
-        self._log("[ClaudeAgentCohort] Forced submission failed — returning empty discovery.")
+        self._log("[CohortAgent] Forced submission failed — returning empty discovery.")
         return None
 
     def _resolve_grouping(self, pg, output_dir) -> dict:
