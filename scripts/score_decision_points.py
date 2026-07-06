@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Decision-point explore/exploit scorer (prototype).
 
-SUPERSEDED (2026-07-02) by scripts/score_grounding.py. This ranked derived>recalled (i.e.
+SUPERSEDED (2026-07-02) by scripts/score_support.py. This ranked derived>recalled (i.e.
 scored exploration above exploitation); the grounding scorer replaces that with a neutral
 strategy tag + a scored grounding axis. Kept because it produced run1+2's _dpscores.json
 (the partition derived-rate gradient cited in docs/EXPLORE_EXPLOIT_SCORING.md). See docs/README.md.

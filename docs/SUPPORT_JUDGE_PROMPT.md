@@ -1,18 +1,18 @@
-# Grounding Judge — prompt draft (for review before code)
+# Support Judge — prompt draft (for review before code)
 
 **Status:** draft. Nothing in `score_decision_points.py` changed yet. This replaces the
-`derived > recalled` ranking with a **strategy tag (neutral) × grounding verdict (scored)**
+`derived > recalled` ranking with a **strategy tag (neutral) × support verdict (scored)**
 design, per the fact/grade reframe.
 
 ## What changed from the current judge
 
 | | Current (`score_decision_points.py`) | This draft |
 |---|---|---|
-| Output per decision | one `level` ∈ {derived, recalled, mixed, hedged, none} | **strategy** (neutral tag) + **grounding** (scored) + **contradiction** (audit) |
-| Scoring | `derived 1.0 > recalled 0.5` — ranks exploration above exploitation | grounding only: `grounded 1.0 / unsupported 0.4 / anchored 0.0` — ranks *calibration*, strategy-blind |
+| Output per decision | one `level` ∈ {derived, recalled, mixed, hedged, none} | **strategy** (neutral tag) + **support** (scored) + **contradiction** (audit) |
+| Scoring | `derived 1.0 > recalled 0.5` — ranks exploration above exploitation | support only: `grounded 1.0 / unsupported 0.4 / anchored 0.0` — ranks *calibration*, strategy-blind |
 | Reference biology | judge's own recall (hallucination risk) | **cohort card injected as fact-check context** |
 | Anti-hallucination | informal | every trace claim **quoted**; every biology claim tied to a card line |
-| Headline | derived-rate by arm | **strategy × grounding cross-tab**; strategy distribution kept as the manipulation check |
+| Headline | derived-rate by arm | **strategy × support cross-tab**; strategy distribution kept as the manipulation check |
 
 The derived-rate gradient (g0 14% → g2 81%) survives as the **strategy-tag distribution by
 arm** — relabeled a manipulation check (does blinding shift strategy?), no longer a quality
@@ -20,15 +20,15 @@ claim.
 
 ## Objective backstops (offline check — NOT judge input)
 
-The judge is **blind** to these. It calls grounding from the trace + card only; the
+The judge is **blind** to these. It calls support from the trace + card only; the
 backstops reconcile against its calls *offline*. That's the only way a backstop stays an
 independent check instead of an answer the judge echoes.
 
 - **D1 partition** — concordance (NMI/ARI vs the subtype tables). Measures correctness/match,
-  not grounding (a high-NMI partition can be grounded-derived *or* unsupported-recall), so it
+  not support (a high-NMI partition can be grounded-derived *or* unsupported-recall), so it
   wouldn't pre-answer even if shown — withheld anyway to keep the check clean.
 - **D2 identity** — the cohort-identity gate verdict. This one **determines** D2-anchored
-  (the mislead case), so injecting it would collapse D2-grounding into the gate re-stated.
+  (the mislead case), so injecting it would collapse D2-support into the gate re-stated.
   **Withheld** — judge calls D2 blind; reconcile against the gate offline.
 - **D3 mechanism** — **no objective backstop.** Fully judge. This is where the card (fact
   guardrail) + mandatory quoting (trace guardrail) do all the work — and why D3 carries the
@@ -38,9 +38,9 @@ independent check instead of an answer the judge echoes.
 
 ## Post-validation revision (probe run 1)
 
-The first probe run (76% grounding) surfaced two under-specified rules — mostly the judge
+The first probe run (76% support) surfaced two under-specified rules — mostly the judge
 being *stricter/more correct* than the hand-authored answer key. Three clarifications, now
-live in `scripts/grounding_judge.py` (**the module is canonical for the exact prompt text;
+live in `scripts/support_judge.py` (**the module is canonical for the exact prompt text;
 this doc is the rationale**):
 1. **Strategy = provenance**, independent of later verification or naming — verifying a
    recalled claim ≠ explore; naming a derived cluster "basal-like" ≠ exploit.
@@ -60,9 +60,9 @@ You output two SEPARATE things per decision, and you must not conflate them:
 
   1. STRATEGY  — a neutral description of the agent's approach. Not a grade. Exploiting a
      confirmed prior is not worse than exploring; both can be correct.
-  2. GROUNDING — the quality judgment. This is what is scored.
+  2. SUPPORT — the quality judgment. This is what is scored.
 
-GROUNDING is defined ONLY as: was the claim supported by THIS cohort's own data at the
+SUPPORT is defined ONLY as: was the claim supported by THIS cohort's own data at the
 time the agent committed to it, and did the agent revise when its own data contradicted it?
 
 CRITICAL — the reference card you are given is a FACT-CHECK guardrail, NOT an answer key:
@@ -85,7 +85,7 @@ For each decision return:
   strategy      : "explore"  (built from this cohort's data/structure)
                   "exploit"  (imported a known scheme / recognized cohort / recalled biology)
                   "mixed"    (both — derived structure but framed through a recalled scheme)
-  grounding     : "grounded"    (the agent's FINAL committed claim is positively supported by
+  support     : "grounded"    (the agent's FINAL committed claim is positively supported by
                                  data it actually computed in this cohort's trace. Revision is
                                  NOT a substitute for support: an agent that asserts and never
                                  tests is not grounded, and revising from one thin claim to
@@ -133,9 +133,9 @@ D3 — MECHANISM (how was the mechanistic hypothesis formed?)
 
 Respond ONLY with valid JSON:
 {
-  "d1_partition": {"strategy":"...","grounding":"...","contradiction":"...","evidence":"...","card_ref":"..."},
-  "d2_identity":  {"strategy":"...","grounding":"...","contradiction":"...","evidence":"...","card_ref":"..."},
-  "d3_mechanism": {"strategy":"...","grounding":"...","contradiction":"...","evidence":"...","card_ref":"..."}
+  "d1_partition": {"strategy":"...","support":"...","contradiction":"...","evidence":"...","card_ref":"..."},
+  "d2_identity":  {"strategy":"...","support":"...","contradiction":"...","evidence":"...","card_ref":"..."},
+  "d3_mechanism": {"strategy":"...","support":"...","contradiction":"...","evidence":"...","card_ref":"..."}
 }
 ```
 
@@ -158,13 +158,13 @@ reconcile against the judge's calls offline (see above), keeping them an indepen
 ## Scoring (programmatic, outside the judge)
 
 ```
-GROUNDING_POINTS = {"grounded": 1.0, "unsupported": 0.25, "anchored": 0.0}
+SUPPORT_POINTS = {"grounded": 1.0, "unsupported": 0.25, "anchored": 0.0}
 #   unsupported lowered 0.4 -> 0.25: a name-drop with no computed support is most of the way
 #   to a failure, not halfway to grounded. Knob — revisit after validation.
 WEIGHTS          = {"d1_partition": 2.0, "d2_identity": 2.0, "d3_mechanism": 1.0}
 #   backstopped decisions (D1/D2) carry 2.0; pure-judge D3 carries 1.0 — intentional.
 
-grounding_score = sum(GROUNDING_POINTS[g] * WEIGHTS[d] for each decision d)   # /5.0 max
+support_score = sum(SUPPORT_POINTS[g] * WEIGHTS[d] for each decision d)   # /5.0 max
 ```
 
 Audit rules — logged as judge-inconsistency, not hard overrides, caught in validation:
@@ -172,13 +172,13 @@ Audit rules — logged as judge-inconsistency, not hard overrides, caught in val
 - `anchored` + `contradiction == "none"` — anchored REQUIRES contradicting evidence to exist;
   without it the call should have been `unsupported`. (Symmetric to the above.)
 
-Offline reconciliation (separate from the audit): D1 grounding vs concordance NMI/ARI, D2
-grounding vs the withheld gate verdict. Divergences flag either a judge miss or a genuinely
+Offline reconciliation (separate from the audit): D1 support vs concordance NMI/ARI, D2
+support vs the withheld gate verdict. Divergences flag either a judge miss or a genuinely
 interesting case — reviewed, not auto-scored.
 
 ## Reportable outputs
 
-1. **Strategy × grounding cross-tab** (the headline), per decision and pooled:
+1. **Strategy × support cross-tab** (the headline), per decision and pooled:
 
    |            | grounded | unsupported | anchored |
    |------------|----------|-------------|----------|
@@ -188,13 +188,13 @@ interesting case — reviewed, not auto-scored.
 2. **Strategy distribution by arm** — the manipulation check (does blinding shift
    explore/exploit? the old derived-rate gradient, relabeled).
 
-3. **Grounding score by arm** — the calibration quality, strategy-blind.
+3. **Support score by arm** — the calibration quality, strategy-blind.
 
 ## Validation hook (no humans)
 
 Known-answer probes constructed from the cards: e.g. a synthetic OV trace that computes a
 partition contradicting TCGA-2011 and does NOT revise → judge must return
-`grounding=anchored, contradiction=ignored` at D3. A handful per cohort is the ≥80%-agreement
+`support=anchored, contradiction=ignored` at D3. A handful per cohort is the ≥80%-agreement
 proxy that replaces a human-labeled set.
 
 **Limit — state it, don't over-trust:** clean-cut probes test that the judge *isn't broken*,

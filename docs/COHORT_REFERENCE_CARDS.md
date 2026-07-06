@@ -1,10 +1,10 @@
-# Cohort Reference Cards — literature ground truth for the grounding judge
+# Cohort Reference Cards — literature ground truth for the support judge
 
 **Status:** draft for review. Four cards (BRCA / LIHC / LUAD / OV), one per benchmark cohort.
 
 ## Role of these cards (read before using)
 
-These cards are a **fact-check reference** for the grounding judge: curated, citable
+These cards are a **fact-check reference** for the support judge: curated, citable
 canonical biology per cohort, so the judge does not invent or misremember the "textbook"
 narrative when it assesses an agent's claims. The **caveats** record where the literature
 *itself* is uncertain.
@@ -163,6 +163,6 @@ proxy is computed.
 
 ## Downstream
 
-The rubric that consumes these cards — strategy tag (neutral) × grounding verdict (scored),
+The rubric that consumes these cards — strategy tag (neutral) × support verdict (scored),
 the revision check, quote-backed evidence, and the `grounded ≠ matches-the-card` safeguard —
 is defined in the **judge prompt** (to be drafted), not here.

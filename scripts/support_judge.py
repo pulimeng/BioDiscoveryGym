@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Grounding judge — shared prompt + I/O for the calibration scorer.
+"""Support judge — shared prompt + I/O for the calibration scorer.
 
-Design: docs/GROUNDING_JUDGE_PROMPT.md (strategy tag [neutral] x grounding [scored]).
+Design: docs/SUPPORT_JUDGE_PROMPT.md (strategy tag [neutral] x support [scored]).
 Fact-check card: docs/COHORT_REFERENCE_CARDS.md, injected per cohort.
 The judge is BLIND to the objective backstops (concordance NMI, cohort-identity gate) —
 those reconcile against its calls offline, not as judge input.
 
-This module is imported by run_grounding_probes.py (validation) and, later, by the
+This module is imported by run_support_probes.py (validation) and, later, by the
 rewritten score_decision_points.py. Nothing here calls the API at import time.
 """
 from __future__ import annotations
@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 
 DECISIONS = ["d1_partition", "d2_identity", "d3_mechanism"]
-GROUNDING_POINTS = {"grounded": 1.0, "unsupported": 0.25, "anchored": 0.0}
+SUPPORT_POINTS = {"grounded": 1.0, "unsupported": 0.25, "anchored": 0.0}
 WEIGHTS = {"d1_partition": 2.0, "d2_identity": 2.0, "d3_mechanism": 1.0}
 
 _CARDS_PATH = Path(__file__).resolve().parent.parent / "docs" / "COHORT_REFERENCE_CARDS.md"
@@ -32,9 +32,9 @@ You output two SEPARATE things per decision, and you must not conflate them:
 
   1. STRATEGY  — a neutral description of the agent's approach. Not a grade. Exploiting a
      confirmed prior is not worse than exploring; both can be correct.
-  2. GROUNDING — the quality judgment. This is what is scored.
+  2. SUPPORT — the quality judgment. This is what is scored.
 
-GROUNDING is defined ONLY as: was the agent's FINAL committed claim positively supported by
+SUPPORT is defined ONLY as: was the agent's FINAL committed claim positively supported by
 data it actually computed in THIS cohort's trace, and did it revise when its own data
 contradicted it?
 
@@ -67,7 +67,7 @@ For each decision return:
                   independently-derived result with a canonical term (calling a marker-derived
                   cluster "basal-like") does NOT make it exploit — provenance is what SOURCED
                   the result, not the words used to describe it.
-  grounding     : "grounded"    (the FINAL committed claim is positively supported by data the
+  support     : "grounded"    (the FINAL committed claim is positively supported by data the
                                  agent actually computed here. Revision is NOT a substitute for
                                  support: asserting and never testing is not grounded, and
                                  revising from one thin claim to another thin claim is not
@@ -113,7 +113,7 @@ D3 — MECHANISM (how was the mechanistic hypothesis formed?)
   anchored : textbook mechanism asserted despite contradicting cohort data, or a canonical
              claim left unrevised after its data support failed (see the card's caveats).
 
-Record your verdict by calling the record_grounding tool, with strategy / grounding /
+Record your verdict by calling the record_support tool, with strategy / support /
 contradiction / evidence / card_ref for each of d1_partition, d2_identity, d3_mechanism.
 Keep evidence to ONE short phrase (a brief quote or paraphrase) — no line breaks, no long
 excerpts.
@@ -121,23 +121,23 @@ excerpts.
 
 _ENUMS = {
     "strategy": ["explore", "exploit", "mixed"],
-    "grounding": ["grounded", "unsupported", "anchored"],
+    "support": ["grounded", "unsupported", "anchored"],
     "contradiction": ["revised", "ignored", "none"],
 }
 _DECISION_SCHEMA = {
     "type": "object",
     "properties": {
         "strategy": {"type": "string", "enum": _ENUMS["strategy"]},
-        "grounding": {"type": "string", "enum": _ENUMS["grounding"]},
+        "support": {"type": "string", "enum": _ENUMS["support"]},
         "contradiction": {"type": "string", "enum": _ENUMS["contradiction"]},
         "evidence": {"type": "string", "description": "one short quoted phrase or paraphrase from the trace; no line breaks"},
         "card_ref": {"type": "string", "description": "the card fact invoked, or empty string"},
     },
-    "required": ["strategy", "grounding", "contradiction", "evidence"],
+    "required": ["strategy", "support", "contradiction", "evidence"],
 }
-_GROUNDING_TOOL = {
-    "name": "record_grounding",
-    "description": "Record the per-decision strategy (neutral), grounding (scored), and contradiction verdicts.",
+_SUPPORT_TOOL = {
+    "name": "record_support",
+    "description": "Record the per-decision strategy (neutral), support (scored), and contradiction verdicts.",
     "input_schema": {
         "type": "object",
         "properties": {d: _DECISION_SCHEMA for d in DECISIONS},
@@ -190,18 +190,18 @@ def call_judge(user_msg: str, model: str = "claude-sonnet-4-6") -> dict:
     import anthropic
     r = anthropic.Anthropic().messages.create(
         model=model, max_tokens=2500, system=JUDGE_SYSTEM,
-        tools=[_GROUNDING_TOOL],
-        tool_choice={"type": "tool", "name": "record_grounding"},
+        tools=[_SUPPORT_TOOL],
+        tool_choice={"type": "tool", "name": "record_support"},
         messages=[{"role": "user", "content": user_msg}],
     )
     for b in r.content:
-        if getattr(b, "type", None) == "tool_use" and b.name == "record_grounding":
+        if getattr(b, "type", None) == "tool_use" and b.name == "record_support":
             return b.input
-    raise ValueError(f"no record_grounding tool_use in response (stop_reason={r.stop_reason})")
+    raise ValueError(f"no record_support tool_use in response (stop_reason={r.stop_reason})")
 
 
-def grounding_score(levels: dict) -> float:
-    return sum(GROUNDING_POINTS.get(levels[d]["grounding"], 0.0) * WEIGHTS[d]
+def support_score(levels: dict) -> float:
+    return sum(SUPPORT_POINTS.get(levels[d]["support"], 0.0) * WEIGHTS[d]
                for d in DECISIONS)
 
 
@@ -209,7 +209,7 @@ def audit_flags(levels: dict) -> list[str]:
     """Internal-consistency flags (logged, not overrides) — see judge-prompt doc."""
     out = []
     for d in DECISIONS:
-        g, c = levels[d].get("grounding"), levels[d].get("contradiction")
+        g, c = levels[d].get("support"), levels[d].get("contradiction")
         if g == "grounded" and c == "ignored":
             out.append(f"{d}: grounded+ignored")
         if g == "anchored" and c == "none":

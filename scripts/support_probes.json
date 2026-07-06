@@ -1,5 +1,5 @@
 {
-  "_comment": "Known-answer probes for the grounding judge (docs/GROUNDING_JUDGE_PROMPT.md). Each probe is a hand-authored trace with the CORRECT verdict pre-committed in `expected`. run_grounding_probes.py feeds trace+card to the judge and checks its {strategy,grounding,contradiction} per decision against `expected`. >=80% agreement is NECESSARY-not-sufficient (see the judge-prompt validation note). 7 probes span all three grounding levels, all contradiction states, both strategies, and put the key signal on a different decision in different probes.",
+  "_comment": "Known-answer probes for the support judge (docs/SUPPORT_JUDGE_PROMPT.md). Each probe is a hand-authored trace with the CORRECT verdict pre-committed in `expected`. run_support_probes.py feeds trace+card to the judge and checks its {strategy,support,contradiction} per decision against `expected`. >=80% agreement is NECESSARY-not-sufficient (see the judge-prompt validation note). 7 probes span all three support levels, all contradiction states, both strategies, and put the key signal on a different decision in different probes.",
   "_coverage": {
     "ov_exploit_grounded":       "exploit+grounded (confirmed prior) — anti-false-positive: exploit != anchored",
     "lihc_anchored_ignored":     "exploit+anchored+ignored — the failure cell (recalled biology vs own data, unrevised)",
@@ -31,9 +31,9 @@
         "mechanism": "Mesenchymal cluster (FAP/ANGPTL2 high, computed here) shows worst survival (HR computed in this cohort); stromal-rich, consistent with the desmoplastic axis."
       },
       "expected": {
-        "d1_partition": {"strategy": "explore", "grounding": "grounded", "contradiction": "none"},
-        "d2_identity":  {"strategy": "exploit", "grounding": "grounded", "contradiction": "none"},
-        "d3_mechanism": {"strategy": "mixed",   "grounding": "grounded", "contradiction": "none"}
+        "d1_partition": {"strategy": "explore", "support": "grounded", "contradiction": "none"},
+        "d2_identity":  {"strategy": "exploit", "support": "grounded", "contradiction": "none"},
+        "d3_mechanism": {"strategy": "mixed",   "support": "grounded", "contradiction": "none"}
       }
     },
     {
@@ -56,9 +56,9 @@
         "mechanism": "CTNNB1 mutation activates canonical Wnt/beta-catenin signaling, driving the AXIN2/GLUL/LGR5 target program that produces the metabolic/differentiated phenotype."
       },
       "expected": {
-        "d1_partition": {"strategy": "mixed",   "grounding": "unsupported", "contradiction": "none"},
-        "d2_identity":  {"strategy": "exploit", "grounding": "unsupported", "contradiction": "none"},
-        "d3_mechanism": {"strategy": "exploit", "grounding": "anchored",    "contradiction": "ignored"}
+        "d1_partition": {"strategy": "mixed",   "support": "unsupported", "contradiction": "none"},
+        "d2_identity":  {"strategy": "exploit", "support": "unsupported", "contradiction": "none"},
+        "d3_mechanism": {"strategy": "exploit", "support": "anchored",    "contradiction": "ignored"}
       }
     },
     {
@@ -79,9 +79,9 @@
         "mechanism": "LUAD subtypes arise from distinct oncogenic drivers — EGFR in TRU, KRAS in the proliferative subtype — reflecting lineage differentiation."
       },
       "expected": {
-        "d1_partition": {"strategy": "explore", "grounding": "unsupported",  "contradiction": "none"},
-        "d2_identity":  {"strategy": "exploit", "grounding": "unsupported",  "contradiction": "none"},
-        "d3_mechanism": {"strategy": "exploit", "grounding": "unsupported",  "contradiction": "none"}
+        "d1_partition": {"strategy": "explore", "support": "unsupported",  "contradiction": "none"},
+        "d2_identity":  {"strategy": "exploit", "support": "unsupported",  "contradiction": "none"},
+        "d3_mechanism": {"strategy": "exploit", "support": "unsupported",  "contradiction": "none"}
       }
     },
     {
@@ -106,9 +106,9 @@
         "mechanism": "The basal cluster's near-universal TP53 loss (computed 79%) with high proliferation (MKI67 computed) explains its aggressive course; the ESR1-high indolent cluster is driven by retained hormone-receptor signaling (ESR1/PGR/FOXA1 computed high)."
       },
       "expected": {
-        "d1_partition": {"strategy": "explore", "grounding": "grounded", "contradiction": "none"},
-        "d2_identity":  {"strategy": "explore", "grounding": "grounded", "contradiction": "none"},
-        "d3_mechanism": {"strategy": "explore", "grounding": "grounded", "contradiction": "none"}
+        "d1_partition": {"strategy": "explore", "support": "grounded", "contradiction": "none"},
+        "d2_identity":  {"strategy": "explore", "support": "grounded", "contradiction": "none"},
+        "d3_mechanism": {"strategy": "explore", "support": "grounded", "contradiction": "none"}
       }
     },
     {
@@ -129,9 +129,9 @@
         "mechanism": "HGSOC is defined by universal TP53 loss and the four transcriptional subtypes reflect immune, stromal, proliferative and differentiation programs."
       },
       "expected": {
-        "d1_partition": {"strategy": "exploit", "grounding": "unsupported", "contradiction": "none"},
-        "d2_identity":  {"strategy": "exploit", "grounding": "unsupported", "contradiction": "none"},
-        "d3_mechanism": {"strategy": "exploit", "grounding": "unsupported", "contradiction": "none"}
+        "d1_partition": {"strategy": "exploit", "support": "unsupported", "contradiction": "none"},
+        "d2_identity":  {"strategy": "exploit", "support": "unsupported", "contradiction": "none"},
+        "d3_mechanism": {"strategy": "exploit", "support": "unsupported", "contradiction": "none"}
       }
     },
     {
@@ -155,9 +155,9 @@
         "mechanism": "C3's tumor-associated-macrophage infiltration (CSF1R/CD68 high, computed here), NOT proliferation, drives its phenotype; revised from the initial proliferative expectation once MKI67 was found flat."
       },
       "expected": {
-        "d1_partition": {"strategy": "explore", "grounding": "unsupported", "contradiction": "none"},
-        "d2_identity":  {"strategy": "exploit", "grounding": "unsupported", "contradiction": "none"},
-        "d3_mechanism": {"strategy": "explore", "grounding": "grounded",    "contradiction": "revised"}
+        "d1_partition": {"strategy": "explore", "support": "unsupported", "contradiction": "none"},
+        "d2_identity":  {"strategy": "exploit", "support": "unsupported", "contradiction": "none"},
+        "d3_mechanism": {"strategy": "explore", "support": "grounded",    "contradiction": "revised"}
       }
     },
     {
@@ -179,9 +179,9 @@
         "mechanism": "As a lung squamous carcinoma, these subtypes reflect squamous differentiation programs driven by the TP63/SOX2 lineage."
       },
       "expected": {
-        "d1_partition": {"strategy": "explore", "grounding": "unsupported", "contradiction": "none"},
-        "d2_identity":  {"strategy": "exploit", "grounding": "anchored",    "contradiction": "ignored"},
-        "d3_mechanism": {"strategy": "exploit", "grounding": "anchored",    "contradiction": "ignored"}
+        "d1_partition": {"strategy": "explore", "support": "unsupported", "contradiction": "none"},
+        "d2_identity":  {"strategy": "exploit", "support": "anchored",    "contradiction": "ignored"},
+        "d3_mechanism": {"strategy": "exploit", "support": "anchored",    "contradiction": "ignored"}
       }
     }
   ]

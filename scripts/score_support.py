@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Grounding scorer — the calibration (strategy x grounding) scorer for the explore/exploit study.
+"""Support scorer — the calibration (strategy x support) scorer for the explore/exploit study.
 
-For each episode a validated judge (scripts/grounding_judge.py; prompt validated to ~95% on
-scripts/grounding_probes.json) reads the trace + the cohort's reference card and returns, per
+For each episode a validated judge (scripts/support_judge.py; prompt validated to ~95% on
+scripts/support_probes.json) reads the trace + the cohort's reference card and returns, per
 decision (D1 partition / D2 identity / D3 mechanism):
   strategy      neutral tag : explore / exploit / mixed   (NOT scored — the manipulation check)
-  grounding     scored      : grounded / unsupported / anchored
+  support     scored      : grounded / unsupported / anchored
   contradiction audit       : revised / ignored / none
 
-Scored on grounding ONLY (docs/GROUNDING_JUDGE_PROMPT.md). Writes <episode>_gscores.json and
-prints the strategy x grounding cross-tab by arm — exploit x anchored = the miscalibration cell.
+Scored on support ONLY (docs/SUPPORT_JUDGE_PROMPT.md). Writes <episode>_supportscores.json and
+prints the strategy x support cross-tab by arm — exploit x anchored = the miscalibration cell.
 The judge is BLIND to the objective backstops (concordance, cohort gate); reconcile offline.
 
 Replaces the derived>recalled prototype (score_decision_points.py -> _dpscores.json), which
@@ -17,9 +17,9 @@ ranked exploration above exploitation. Cohort per episode = ep["cohort"] (true c
 that is the real data, not the mislead label).
 
 Usage:
-    python scripts/score_grounding.py results/tcga/run1+2 --dry --limit 1
-    ANTHROPIC_API_KEY=sk-... python scripts/score_grounding.py results/tcga/run1+2 --save
-    python scripts/score_grounding.py results/tcga/run1+2 --arms g0,g1 --save   # money panel
+    python scripts/score_support.py results/tcga/run1+2 --dry --limit 1
+    ANTHROPIC_API_KEY=sk-... python scripts/score_support.py results/tcga/run1+2 --save
+    python scripts/score_support.py results/tcga/run1+2 --arms g0,g1 --save   # money panel
 """
 from __future__ import annotations
 import argparse, glob, json, os, sys
@@ -27,7 +27,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import grounding_judge as gj
+import support_judge as gj
 
 STRATS = ["explore", "exploit", "mixed"]
 GRDS = ["grounded", "unsupported", "anchored"]
@@ -68,7 +68,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("run_dir")
     p.add_argument("--model", default="claude-sonnet-4-6")
-    p.add_argument("--save", action="store_true", help="write <episode>_gscores.json")
+    p.add_argument("--save", action="store_true", help="write <episode>_supportscores.json")
     p.add_argument("--dry", action="store_true", help="print judge input, no API")
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--arms", default="", help="comma list to include, e.g. g0,g1")
@@ -86,7 +86,7 @@ def main():
         files = files[:args.limit]
 
     cross = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))  # arm->decision->(strat,grd)->n
-    scores = defaultdict(list)                                          # arm -> [grounding_score]
+    scores = defaultdict(list)                                          # arm -> [support_score]
     rows = []
     for f in files:
         ep = json.load(open(f))
@@ -103,23 +103,23 @@ def main():
             continue
         try:
             levels = gj.call_judge(umsg, args.model)
-            sc = gj.grounding_score(levels)
+            sc = gj.support_score(levels)
             flags = gj.audit_flags(levels)
         except Exception as e:
             print(f"  !! {os.path.basename(f)} judge failed: {e}", file=sys.stderr); continue
         scores[arm].append(sc)
         for d in gj.DECISIONS:
-            cross[arm][d][(levels[d].get("strategy"), levels[d].get("grounding"))] += 1
+            cross[arm][d][(levels[d].get("strategy"), levels[d].get("support"))] += 1
         rows.append((os.path.basename(f), arm, cohort, levels, sc, flags))
         print(f"{os.path.basename(f):34} {cohort:5} score={sc:.1f}/5  "
               + "  ".join(f"{d[:2]}:{(levels[d].get('strategy') or '?')[:3]}/"
-                          f"{(levels[d].get('grounding') or '?')[:4]}" for d in gj.DECISIONS)
+                          f"{(levels[d].get('support') or '?')[:4]}" for d in gj.DECISIONS)
               + (f"  [audit: {';'.join(flags)}]" if flags else ""))
         if args.save:
             out = {"cohort": cohort, "arm": arm, "levels": levels,
-                   "grounding_score": sc, "score_max": sum(gj.WEIGHTS.values()),
+                   "support_score": sc, "score_max": sum(gj.WEIGHTS.values()),
                    "audit_flags": flags, "weights": gj.WEIGHTS}
-            json.dump(out, open(f[:-5] + "_gscores.json", "w"), indent=2)
+            json.dump(out, open(f[:-5] + "_supportscores.json", "w"), indent=2)
 
     if args.dry or not rows:
         return
@@ -143,7 +143,7 @@ def _print_crosstab(tab):
 
 def _report(cross, scores):
     arms = sorted(cross)
-    print("\n=== grounding score by arm (mean /5) ===")
+    print("\n=== support score by arm (mean /5) ===")
     for a in arms:
         s = scores[a]
         print(f"  {a:4} n={len(s):2}  mean={sum(s)/len(s):.2f}")
@@ -157,7 +157,7 @@ def _report(cross, scores):
         n = n or 1
         print(f"  {a:4}  " + "  ".join(f"{s}={tot.get(s, 0)/n:.0%}" for s in STRATS))
 
-    print("\n=== strategy x grounding cross-tab (pooled decisions, ALL arms) ===")
+    print("\n=== strategy x support cross-tab (pooled decisions, ALL arms) ===")
     _print_crosstab(_pool(cross, arms))
     print("      -> exploit x anchored = miscalibration (recall against the data)")
     for a in arms:

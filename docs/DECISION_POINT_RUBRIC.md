@@ -1,8 +1,8 @@
 # Decision-point explore/exploit rubric (draft)
 
-> **SUPERSEDED (2026-07-02)** by `docs/GROUNDING_JUDGE_PROMPT.md`. This rubric graded each
+> **SUPERSEDED (2026-07-02)** by `docs/SUPPORT_JUDGE_PROMPT.md`. This rubric graded each
 > decision as derived/recalled → points that ranked exploration above exploitation. The
-> reframe (see `docs/README.md`) keeps strategy as a *neutral tag* and scores *grounding*
+> reframe (see `docs/README.md`) keeps strategy as a *neutral tag* and scores *support*
 > instead. Retained for history — it describes the prototype that produced run1+2's
 > `_dpscores.json`.
 
@@ -44,7 +44,7 @@ dodge the self-report confound that affects the belief-trail confidence metrics.
 |---|---|---|
 | **Derived** (explore) | reasoned from this cohort's data; **revised against the prior when data contradicted it** | g2_brca: *"survival INVERTED from expected PAM50 → CRITICAL REVISION"* |
 | **Recalled** (exploit) | retrofitted to the textbook mechanism for the recalled type; ignored contradictory data |  |
-| **Mixed / Hedged** | partial grounding |  |
+| **Mixed / Hedged** | partial support |  |
 | **None** | no mechanism |  |
 
 ## Level → points (process quality)

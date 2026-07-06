@@ -1,28 +1,28 @@
 #!/usr/bin/env python3
-"""Validate the grounding judge against known-answer probes BEFORE trusting it on real runs.
+"""Validate the support judge against known-answer probes BEFORE trusting it on real runs.
 
-Each probe (scripts/grounding_probes.json) is a hand-authored trace with the correct verdict
-pre-committed. This feeds trace+card to the judge and compares its {strategy, grounding,
+Each probe (scripts/support_probes.json) is a hand-authored trace with the correct verdict
+pre-committed. This feeds trace+card to the judge and compares its {strategy, support,
 contradiction} per decision to `expected`. Reports field-level agreement overall and for the
-scored axis (grounding), plus every mismatch and any internal-consistency flags.
+scored axis (support), plus every mismatch and any internal-consistency flags.
 
->=80% agreement is NECESSARY-not-sufficient (docs/GROUNDING_JUDGE_PROMPT.md): clean-cut
+>=80% agreement is NECESSARY-not-sufficient (docs/SUPPORT_JUDGE_PROMPT.md): clean-cut
 probes prove the judge isn't broken, not that it's reliable on the ambiguous middle.
 
 Usage:
-    python scripts/run_grounding_probes.py --dry                 # print judge inputs, no API
-    python scripts/run_grounding_probes.py --dry --id lihc_anchored_ignored
-    ANTHROPIC_API_KEY=sk-... python scripts/run_grounding_probes.py
+    python scripts/run_support_probes.py --dry                 # print judge inputs, no API
+    python scripts/run_support_probes.py --dry --id lihc_anchored_ignored
+    ANTHROPIC_API_KEY=sk-... python scripts/run_support_probes.py
 """
 from __future__ import annotations
 import argparse, json, os, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import grounding_judge as gj
+import support_judge as gj
 
-PROBES = Path(__file__).resolve().parent / "grounding_probes.json"
-FIELDS = ["strategy", "grounding", "contradiction"]
+PROBES = Path(__file__).resolve().parent / "support_probes.json"
+FIELDS = ["strategy", "support", "contradiction"]
 
 
 def main():
@@ -59,18 +59,18 @@ def main():
                 exp = q["expected"][d][f]
                 act = got.get(d, {}).get(f)
                 tot += 1
-                if f == "grounding":
+                if f == "support":
                     grd += 1
                 if act == exp:
                     tot_ok += 1
-                    if f == "grounding":
+                    if f == "support":
                         grd_ok += 1
                 else:
                     mism.append(f"{d[:2]}.{f}: exp={exp} got={act}")
         flags = gj.audit_flags(got)
         status = "OK " if not mism else "XX "
-        print(f"{status}{q['id']:28} grounding "
-              + " ".join(got.get(d, {}).get("grounding", "?")[:4] for d in gj.DECISIONS)
+        print(f"{status}{q['id']:28} support "
+              + " ".join(got.get(d, {}).get("support", "?")[:4] for d in gj.DECISIONS)
               + (f"   MISMATCH: {'; '.join(mism)}" if mism else "")
               + (f"   [audit: {', '.join(flags)}]" if flags else ""))
 
@@ -78,7 +78,7 @@ def main():
         return
     print(f"\n=== agreement ===")
     print(f"  all fields : {tot_ok}/{tot} = {tot_ok/tot:.0%}")
-    print(f"  grounding  : {grd_ok}/{grd} = {grd_ok/grd:.0%}   (the scored axis — the one that matters)")
+    print(f"  support  : {grd_ok}/{grd} = {grd_ok/grd:.0%}   (the scored axis — the one that matters)")
     print(f"  gate: >=80% is NECESSARY, not sufficient (see judge-prompt doc).")
 
 
