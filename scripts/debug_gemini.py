@@ -124,3 +124,21 @@ for p in ("prompts/agent_system_tcga.txt", "prompts/agent_system.txt"):
 adapter_call("6a. adapter.create + real system prompt, max_tokens=32000", sysp, 32000)
 adapter_call("6b. adapter.create + NO system prompt,   max_tokens=32000", "", 32000)
 adapter_call("6c. adapter.create + real system prompt, max_tokens=2048", sysp, 2048)
+
+# 7) WHY is 6a empty? raw dump at descending max_output to find the finish_reason + threshold
+gtools = ad._tools(real_tools)
+def raw_sys(label, max_out):
+    cfg = dict(system_instruction=sysp, tools=gtools, max_output_tokens=max_out,
+        automatic_function_calling=t.AutomaticFunctionCallingConfig(disable=True),
+        tool_config=t.ToolConfig(function_calling_config=t.FunctionCallingConfig(mode="ANY")))
+    if hasattr(t, "ThinkingConfig"):
+        cfg["thinking_config"] = t.ThinkingConfig(thinking_budget=0)
+    try:
+        r = client.models.generate_content(model=MODEL,
+            contents="Begin. Work through each stage in order and show your reasoning.",
+            config=t.GenerateContentConfig(**cfg))
+        dump(label, r)
+    except Exception as e:
+        print(f"\n{label} RAISED:", type(e).__name__, str(e)[:300])
+for mo in (32000, 16000, 8192):
+    raw_sys(f"7. RAW real-prompt config, max_output={mo}", mo)
