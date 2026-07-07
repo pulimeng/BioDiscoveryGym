@@ -5,9 +5,10 @@ model providers, so any difference is the *model*, not the scaffolding. One agen
 (`agents/cohort_agent.py`) + provider adapters (`agents/adapters/`); the model id picks the
 adapter automatically.
 
-**Status (2026-07-07): smoke-tested, parity confirmed** across Sonnet / Opus / GPT-4.1 /
-Gemini-2.5-flash — all four fire the G2 codebook at the *same* record_observation turn
-(`reveal@RO=3`) and submit a discovery. Cleared for the full ladder. Smoke: `smoke_ladder.sh`.
+**Status:** the harness is proven — parity was smoke-confirmed (2026-07-07) on the *previous*
+model set (Sonnet 4.6 / Opus 4.8 / GPT-4.1 / Gemini-2.5-flash): all fired the G2 codebook at
+the same turn (`reveal@RO=3`) and submitted. **Model list updated to current (below); re-run
+`smoke_ladder.sh` on the new models before the full ladder** — and resolve reasoning-parity.
 
 ## 1. Setup (once)
 
@@ -27,14 +28,22 @@ source load_keys.sh     # exports ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_AP
 Keys are per-provider (separate billing). Anthropic you already have. `load_keys.sh` holds no
 secrets (committable); `keys.txt` is gitignored — never commit it.
 
-## 2. Models (matched frontier tier, reasoning OFF)
+## 2. Models (current as of 2026-07; reasoning at MINIMAL for parity)
 
 | Provider | Model id | Notes |
 |---|---|---|
-| Anthropic | `claude-sonnet-4-6` | thinking off (`--thinking-budget 0`, the default) |
-| Anthropic | `claude-opus-4-8` | thinking off |
-| OpenAI | `gpt-4.1` | non-reasoning flagship (the clean pair; `o3` is a *reasoning* model → separate axis) |
-| Google | `gemini-2.5-flash` | **2.5 Pro REJECTS thinking-off** (`400: Budget 0 is invalid; this model only works in thinking mode`) — confirmed. For a thinking-off ladder you MUST use **`gemini-2.5-flash`** (accepts budget 0), a lighter tier than Opus. To keep 2.5 Pro, run it as a separate *thinking-on* arm (footnote that one model reasons). |
+| Anthropic | `claude-sonnet-5` | replaced Sonnet 4.6 (2026-06-30). Has an `effort` param that **defaults high** — set low/minimal for parity. |
+| Anthropic | `claude-opus-4-8` | parked (cost). Same `effort`-defaults-high caveat. |
+| OpenAI | `gpt-5.5` | current flagship (`gpt-5.5-2026-04-23`). A **reasoning** model — set `reasoning_effort="minimal"` for parity. |
+| Google | `gemini-3.5-flash` | GA (alias `gemini-flash-latest`); Flash tier so thinking is controllable to minimal/0. Gemini 3 Pro is reasoning-first. |
+
+> ⚠️ **Reasoning parity changed.** The frontier is now *reasoning-first* — every provider's
+> newest models reason by default (Claude `effort` high, GPT-5.5 `reasoning_effort`, Gemini
+> adaptive thinking). "Thinking off" for these means **set the MINIMAL reasoning level on each**,
+> not just `thinking_budget=0`. The adapters currently only zero the old thinking budget — the
+> `effort`/`reasoning_effort` params still need wiring + a re-smoke before the full ladder.
+> (Alternative: run all at default reasoning and treat reasoning as part of the model — a
+> different, also-valid comparison.)
 
 **Use the newest variant per family.** The ids above are unversioned aliases → they already
 resolve to the latest snapshot within a family. For the latest *family* (names churn — a
@@ -68,9 +77,9 @@ under `results/tcga/ladder/<model>_<date>/` (analysis is then `for m in results/
 
 ```bash
 D=$(date +%Y%m%d)     # ONE date per campaign — reuse the SAME tag to resume (see note)
-bash scripts/run_tcga.sh --model claude-sonnet-4-6 --tag ladder/sonnet_$D
-bash scripts/run_tcga.sh --model gpt-4.1           --tag ladder/gpt41_$D
-bash scripts/run_tcga.sh --model gemini-2.5-flash  --tag ladder/gemini_$D
+bash scripts/run_tcga.sh --model claude-sonnet-5  --tag ladder/sonnet5_$D
+bash scripts/run_tcga.sh --model gpt-5.5          --tag ladder/gpt55_$D
+bash scripts/run_tcga.sh --model gemini-3.5-flash --tag ladder/gemini35_$D
 # bash scripts/run_tcga.sh --model claude-opus-4-8 --tag ladder/opus_$D   # parked (cost)
 ```
 Episode dirs are **label-named** (`.../ladder/gpt41_20260707/g2_brca_s42/…`), not uuids.
@@ -95,10 +104,12 @@ results/tcga/
 ## 5. Parity checklist (what must be equal across models)
 
 - ✅ prompt / tools / loop / codebook-reveal gate — shared by construction (one agent)
-- ✅ reasoning off — Claude budget 0, GPT-4.1 has none, Gemini budget 0 (Pro floor noted)
-- ✅ **output-token cap uniform** — the agent requests 32k/turn and every adapter's ceiling is
-  ≥ that (Anthropic 64k, OpenAI 32768 for gpt-4.1, Gemini 65536), so all four get a uniform
-  32k output cap. (If you swap to `gpt-4o`, lower `OpenAIAdapter.max_output_cap` to 16384.)
+- ⚠️ **reasoning level** — the current models are reasoning-first; set each to its MINIMAL
+  reasoning (Claude `effort` low, GPT-5.5 `reasoning_effort="minimal"`, Gemini thinking
+  minimal). Needs adapter wiring — see the ⚠️ box in §2. (Old set was simpler: budget 0 / none.)
+- ✅ **output-token cap uniform** — the agent requests 32k/turn; adapter ceilings are ≥ that
+  (Anthropic 64k, OpenAI 32768, Gemini 65536) → uniform 32k. (Reasoning tokens count against
+  output for the new models — may need raising if minimal-reasoning still truncates.)
 - ⚠️ verify `reveal@RO` matches in the smoke output before the full run.
 
 ## Cost & runtime estimate
@@ -109,10 +120,10 @@ first few real episodes.
 
 | Model | ~$/episode | ~$/48 eps | ~wall/episode | Notes |
 |---|---|---|---|---|
-| `claude-sonnet-4-6` | ~$3 | **~$145** | ~15–30 min | slow (many turns) |
+| `claude-sonnet-5` | ~$3 | **~$145** | ~15–30 min | slow (many turns) |
 | `claude-opus-4-8` | ~$15 | **~$720** | ~8–15 min | **the cost driver (~65% of the ladder)** |
-| `gpt-4.1` | ~$2 | **~$95** | ~5–10 min | fastest, cheapest-per-token flagship |
-| `gemini-2.5-flash` | ~$1 | **~$48** | ~15–25 min | cheap tokens but big context + retries → slow |
+| `gpt-5.5` | ~$2 | **~$95** | ~5–10 min | fastest, cheapest-per-token flagship |
+| `gemini-3.5-flash` | ~$1 | **~$48** | ~15–25 min | cheap tokens but big context + retries → slow |
 | **Full ladder** | | **~$1000** | | Opus dominates cost; Sonnet/Gemini dominate wall-time |
 
 **Levers if that's too much:**
