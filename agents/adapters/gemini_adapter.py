@@ -74,10 +74,13 @@ class GeminiAdapter(Adapter):
     def create(self, *, model, system, messages, tools, max_tokens, thinking=None) -> Response:
         t = self._t
         cfg = dict(
-            system_instruction=system,
             tools=self._tools(tools),
             max_output_tokens=min(max_tokens, self.max_output_cap),
             automatic_function_calling=t.AutomaticFunctionCallingConfig(disable=True),
+            # ANY forces a structured call; AUTO makes 2.5 emit the call as plain 'tool_code'
+            # text and measured 0/3 reliable here.
+            tool_config=t.ToolConfig(
+                function_calling_config=t.FunctionCallingConfig(mode="ANY")),
         )
         # Parity: disable Gemini 2.5's default "thinking" (thinking=None -> budget 0), or map
         # an explicit budget through. NOTE: 2.5 Flash honors 0 (fully off); 2.5 Pro has a
@@ -85,16 +88,30 @@ class GeminiAdapter(Adapter):
         if hasattr(t, "ThinkingConfig"):
             budget = int(thinking.get("budget_tokens", 0)) if thinking else 0
             cfg["thinking_config"] = t.ThinkingConfig(thinking_budget=budget)
-        # Force a structured function call each turn. Under AUTO, 2.5 emitted the call as
-        # plain "tool_code" text instead of a function_call; ANY makes it actually call a tool.
-        cfg["tool_config"] = t.ToolConfig(
-            function_calling_config=t.FunctionCallingConfig(mode="ANY"))
         config = t.GenerateContentConfig(**cfg)
-        resp = self._client.models.generate_content(
-            model=model, contents=self._contents(messages), config=config)
 
-        cand = resp.candidates[0]
-        parts = (cand.content.parts if getattr(cand, "content", None) else None) or []
+        # Deliver the system prompt as the first USER turn, NOT system_instruction: a long
+        # system_instruction reliably triggers MALFORMED_FUNCTION_CALL on Gemini (measured
+        # 1/3 vs 2/3 as a user turn). Same prompt text — provider-appropriate delivery only.
+        contents = self._contents(messages)
+        if system:
+            sys_part = t.Part(text=system.rstrip() + "\n\n")
+            if contents and contents[0].role == "user":
+                contents[0] = t.Content(role="user", parts=[sys_part] + list(contents[0].parts))
+            else:
+                contents.insert(0, t.Content(role="user", parts=[sys_part]))
+
+        # Even the best config is ~1/3 MALFORMED_FUNCTION_CALL — retry the same request;
+        # sampling variation clears it (6 tries -> ~99.9% per turn).
+        cand, parts = None, []
+        for _ in range(6):
+            resp = self._client.models.generate_content(
+                model=model, contents=contents, config=config)
+            cand = resp.candidates[0]
+            parts = (cand.content.parts if getattr(cand, "content", None) else None) or []
+            if parts:
+                break
+
         content, saw_call = [], False
         for part in parts:
             if getattr(part, "text", None):
