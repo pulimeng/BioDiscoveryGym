@@ -82,12 +82,12 @@ class GeminiAdapter(Adapter):
             tool_config=t.ToolConfig(
                 function_calling_config=t.FunctionCallingConfig(mode="ANY")),
         )
-        # Parity: disable Gemini 2.5's default "thinking" (thinking=None -> budget 0), or map
-        # an explicit budget through. NOTE: 2.5 Flash honors 0 (fully off); 2.5 Pro has a
-        # floor (~128 tokens) and cannot be fully disabled.
-        if hasattr(t, "ThinkingConfig"):
-            budget = int(thinking.get("budget_tokens", 0)) if thinking else 0
-            cfg["thinking_config"] = t.ThinkingConfig(thinking_budget=budget)
+        # Reasoning policy = DEFAULT / as-deployed (reviewer-proof): don't touch thinking —
+        # let the model use its own default adaptive thinking. Only set a budget if one is
+        # explicitly requested (thinking != None).
+        if thinking and hasattr(t, "ThinkingConfig"):
+            cfg["thinking_config"] = t.ThinkingConfig(
+                thinking_budget=int(thinking.get("budget_tokens", 0)))
         config = t.GenerateContentConfig(**cfg)
 
         # Deliver the system prompt as the first USER turn, NOT system_instruction: a long

@@ -7,8 +7,8 @@ adapter automatically.
 
 **Status:** the harness is proven — parity was smoke-confirmed (2026-07-07) on the *previous*
 model set (Sonnet 4.6 / Opus 4.8 / GPT-4.1 / Gemini-2.5-flash): all fired the G2 codebook at
-the same turn (`reveal@RO=3`) and submitted. **Model list updated to current (below); re-run
-`smoke_ladder.sh` on the new models before the full ladder** — and resolve reasoning-parity.
+the same turn (`reveal@RO=3`) and submitted. Model list now updated to current, reasoning =
+**default (as-deployed)**. **Re-run `smoke_ladder.sh` on the new models before the full ladder.**
 
 ## 1. Setup (once)
 
@@ -28,15 +28,15 @@ source load_keys.sh     # exports ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_AP
 Keys are per-provider (separate billing). Anthropic you already have. `load_keys.sh` holds no
 secrets (committable); `keys.txt` is gitignored — never commit it.
 
-## 2. Models (current as of 2026-07; reasoning at MINIMAL for parity)
+## 2. Models (current as of 2026-07; reasoning = DEFAULT / as-deployed)
 
 **Running now** (this ladder):
 
 | Provider | Model id | Notes |
 |---|---|---|
-| Anthropic | `claude-sonnet-5` | replaced Sonnet 4.6 (2026-06-30). `effort` param **defaults high** — set low/minimal for parity. |
-| OpenAI | `gpt-5.5` | current flagship (`gpt-5.5-2026-04-23`). Reasoning model — set `reasoning_effort="minimal"`. |
-| Google | `gemini-3.5-flash` | GA (alias `gemini-flash-latest`); Flash tier → thinking controllable to minimal. Gemini 3 Pro is reasoning-first. |
+| Anthropic | `claude-sonnet-5` | replaced Sonnet 4.6 (2026-06-30). `effort` defaults high (runs at default). |
+| OpenAI | `gpt-5.5` | current flagship (`gpt-5.5-2026-04-23`). Reasoning model — runs at default reasoning_effort. |
+| Google | `gemini-3.5-flash` | GA (alias `gemini-flash-latest`); Flash tier, default adaptive thinking. Gemini 3 Pro is reasoning-first. |
 
 **Parked — production tier** (not running now, but keep in the ladder; add with `--tag ladder/<m>_<date>`):
 
@@ -48,13 +48,14 @@ secrets (committable); `keys.txt` is gitignored — never commit it.
 Adding a parked model later is just another `run_tcga.sh --model <id> --tag ladder/<name>_<date>`
 — the adapter routes it, results slot into `ladder/`. No code change.
 
-> ⚠️ **Reasoning parity changed.** The frontier is now *reasoning-first* — every provider's
-> newest models reason by default (Claude `effort` high, GPT-5.5 `reasoning_effort`, Gemini
-> adaptive thinking). "Thinking off" for these means **set the MINIMAL reasoning level on each**,
-> not just `thinking_budget=0`. The adapters currently only zero the old thinking budget — the
-> `effort`/`reasoning_effort` params still need wiring + a re-smoke before the full ladder.
-> (Alternative: run all at default reasoning and treat reasoning as part of the model — a
-> different, also-valid comparison.)
+> **Reasoning policy: DEFAULT (as-deployed).** The frontier is reasoning-first; we run each
+> model at its **own default reasoning** (Claude `effort` high, GPT-5.5 default, Gemini
+> adaptive) rather than forcing minimal. Rationale: **more reviewer-proof** — "each model as
+> its provider ships it," which pre-empts the "you handicapped them by disabling reasoning"
+> objection. Reasoning is a property of the model, not a confound we introduced. The adapters
+> set **no** reasoning params. Cost is **~2–4× the figures below** (reasoning tokens billed as
+> output). Watch for output truncation at the smoke — heavy default reasoning can eat the 32k
+> output budget before the tool call; if so, raise the agent `max_tokens`.
 
 **Use the newest variant per family.** The ids above are unversioned aliases → they already
 resolve to the latest snapshot within a family. For the latest *family* (names churn — a
@@ -115,20 +116,18 @@ results/tcga/
 ## 5. Parity checklist (what must be equal across models)
 
 - ✅ prompt / tools / loop / codebook-reveal gate — shared by construction (one agent)
-- ⚠️ **reasoning level** — the current models are reasoning-first; set each to its MINIMAL
-  reasoning (Claude `effort` low, GPT-5.5 `reasoning_effort="minimal"`, Gemini thinking
-  minimal). Needs adapter wiring — see the ⚠️ box in §2. (Old set was simpler: budget 0 / none.)
+- ✅ **reasoning = default (as-deployed)** — each model at its own default; intentional, not forced (see §2). Reasoning is a model property here, not a confound.
 - ✅ **output-token cap uniform** — the agent requests 32k/turn; adapter ceilings are ≥ that
   (Anthropic 64k, OpenAI 32768, Gemini 65536) → uniform 32k. (Reasoning tokens count against
-  output for the new models — may need raising if minimal-reasoning still truncates.)
+  output — **default reasoning can eat the 32k budget**; raise agent `max_tokens` if truncating.)
 - ⚠️ verify `reveal@RO` matches in the smoke output before the full run.
 
 ## Cost & runtime estimate
 
 **48 episodes/model** (G0×12 + G1×12 + G2×12 + G3a×6 + G3b×6; all of G0/G1/G2 = 4 cohorts ×
-3 seeds), ~100 tool calls each. Estimates below **assume MINIMAL reasoning** — at *default*
-reasoning expect **~2–4×** (reasoning tokens are billed as output, × ~100 turns/episode).
-Order-of-magnitude; verify against your first few real episodes.
+3 seeds), ~100 tool calls each. The table is a MINIMAL-reasoning baseline; **we run DEFAULT reasoning, so budget ~2–4× these**
+(reasoning tokens billed as output × ~100 turns/episode). Order-of-magnitude; verify on your
+first few real episodes.
 
 | Model | ~$/episode | ~$/48 eps | ~wall/episode | Notes |
 |---|---|---|---|---|
