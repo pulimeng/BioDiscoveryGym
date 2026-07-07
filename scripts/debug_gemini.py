@@ -73,22 +73,30 @@ try:
 except Exception as e:
     print("\n3. one tool ANY FAILED:", type(e).__name__, str(e)[:300])
 
-# 4) the AGENT's real tools + real system prompt, ANY — the actual failing config
-try:
-    sys.path.insert(0, ".")
-    from agents.adapters.gemini_adapter import GeminiAdapter
-    import agents.cohort_agent as ca
-    # gather the module-level tool dicts the agent uses
-    tool_dicts = [v for v in vars(ca).values() if isinstance(v, dict) and "input_schema" in v]
-    print(f"\n(agent has {len(tool_dicts)} module-level tool dicts: {[d['name'] for d in tool_dicts]})")
-    ad = GeminiAdapter()
-    gtools = ad._tools(tool_dicts)
-    r = client.models.generate_content(model=MODEL, contents="Begin. Inspect the dataset.",
-        config=t.GenerateContentConfig(**base, **think, tools=gtools,
-            automatic_function_calling=t.AutomaticFunctionCallingConfig(disable=True),
-            tool_config=t.ToolConfig(function_calling_config=t.FunctionCallingConfig(mode="ANY"))))
-    dump("4. AGENT tools, ANY mode (the real config)", r)
-except Exception as e:
-    import traceback
-    print("\n4. AGENT tools FAILED:", type(e).__name__, str(e)[:400])
-    traceback.print_exc()
+# 4) the AGENT's REAL tool set (_TOOLS includes run_code + submit_discovery) — and bisect
+sys.path.insert(0, ".")
+from agents.adapters.gemini_adapter import GeminiAdapter
+import agents.cohort_agent as ca
+ad = GeminiAdapter()
+real_tools = list(ca._TOOLS) + [ca._RECORD_OBSERVATION_TOOL]
+print(f"\n(real agent tool set: {[d['name'] for d in real_tools]})")
+
+
+def try_tools(label, tool_dicts):
+    try:
+        gtools = ad._tools(tool_dicts)
+        r = client.models.generate_content(model=MODEL, contents="Begin. Inspect the dataset.",
+            config=t.GenerateContentConfig(**base, **think, tools=gtools,
+                automatic_function_calling=t.AutomaticFunctionCallingConfig(disable=True),
+                tool_config=t.ToolConfig(function_calling_config=t.FunctionCallingConfig(mode="ANY"))))
+        dump(label, r)
+    except Exception as e:
+        import traceback
+        print(f"\n{label} RAISED:", type(e).__name__, str(e)[:400])
+        traceback.print_exc()
+
+
+try_tools("4. FULL real tool set, ANY", real_tools)
+# bisect: each tool alone (empty parts here = that schema breaks Gemini)
+for td in real_tools:
+    try_tools(f"5. ONLY {td['name']}", [td])
