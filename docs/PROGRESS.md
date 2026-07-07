@@ -16,7 +16,7 @@
 | Explore/exploit scoring — **REFRAMED to support (2026-07-02)** | Strategy (neutral tag) × support (scored: grounded/unsupported/anchored) replaces derived>recalled. Scorer `scripts/score_support.py` → `_supportscores.json`; judge `scripts/support_judge.py` validated ~95% on `scripts/support_probes.json`; fact-check cards `docs/COHORT_REFERENCE_CARDS.md`. **Run on run1+2 (62 eps).** Map: `docs/README.md`; rationale: `docs/SUPPORT_JUDGE_PROMPT.md` |
 | ~~Decision-point scorer (derived/recalled)~~ | **Superseded** — prototype produced run1+2 `_dpscores.json` (partition derived-rate g0 14%→g2 81%, cited in EXPLORE_EXPLOIT_SCORING). `score_decision_points.py` / `DECISION_POINT_RUBRIC.md` retained for history |
 | Support scoring on run1+2 | **Done (2026-07-02)** — 62 eps scored; two axes orthogonal (support ≠ correctness), Sonnet grounds well, anchoring only under G3 mislead. "unwarranted recall common" did NOT hold for a frontier model → motivates the model ladder |
-| Model ladder | **Ready (2026-07-07)** — provider adapters (`agents/adapters/`) run ONE identical agent across Sonnet/Opus/GPT-4.1/Gemini-flash (`--model` routes by prefix). Smoke-tested, parity confirmed (`reveal@RO=3` all 4). Full run: 40 eps/model, **~$850 total** (Opus ~$600). Guide: `docs/MODEL_LADDER.md` |
+| Model ladder | **Ready (2026-07-07)** — provider adapters (`agents/adapters/`) run ONE identical agent across Sonnet/Opus/GPT-4.1/Gemini-flash (`--model` routes by prefix). Smoke-tested, parity confirmed (`reveal@RO=3` all 4). Full run: **48 eps/model** (G0 now 3 seeds), **~$1000 total** (Opus ~$720). Guide: `docs/MODEL_LADDER.md` |
 | Mechanism prompt loosening | Committed but **dormant** (`690b3db`); cheap A/B **done** — flat D3 both arms (loosening did not unflatten → model behavior, not prompt). No full re-run. Local-only `run_mech_ab.sh` |
 | SGH-OS scorer (Phase 1+2+3) | Complete — 11 components, 24 pts, with TARGET-OS external validation |
 | Unified prompt | `agent_system.txt` replaces g0/g1/g2_system.txt; codebook auto-injected |
@@ -156,6 +156,6 @@ bash scripts/run_cohort.sh --tag run10 --cohort OS
 ## Next Steps
 
 1. **run7** — smoke test first, then full 9-run OS benchmark with all fixes applied
-2. **TCGA benchmark** — fund and run 40 episodes (G0×4, G1×12, G2×12, G3a×6, G3b×6 from 2 mislead pairs × 2 ro_gates; 4 cohorts) on Sonnet (~$120)
+2. **TCGA benchmark** — fund and run 48 episodes/model (G0×12, G1×12, G2×12, G3a×6, G3b×6; G0/G1/G2 = 4 cohorts × 3 seeds; G3 = 2 mislead pairs × 2 ro_gates × 3 seeds). Model ladder: see `docs/MODEL_LADDER.md`
 3. **OS with WES/CNA** — re-run once GSA HRA003260 access granted; expect `genomic_coherence_drivers` to become non-zero
 4. **Task B systematic runs** — run target discovery pipeline on 3+ indications

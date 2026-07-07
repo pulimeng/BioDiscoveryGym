@@ -81,20 +81,21 @@ The paper figure is the **outcome × support cross-tab per model** — does the 
 
 ## Cost & runtime estimate
 
-**40 episodes/model** (G0×4 + G1×12 + G2×12 + G3a×6 + G3b×6), ~100 tool calls each. Estimates
-below are order-of-magnitude — verify against your first few real episodes.
+**48 episodes/model** (G0×12 + G1×12 + G2×12 + G3a×6 + G3b×6; all of G0/G1/G2 = 4 cohorts ×
+3 seeds), ~100 tool calls each. Estimates below are order-of-magnitude — verify against your
+first few real episodes.
 
-| Model | ~$/episode | ~$/40 eps | ~wall/episode | Notes |
+| Model | ~$/episode | ~$/48 eps | ~wall/episode | Notes |
 |---|---|---|---|---|
-| `claude-sonnet-4-6` | ~$3 | **~$120** | ~15–30 min | slow (many turns) |
-| `claude-opus-4-8` | ~$15 | **~$600** | ~8–15 min | **the cost driver (~65% of the ladder)** |
-| `gpt-4.1` | ~$2 | **~$80** | ~5–10 min | fastest, cheapest-per-token flagship |
-| `gemini-2.5-flash` | ~$1 | **~$40** | ~15–25 min | cheap tokens but big context + retries → slow |
-| **Full ladder** | | **~$850** | | Opus dominates cost; Sonnet/Gemini dominate wall-time |
+| `claude-sonnet-4-6` | ~$3 | **~$145** | ~15–30 min | slow (many turns) |
+| `claude-opus-4-8` | ~$15 | **~$720** | ~8–15 min | **the cost driver (~65% of the ladder)** |
+| `gpt-4.1` | ~$2 | **~$95** | ~5–10 min | fastest, cheapest-per-token flagship |
+| `gemini-2.5-flash` | ~$1 | **~$48** | ~15–25 min | cheap tokens but big context + retries → slow |
+| **Full ladder** | | **~$1000** | | Opus dominates cost; Sonnet/Gemini dominate wall-time |
 
 **Levers if that's too much:**
 - **Drop Opus** → ~$250 for the other three (Opus is ~$600 alone).
-- **`--no-g3`** → 28 eps/model instead of 40 (skips the mislead arms) → ~30% cheaper.
+- **`--no-g3`** → 36 eps/model instead of 48 (skips the mislead arms) → ~25% cheaper.
 - Run Opus on **1 seed** (G1/G2 → 4 eps each instead of 12) if you only need a point estimate.
 
 Runtime is serial and long (a full model = ~10–20 hr wall). Run models/arms in separate
