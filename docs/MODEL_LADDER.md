@@ -54,21 +54,29 @@ Gemini is the one to watch (matches tool responses by name, not id; finickier fu
 
 ## 4. Full ladder
 
-`run_tcga.sh` already takes `--model`, so run the full cohort × seed × arm set per model:
+`run_tcga.sh` takes `--model` and a nested `--tag`, so each model's 48 episodes land grouped
+under `results/tcga/ladder/<model>/` (analysis is then `for m in results/tcga/ladder/*/`):
 
 ```bash
-bash scripts/run_tcga.sh --model claude-sonnet-4-6 --tag ladder_sonnet
-bash scripts/run_tcga.sh --model claude-opus-4-8   --tag ladder_opus
-bash scripts/run_tcga.sh --model gpt-4.1           --tag ladder_gpt41
-bash scripts/run_tcga.sh --model gemini-2.5-pro    --tag ladder_gemini
+bash scripts/run_tcga.sh --model claude-sonnet-4-6 --tag ladder/sonnet
+bash scripts/run_tcga.sh --model gpt-4.1           --tag ladder/gpt41
+bash scripts/run_tcga.sh --model gemini-2.5-flash  --tag ladder/gemini
+# bash scripts/run_tcga.sh --model claude-opus-4-8 --tag ladder/opus   # parked (cost)
 ```
-Then score each with both tracks (see `docs/README.md`):
-```bash
-python scripts/score_tcga_episode.py <ep> --cohort <C> --save   # outcome  -> _v3scores.json
-python scripts/score_support.py results/tcga/ladder_<m> --save   # support  -> _supportscores.json
-```
+`run_tcga.sh` scores each episode as it goes (both tracks: `_v3scores.json` + support). To
+(re)score a whole model dir: `python scripts/score_support.py results/tcga/ladder/<m> --save`.
+
 The paper figure is the **outcome × support cross-tab per model** — does the top-right cell
 (correct-but-unwarranted) fill for weaker models and stay empty for stronger ones?
+
+### Results layout (all under gitignored `results/`)
+```
+results/tcga/
+├── ladder/<model>/<uuid>/   episode.json + .md + _v3scores + _supportscores + artifacts
+├── run1+2/                  canonical Sonnet pilot (62 eps, keep)
+├── _archive/                superseded runs (run1, run2, mech_ab_*)
+└── _smoke/                  smoke tests (smoke_ladder, smoke-test)
+```
 
 ## 5. Parity checklist (what must be equal across models)
 
