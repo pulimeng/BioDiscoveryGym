@@ -809,11 +809,7 @@ class CohortAgent:
 
         for attempt in range(3):
             try:
-                with self.client.messages.stream(
-                    messages=messages,
-                    **force_kwargs,
-                ) as stream:
-                    response = stream.get_final_message()
+                response = self.adapter.create(messages=messages, **force_kwargs)
             except Exception as e:
                 self._log(f"[CohortAgent] Forced submit error (attempt {attempt+1}): {e}")
                 break

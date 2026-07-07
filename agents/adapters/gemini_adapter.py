@@ -85,13 +85,18 @@ class GeminiAdapter(Adapter):
         if hasattr(t, "ThinkingConfig"):
             budget = int(thinking.get("budget_tokens", 0)) if thinking else 0
             cfg["thinking_config"] = t.ThinkingConfig(thinking_budget=budget)
+        # Force a structured function call each turn. Under AUTO, 2.5 emitted the call as
+        # plain "tool_code" text instead of a function_call; ANY makes it actually call a tool.
+        cfg["tool_config"] = t.ToolConfig(
+            function_calling_config=t.FunctionCallingConfig(mode="ANY"))
         config = t.GenerateContentConfig(**cfg)
         resp = self._client.models.generate_content(
             model=model, contents=self._contents(messages), config=config)
 
         cand = resp.candidates[0]
+        parts = (cand.content.parts if getattr(cand, "content", None) else None) or []
         content, saw_call = [], False
-        for part in (cand.content.parts or []):
+        for part in parts:
             if getattr(part, "text", None):
                 content.append(Block(type="text", text=part.text))
             fc = getattr(part, "function_call", None)
