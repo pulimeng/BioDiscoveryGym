@@ -30,12 +30,23 @@ secrets (committable); `keys.txt` is gitignored — never commit it.
 
 ## 2. Models (current as of 2026-07; reasoning at MINIMAL for parity)
 
+**Running now** (this ladder):
+
 | Provider | Model id | Notes |
 |---|---|---|
-| Anthropic | `claude-sonnet-5` | replaced Sonnet 4.6 (2026-06-30). Has an `effort` param that **defaults high** — set low/minimal for parity. |
-| Anthropic | `claude-opus-4-8` | parked (cost). Same `effort`-defaults-high caveat. |
-| OpenAI | `gpt-5.5` | current flagship (`gpt-5.5-2026-04-23`). A **reasoning** model — set `reasoning_effort="minimal"` for parity. |
-| Google | `gemini-3.5-flash` | GA (alias `gemini-flash-latest`); Flash tier so thinking is controllable to minimal/0. Gemini 3 Pro is reasoning-first. |
+| Anthropic | `claude-sonnet-5` | replaced Sonnet 4.6 (2026-06-30). `effort` param **defaults high** — set low/minimal for parity. |
+| OpenAI | `gpt-5.5` | current flagship (`gpt-5.5-2026-04-23`). Reasoning model — set `reasoning_effort="minimal"`. |
+| Google | `gemini-3.5-flash` | GA (alias `gemini-flash-latest`); Flash tier → thinking controllable to minimal. Gemini 3 Pro is reasoning-first. |
+
+**Parked — production tier** (not running now, but keep in the ladder; add with `--tag ladder/<m>_<date>`):
+
+| Provider | Model id | Notes |
+|---|---|---|
+| Anthropic | `claude-opus-4-8` | production Opus; ~$720/48 eps (the cost driver). `effort` defaults high. |
+| Anthropic | `claude-fable-5` | current **top tier** (above Opus, $10/$50); the true flagship if production uses it. |
+
+Adding a parked model later is just another `run_tcga.sh --model <id> --tag ladder/<name>_<date>`
+— the adapter routes it, results slot into `ladder/`. No code change.
 
 > ⚠️ **Reasoning parity changed.** The frontier is now *reasoning-first* — every provider's
 > newest models reason by default (Claude `effort` high, GPT-5.5 `reasoning_effort`, Gemini
@@ -115,8 +126,9 @@ results/tcga/
 ## Cost & runtime estimate
 
 **48 episodes/model** (G0×12 + G1×12 + G2×12 + G3a×6 + G3b×6; all of G0/G1/G2 = 4 cohorts ×
-3 seeds), ~100 tool calls each. Estimates below are order-of-magnitude — verify against your
-first few real episodes.
+3 seeds), ~100 tool calls each. Estimates below **assume MINIMAL reasoning** — at *default*
+reasoning expect **~2–4×** (reasoning tokens are billed as output, × ~100 turns/episode).
+Order-of-magnitude; verify against your first few real episodes.
 
 | Model | ~$/episode | ~$/48 eps | ~wall/episode | Notes |
 |---|---|---|---|---|
