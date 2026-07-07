@@ -100,3 +100,27 @@ try_tools("4. FULL real tool set, ANY", real_tools)
 # bisect: each tool alone (empty parts here = that schema breaks Gemini)
 for td in real_tools:
     try_tools(f"5. ONLY {td['name']}", [td])
+
+# 6) through the ADAPTER's create() — exercises _contents + full config (the real path)
+import os.path
+def adapter_call(label, system, max_tokens):
+    try:
+        resp = ad.create(model=MODEL, system=system,
+            messages=[{"role": "user",
+                       "content": "Begin. Work through each stage in order and show your reasoning."}],
+            tools=real_tools, max_tokens=max_tokens)
+        print(f"\n===== {label} =====")
+        print(f"  stop_reason={resp.stop_reason}  n_blocks={len(resp.content)}")
+        for b in resp.content:
+            print("   block:", b.type, "|", (b.name or (b.text or '')[:70]))
+    except Exception as e:
+        import traceback
+        print(f"\n{label} RAISED:", type(e).__name__, str(e)[:300]); traceback.print_exc()
+
+sysp = ""
+for p in ("prompts/agent_system_tcga.txt", "prompts/agent_system.txt"):
+    if os.path.exists(p):
+        sysp = open(p).read(); print(f"\n(loaded {p}: {len(sysp)} chars)"); break
+adapter_call("6a. adapter.create + real system prompt, max_tokens=32000", sysp, 32000)
+adapter_call("6b. adapter.create + NO system prompt,   max_tokens=32000", "", 32000)
+adapter_call("6c. adapter.create + real system prompt, max_tokens=2048", sysp, 2048)
