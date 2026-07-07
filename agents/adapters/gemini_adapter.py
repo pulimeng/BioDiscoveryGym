@@ -51,8 +51,15 @@ class GeminiAdapter(Adapter):
                     if kind == "text" and obj.text:
                         parts.append(t.Part(text=obj.text))
                     elif kind == "tool_use":
-                        parts.append(t.Part(function_call=t.FunctionCall(
-                            name=obj.name, args=obj.input or {})))
+                        p = t.Part(function_call=t.FunctionCall(
+                            name=obj.name, args=obj.input or {}))
+                        # echo back the thought_signature Gemini requires (default thinking)
+                        if getattr(obj, "signature", None) is not None:
+                            try:
+                                p.thought_signature = obj.signature
+                            except Exception:
+                                pass
+                        parts.append(p)
                 if parts:
                     contents.append(t.Content(role="model", parts=parts))
             else:
@@ -114,14 +121,18 @@ class GeminiAdapter(Adapter):
 
         content, saw_call = [], False
         for part in parts:
+            if getattr(part, "thought", False):
+                continue   # reasoning trace (default thinking) — not replayed as content
             if getattr(part, "text", None):
                 content.append(Block(type="text", text=part.text))
             fc = getattr(part, "function_call", None)
             if fc is not None:
                 saw_call = True
-                # id == name so the response round-trips by name
+                # id == name so the response round-trips by name; carry the thought_signature
+                # so we can echo it back next turn (Gemini requires it at default thinking).
                 content.append(Block(type="tool_use", id=fc.name, name=fc.name,
-                                     input=dict(fc.args or {})))
+                                     input=dict(fc.args or {}),
+                                     signature=getattr(part, "thought_signature", None)))
         fr = str(getattr(cand, "finish_reason", "") or "")
         stop = "tool_use" if saw_call else ("max_tokens" if "MAX_TOKENS" in fr else "end_turn")
         um = getattr(resp, "usage_metadata", None)

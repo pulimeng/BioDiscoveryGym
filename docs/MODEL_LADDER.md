@@ -36,7 +36,7 @@ secrets (committable); `keys.txt` is gitignored — never commit it.
 |---|---|---|
 | Anthropic | `claude-sonnet-5` | replaced Sonnet 4.6 (2026-06-30). `effort` defaults high (runs at default). |
 | OpenAI | `gpt-5.5` | current flagship (`gpt-5.5-2026-04-23`). Reasoning model — runs at default reasoning_effort. |
-| Google | `gemini-3.5-flash` | GA (alias `gemini-flash-latest`); Flash tier, default adaptive thinking. Gemini 3 Pro is reasoning-first. |
+| Google | `gemini-3.5-pro` | regular 3.5 Pro (not Flash). Reasoning-first, default adaptive thinking; verify exact id via models.list. |
 
 **Parked — production tier** (not running now, but keep in the ladder; add with `--tag ladder/<m>_<date>`):
 
@@ -91,7 +91,7 @@ under `results/tcga/ladder/<model>_<date>/` (analysis is then `for m in results/
 D=$(date +%Y%m%d)     # ONE date per campaign — reuse the SAME tag to resume (see note)
 bash scripts/run_tcga.sh --model claude-sonnet-5  --tag ladder/sonnet5_$D
 bash scripts/run_tcga.sh --model gpt-5.5          --tag ladder/gpt55_$D
-bash scripts/run_tcga.sh --model gemini-3.5-flash --tag ladder/gemini35_$D
+bash scripts/run_tcga.sh --model gemini-3.5-pro --tag ladder/gemini35_$D
 # bash scripts/run_tcga.sh --model claude-opus-4-8 --tag ladder/opus_$D   # parked (cost)
 ```
 Episode dirs are **label-named** (`.../ladder/gpt41_20260707/g2_brca_s42/…`), not uuids.
@@ -134,7 +134,7 @@ first few real episodes.
 | `claude-sonnet-5` | ~$3 | **~$145** | ~15–30 min | slow (many turns) |
 | `claude-opus-4-8` | ~$15 | **~$720** | ~8–15 min | **the cost driver (~65% of the ladder)** |
 | `gpt-5.5` | ~$2 | **~$95** | ~5–10 min | fastest, cheapest-per-token flagship |
-| `gemini-3.5-flash` | ~$1 | **~$48** | ~15–25 min | cheap tokens but big context + retries → slow |
+| `gemini-3.5-pro` | ~$3? | **~$145?** | ~15–25 min | Pro tier (pricier than Flash — verify); big context + retries → slow |
 | **Full ladder** | | **~$1000** | | Opus dominates cost; Sonnet/Gemini dominate wall-time |
 
 **Levers if that's too much:**

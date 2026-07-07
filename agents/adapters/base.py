@@ -34,6 +34,7 @@ class Block:
     name: str | None = None        # for type == "tool_use"
     input: dict | None = None      # for type == "tool_use"
     thinking: str | None = None     # for type == "thinking"
+    signature: object | None = None  # provider reasoning signature (e.g. Gemini thought_signature)
 
     def model_dump(self) -> dict:
         """Anthropic-shaped dict — lets run_episode._serialize_messages persist blocks as
