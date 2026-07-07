@@ -1,6 +1,6 @@
 # BioDiscoveryGym — Status
 
-**Last updated:** 2026-07-02 · scoring map: **`docs/README.md`** (start here)
+**Last updated:** 2026-07-07 · scoring map: **`docs/README.md`** · model ladder: **`docs/MODEL_LADDER.md`**
 
 ---
 
@@ -13,8 +13,10 @@
 | Task A TCGA benchmark | Designed (40 runs: G3 split into G3a ro_gate=3 + G3b ro_gate=5 sub-arms 2026-06-15; cohorts trimmed 7→4 on 2026-06-18); awaiting budget (~$120 on Sonnet) |
 | Task B target discovery | Archived (`scripts/archive/run_target_discovery*.py`) |
 | TCGA scorer (outcome) | Complete — **7 components, 14 pts** (RPPA removed 2026-06-30) + cohort-identity gate |
-| Explore/exploit scoring — **REFRAMED to support (2026-07-02)** | Strategy (neutral tag) × support (scored: grounded/unsupported/anchored) replaces derived>recalled. Scorer `scripts/score_support.py` → `_supportscores.json`; judge `scripts/support_judge.py` validated ~95% on `scripts/support_probes.json`; fact-check cards `docs/COHORT_REFERENCE_CARDS.md`. **Not yet run on real episodes.** Map: `docs/README.md`; rationale: `docs/SUPPORT_JUDGE_PROMPT.md` |
+| Explore/exploit scoring — **REFRAMED to support (2026-07-02)** | Strategy (neutral tag) × support (scored: grounded/unsupported/anchored) replaces derived>recalled. Scorer `scripts/score_support.py` → `_supportscores.json`; judge `scripts/support_judge.py` validated ~95% on `scripts/support_probes.json`; fact-check cards `docs/COHORT_REFERENCE_CARDS.md`. **Run on run1+2 (62 eps).** Map: `docs/README.md`; rationale: `docs/SUPPORT_JUDGE_PROMPT.md` |
 | ~~Decision-point scorer (derived/recalled)~~ | **Superseded** — prototype produced run1+2 `_dpscores.json` (partition derived-rate g0 14%→g2 81%, cited in EXPLORE_EXPLOIT_SCORING). `score_decision_points.py` / `DECISION_POINT_RUBRIC.md` retained for history |
+| Support scoring on run1+2 | **Done (2026-07-02)** — 62 eps scored; two axes orthogonal (support ≠ correctness), Sonnet grounds well, anchoring only under G3 mislead. "unwarranted recall common" did NOT hold for a frontier model → motivates the model ladder |
+| Model ladder | **Ready (2026-07-07)** — provider adapters (`agents/adapters/`) run ONE identical agent across Sonnet/Opus/GPT-4.1/Gemini-flash (`--model` routes by prefix). Smoke-tested, parity confirmed (`reveal@RO=3` all 4). Full run: 40 eps/model, **~$850 total** (Opus ~$600). Guide: `docs/MODEL_LADDER.md` |
 | Mechanism prompt loosening | Committed but **dormant** (`690b3db`); cheap A/B **done** — flat D3 both arms (loosening did not unflatten → model behavior, not prompt). No full re-run. Local-only `run_mech_ab.sh` |
 | SGH-OS scorer (Phase 1+2+3) | Complete — 11 components, 24 pts, with TARGET-OS external validation |
 | Unified prompt | `agent_system.txt` replaces g0/g1/g2_system.txt; codebook auto-injected |

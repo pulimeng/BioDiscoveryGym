@@ -5,6 +5,10 @@ model providers, so any difference is the *model*, not the scaffolding. One agen
 (`agents/cohort_agent.py`) + provider adapters (`agents/adapters/`); the model id picks the
 adapter automatically.
 
+**Status (2026-07-07): smoke-tested, parity confirmed** across Sonnet / Opus / GPT-4.1 /
+Gemini-2.5-flash — all four fire the G2 codebook at the *same* record_observation turn
+(`reveal@RO=3`) and submit a discovery. Cleared for the full ladder. Smoke: `smoke_ladder.sh`.
+
 ## 1. Setup (once)
 
 ```bash
@@ -75,7 +79,32 @@ The paper figure is the **outcome × support cross-tab per model** — does the 
   32k output cap. (If you swap to `gpt-4o`, lower `OpenAIAdapter.max_output_cap` to 16384.)
 - ⚠️ verify `reveal@RO` matches in the smoke output before the full run.
 
-## Cost
+## Cost & runtime estimate
 
-Rough order (63 eps × ~100 calls): **Opus / o-series most expensive**, `gpt-4.1` and Gemini
-mid/cheap. Estimate per model and load each account before the full run; the smoke is cents.
+**40 episodes/model** (G0×4 + G1×12 + G2×12 + G3a×6 + G3b×6), ~100 tool calls each. Estimates
+below are order-of-magnitude — verify against your first few real episodes.
+
+| Model | ~$/episode | ~$/40 eps | ~wall/episode | Notes |
+|---|---|---|---|---|
+| `claude-sonnet-4-6` | ~$3 | **~$120** | ~15–30 min | slow (many turns) |
+| `claude-opus-4-8` | ~$15 | **~$600** | ~8–15 min | **the cost driver (~65% of the ladder)** |
+| `gpt-4.1` | ~$2 | **~$80** | ~5–10 min | fastest, cheapest-per-token flagship |
+| `gemini-2.5-flash` | ~$1 | **~$40** | ~15–25 min | cheap tokens but big context + retries → slow |
+| **Full ladder** | | **~$850** | | Opus dominates cost; Sonnet/Gemini dominate wall-time |
+
+**Levers if that's too much:**
+- **Drop Opus** → ~$250 for the other three (Opus is ~$600 alone).
+- **`--no-g3`** → 28 eps/model instead of 40 (skips the mislead arms) → ~30% cheaper.
+- Run Opus on **1 seed** (G1/G2 → 4 eps each instead of 12) if you only need a point estimate.
+
+Runtime is serial and long (a full model = ~10–20 hr wall). Run models/arms in separate
+terminals to parallelize, and `run_tcga.sh` is resume-safe (skips already-completed episodes).
+
+## Provider notes (adapter behavior)
+
+- **Gemini** delivers the system prompt as the first *user* turn (not `system_instruction`)
+  and forces tool calls (`mode=ANY`) with a retry-on-malformed loop — a long
+  `system_instruction` otherwise triggers `MALFORMED_FUNCTION_CALL`. Same prompt text as the
+  other models (no parity break); it just costs Gemini extra calls/latency. Gemini matches
+  tool responses by name (no call id).
+- **Output cap** is a uniform 32k across all four (adapters raise their ceilings to ≥ that).
