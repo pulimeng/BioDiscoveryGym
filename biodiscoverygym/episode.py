@@ -149,7 +149,8 @@ class Episode:
     # Run
     # ------------------------------------------------------------------
 
-    def run(self, agent: Any, results_base: str | Path | None = None) -> "EpisodeResult":
+    def run(self, agent: Any, results_base: str | Path | None = None,
+            subdir: str | None = None) -> "EpisodeResult":
         import json
 
         set_global_seed(self.seed)
@@ -158,7 +159,8 @@ class Episode:
         self._write_episode_data()
 
         base = Path(results_base) if results_base else Path("results") / "tcga"
-        output_dir = base / self.episode_id
+        # Per-episode dir: the readable label if given (e.g. g2_brca_s42), else the uuid.
+        output_dir = base / (subdir or self.episode_id)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         if self._gene_map:

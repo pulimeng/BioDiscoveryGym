@@ -300,7 +300,10 @@ def main():
         results_base = Path("results") / "external"
     else:
         results_base = Path("results") / "tcga"
-    result = episode.run(agent, results_base=results_base)
+    # Name the per-episode dir by its label (e.g. g2_brca_s42) instead of a uuid, when a
+    # --save-log label is given — makes results/tcga/ladder/<model>/ human-readable.
+    _subdir = Path(args.save_log).stem if args.save_log else None
+    result = episode.run(agent, results_base=results_base, subdir=_subdir)
 
     # Print results
     print(f"\n{'='*60}")
