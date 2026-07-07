@@ -35,6 +35,16 @@ class Block:
     input: dict | None = None      # for type == "tool_use"
     thinking: str | None = None     # for type == "thinking"
 
+    def model_dump(self) -> dict:
+        """Anthropic-shaped dict — lets run_episode._serialize_messages persist blocks as
+        proper {"type": "tool_use"/"text"/...} dicts (so the trace scorers can read them)."""
+        if self.type == "tool_use":
+            return {"type": "tool_use", "id": self.id, "name": self.name,
+                    "input": self.input or {}}
+        if self.type == "thinking":
+            return {"type": "thinking", "thinking": self.thinking or ""}
+        return {"type": "text", "text": self.text or ""}
+
 
 @dataclass
 class Response:

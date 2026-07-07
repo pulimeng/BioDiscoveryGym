@@ -30,7 +30,7 @@ secrets (committable); `keys.txt` is gitignored — never commit it.
 | Anthropic | `claude-sonnet-4-6` | thinking off (`--thinking-budget 0`, the default) |
 | Anthropic | `claude-opus-4-8` | thinking off |
 | OpenAI | `gpt-4.1` | non-reasoning flagship (the clean pair; `o3` is a *reasoning* model → separate axis) |
-| Google | `gemini-2.5-pro` | thinking auto-disabled by the adapter; **2.5 Pro has a ~128-token floor** — can't be *fully* off (footnote it). Use `gemini-2.5-flash` for zero-thinking, at a lighter tier. |
+| Google | `gemini-2.5-flash` | **2.5 Pro REJECTS thinking-off** (`400: Budget 0 is invalid; this model only works in thinking mode`) — confirmed. For a thinking-off ladder you MUST use **`gemini-2.5-flash`** (accepts budget 0), a lighter tier than Opus. To keep 2.5 Pro, run it as a separate *thinking-on* arm (footnote that one model reasons). |
 
 Confirm exact ids against each provider's current docs when you make the keys — names churn.
 
