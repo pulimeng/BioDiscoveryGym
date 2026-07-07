@@ -36,7 +36,16 @@ secrets (committable); `keys.txt` is gitignored — never commit it.
 | OpenAI | `gpt-4.1` | non-reasoning flagship (the clean pair; `o3` is a *reasoning* model → separate axis) |
 | Google | `gemini-2.5-flash` | **2.5 Pro REJECTS thinking-off** (`400: Budget 0 is invalid; this model only works in thinking mode`) — confirmed. For a thinking-off ladder you MUST use **`gemini-2.5-flash`** (accepts budget 0), a lighter tier than Opus. To keep 2.5 Pro, run it as a separate *thinking-on* arm (footnote that one model reasons). |
 
-Confirm exact ids against each provider's current docs when you make the keys — names churn.
+**Use the newest variant per family.** The ids above are unversioned aliases → they already
+resolve to the latest snapshot within a family. For the latest *family* (names churn — a
+newer one may have shipped), list what your keys can actually see and pick the top:
+```bash
+python -c "import anthropic;[print(m.id) for m in anthropic.Anthropic().models.list()]"
+python -c "import openai;[print(m.id) for m in openai.OpenAI().models.list()]"
+python -c "from google import genai;[print(m.name) for m in genai.Client().models.list()]"
+```
+Any newer id just goes in `--model` — the adapter routes by prefix (`claude*` / `gpt*`/`o<n>`
+/ `gemini*`), so `gpt-5`, `o5`, `gemini-3.0-pro`, `claude-opus-4-9` all work with no code change.
 
 ## 3. Smoke test FIRST (cheap — do not skip)
 

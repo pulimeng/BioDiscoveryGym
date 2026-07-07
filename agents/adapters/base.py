@@ -97,14 +97,15 @@ def get_adapter(model: str, api_key: str | None = None, **kw) -> Adapter:
     """Route a model id to its provider adapter. Claude -> Anthropic (Sonnet & Opus),
     gpt/o-series -> OpenAI, gemini -> Google."""
     m = (model or "").lower()
+    is_o_series = len(m) >= 2 and m[0] == "o" and m[1].isdigit()   # o1/o3/o4/o5/… (any)
     if m.startswith("claude") or "claude" in m:
         from .anthropic_adapter import AnthropicAdapter
         return AnthropicAdapter(api_key=api_key, **kw)
-    if m.startswith(("gpt", "o1", "o3", "o4", "chatgpt")) or "gpt" in m:
+    if m.startswith(("gpt", "chatgpt")) or "gpt" in m or is_o_series:
         from .openai_adapter import OpenAIAdapter
         return OpenAIAdapter(api_key=api_key, **kw)
     if m.startswith("gemini") or "gemini" in m:
         from .gemini_adapter import GeminiAdapter
         return GeminiAdapter(api_key=api_key, **kw)
     raise ValueError(f"no provider adapter matches model id {model!r} "
-                     "(expected claude* / gpt*|o1|o3|o4 / gemini*)")
+                     "(expected claude* / gpt*|o<n> / gemini*)")

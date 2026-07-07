@@ -25,14 +25,14 @@ mkdir -p "$OUT"
 key_ok() {  # $1=model -> 0 if the required API key is present
     case "$1" in
         claude*)            [[ -n "${ANTHROPIC_API_KEY:-}" ]] ;;
-        gpt*|o1*|o3*|o4*)   [[ -n "${OPENAI_API_KEY:-}" ]] ;;
+        gpt*|o[0-9]*)   [[ -n "${OPENAI_API_KEY:-}" ]] ;;
         gemini*)            [[ -n "${GEMINI_API_KEY:-}" || -n "${GOOGLE_API_KEY:-}" ]] ;;
         *) return 1 ;;
     esac
 }
 key_name() {
     case "$1" in
-        claude*) echo ANTHROPIC_API_KEY ;; gpt*|o1*|o3*|o4*) echo OPENAI_API_KEY ;;
+        claude*) echo ANTHROPIC_API_KEY ;; gpt*|o[0-9]*) echo OPENAI_API_KEY ;;
         gemini*) echo "GEMINI_API_KEY/GOOGLE_API_KEY" ;; *) echo "?" ;;
     esac
 }
