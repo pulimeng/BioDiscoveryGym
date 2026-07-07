@@ -140,5 +140,37 @@ def raw_sys(label, max_out):
         dump(label, r)
     except Exception as e:
         print(f"\n{label} RAISED:", type(e).__name__, str(e)[:300])
-for mo in (32000, 16000, 8192):
+for mo in (32000,):
     raw_sys(f"7. RAW real-prompt config, max_output={mo}", mo)
+
+# 8) find a config that RELIABLY yields function calls with the 17.8k-char prompt.
+#    Vary: prompt as system_instruction vs first user message; tool mode ANY vs AUTO.
+def reliability(label, use_system, mode, n=3):
+    out = []
+    for _ in range(n):
+        cfg = dict(tools=gtools, max_output_tokens=8192,
+                   automatic_function_calling=t.AutomaticFunctionCallingConfig(disable=True))
+        if hasattr(t, "ThinkingConfig"):
+            cfg["thinking_config"] = t.ThinkingConfig(thinking_budget=0)
+        if mode:
+            cfg["tool_config"] = t.ToolConfig(function_calling_config=t.FunctionCallingConfig(mode=mode))
+        begin = "Begin. Work through each stage in order and show your reasoning."
+        if use_system:
+            cfg["system_instruction"] = sysp; contents = begin
+        else:
+            contents = sysp + "\n\n" + begin
+        try:
+            r = client.models.generate_content(model=MODEL, contents=contents,
+                                                config=t.GenerateContentConfig(**cfg))
+            c = r.candidates[0]; fr = str(getattr(c, "finish_reason", "")).split(".")[-1]
+            parts = (c.content.parts if getattr(c, "content", None) else None) or []
+            out.append("FC" if any(getattr(p, "function_call", None) for p in parts) else fr)
+        except Exception as e:
+            out.append("ERR:" + type(e).__name__)
+    print(f"  {label:34} -> {out}")
+
+print("\n===== 8. RELIABILITY (3 runs each; FC = got a function_call, else finish_reason) =====")
+reliability("A: system_instruction + ANY", True, "ANY")
+reliability("B: system_instruction + AUTO", True, "AUTO")
+reliability("C: prompt-as-user + ANY", False, "ANY")
+reliability("D: prompt-as-user + AUTO", False, "AUTO")
