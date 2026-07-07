@@ -50,3 +50,6 @@ set_keys.sh
 .env
 .env.*
 *.keys
+
+# local-only provider debug tooling (not for the repo)
+scripts/debug_gemini.py
