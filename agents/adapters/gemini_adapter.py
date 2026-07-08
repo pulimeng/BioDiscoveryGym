@@ -108,12 +108,23 @@ class GeminiAdapter(Adapter):
             else:
                 contents.insert(0, t.Content(role="user", parts=[sys_part]))
 
-        # Even the best config is ~1/3 MALFORMED_FUNCTION_CALL — retry the same request;
-        # sampling variation clears it (6 tries -> ~99.9% per turn).
+        # Retry loop handles BOTH: (a) ~1/3 MALFORMED_FUNCTION_CALL -> retry immediately
+        # (sampling clears it); (b) transient 503/429 overload (preview models spike) ->
+        # exponential backoff. 8 tries.
+        import time
         cand, parts = None, []
-        for _ in range(6):
-            resp = self._client.models.generate_content(
-                model=model, contents=contents, config=config)
+        for attempt in range(8):
+            try:
+                resp = self._client.models.generate_content(
+                    model=model, contents=contents, config=config)
+            except Exception as e:
+                msg = str(e)
+                transient = any(s in msg for s in (
+                    "503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "overloaded", "high demand"))
+                if transient and attempt < 7:
+                    time.sleep(min(5 * 2 ** attempt, 90))   # 5,10,20,40,80,90,90s
+                    continue
+                raise
             cand = resp.candidates[0]
             parts = (cand.content.parts if getattr(cand, "content", None) else None) or []
             if parts:
