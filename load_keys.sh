@@ -30,8 +30,9 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         anthropic|claude) export ANTHROPIC_API_KEY="$key" ;;
         openai|gpt)       export OPENAI_API_KEY="$key" ;;
         gemini|google)    export GEMINI_API_KEY="$key"; export GOOGLE_API_KEY="$key" ;;
+        deepseek)         export DEEPSEEK_API_KEY="$key" ;;
         *) echo "load_keys: unknown provider '$provider' — skipped" >&2 ;;
     esac
 done < "$KEYS_FILE"
 
-echo "loaded from $KEYS_FILE -> ANTHROPIC=${ANTHROPIC_API_KEY:+set} OPENAI=${OPENAI_API_KEY:+set} GEMINI=${GEMINI_API_KEY:+set}"
+echo "loaded from $KEYS_FILE -> ANTHROPIC=${ANTHROPIC_API_KEY:+set} OPENAI=${OPENAI_API_KEY:+set} GEMINI=${GEMINI_API_KEY:+set} DEEPSEEK=${DEEPSEEK_API_KEY:+set}"

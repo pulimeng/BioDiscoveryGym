@@ -184,9 +184,17 @@ def build_user_msg(trace: dict, cohort: str) -> str:
     )
 
 
-def call_judge(user_msg: str, model: str = "claude-sonnet-4-6") -> dict:
-    """Force the verdict through tool-use — guarantees valid JSON + enum-checked levels
-    (free-text JSON truncated/broke on long real traces)."""
+def call_judge(user_msg: str, model: str = "deepseek-v4-pro") -> dict:
+    """Force the verdict through tool-use (valid JSON + enum-checked levels). Routes by model
+    so the judge can be a NEUTRAL family not in the benchmarked set (self-preference bias):
+    claude* -> Anthropic; deepseek*/gpt*/o* -> OpenAI-compatible (DeepSeek endpoint for deepseek*)."""
+    ml = model.lower()
+    if ml.startswith("claude") or "claude" in ml:
+        return _judge_anthropic(user_msg, model)
+    return _judge_openai_compatible(user_msg, model)
+
+
+def _judge_anthropic(user_msg: str, model: str) -> dict:
     import anthropic
     r = anthropic.Anthropic().messages.create(
         model=model, max_tokens=2500, system=JUDGE_SYSTEM,
@@ -198,6 +206,38 @@ def call_judge(user_msg: str, model: str = "claude-sonnet-4-6") -> dict:
         if getattr(b, "type", None) == "tool_use" and b.name == "record_support":
             return b.input
     raise ValueError(f"no record_support tool_use in response (stop_reason={r.stop_reason})")
+
+
+def _judge_openai_compatible(user_msg: str, model: str) -> dict:
+    """DeepSeek (the neutral judge) + OpenAI, via the OpenAI SDK with forced tool-calling.
+    DeepSeek is served at api.deepseek.com and is OpenAI-compatible incl. tool calls."""
+    import openai, json, os
+    ml = model.lower()
+    if ml.startswith("deepseek"):
+        client = openai.OpenAI(base_url="https://api.deepseek.com",
+                               api_key=os.environ.get("DEEPSEEK_API_KEY"))
+        # V4 Pro is a thinking model: forced tool_choice is rejected in thinking mode, so use
+        # "auto" (the prompt instructs it to call record_support) + headroom for the reasoning.
+        token_kw = {"max_tokens": 8000}
+        tool_choice = "auto"
+    else:                                       # openai gpt/o-series
+        client = openai.OpenAI()
+        token_kw = {"max_completion_tokens": 4000}
+        tool_choice = {"type": "function", "function": {"name": "record_support"}}
+    tool = {"type": "function", "function": {
+        "name": "record_support", "description": _SUPPORT_TOOL["description"],
+        "parameters": _SUPPORT_TOOL["input_schema"]}}
+    r = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "system", "content": JUDGE_SYSTEM},
+                  {"role": "user", "content": user_msg}],
+        tools=[tool], tool_choice=tool_choice, **token_kw)
+    msg = r.choices[0].message
+    if getattr(msg, "tool_calls", None):
+        return json.loads(msg.tool_calls[0].function.arguments)
+    # fallback: model emitted text instead of a tool call — extract the JSON verdict
+    from biodiscoverygym.scoring.judge import _parse_json
+    return _parse_json(msg.content or "")
 
 
 def support_score(levels: dict) -> float:

@@ -67,7 +67,9 @@ def arm_of(fname: str) -> str:
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("run_dir")
-    p.add_argument("--model", default="claude-sonnet-4-6")
+    p.add_argument("--model", default="deepseek-v4-pro",
+                   help="judge model — NEUTRAL family (not in the benchmarked set). "
+                        "deepseek-v4-pro (default) / claude-* / gpt-* all supported.")
     p.add_argument("--save", action="store_true", help="write <episode>_supportscores.json")
     p.add_argument("--dry", action="store_true", help="print judge input, no API")
     p.add_argument("--limit", type=int, default=0)
@@ -76,8 +78,12 @@ def main():
                    help="re-judge episodes that already have _supportscores.json (default: skip them)")
     args = p.parse_args()
 
-    if not args.dry and not os.environ.get("ANTHROPIC_API_KEY"):
-        sys.exit("ANTHROPIC_API_KEY not set (or use --dry)")
+    if not args.dry:
+        m = args.model.lower()
+        need = ("DEEPSEEK_API_KEY" if m.startswith("deepseek")
+                else "ANTHROPIC_API_KEY" if "claude" in m else "OPENAI_API_KEY")
+        if not os.environ.get(need):
+            sys.exit(f"{need} not set for judge model {args.model} (or use --dry)")
 
     files = sorted(f for f in glob.glob(f"{args.run_dir}/*/g[0-3]*_s*.json")
                    if "scores" not in f and "trace" not in f)
