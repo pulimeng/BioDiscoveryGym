@@ -225,9 +225,13 @@ score_all() {
     echo "============================================================"
     if [[ $DRY_RUN -eq 1 ]]; then
         echo "  [dry-run] bash scripts/score_all_tcga.sh ${OUT_DIR}"
+        echo "  [dry-run] python scripts/score_support.py ${OUT_DIR} --save"
         return
     fi
-    bash scripts/score_all_tcga.sh "$OUT_DIR"
+    bash scripts/score_all_tcga.sh "$OUT_DIR"          # outcome track -> _v3scores.json
+    echo ""
+    echo "=== support track (strategy x grounding) ==="
+    python scripts/score_support.py "$OUT_DIR" --save   # -> _supportscores.json
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────────

@@ -72,6 +72,8 @@ def main():
     p.add_argument("--dry", action="store_true", help="print judge input, no API")
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--arms", default="", help="comma list to include, e.g. g0,g1")
+    p.add_argument("--rescore", action="store_true",
+                   help="re-judge episodes that already have _supportscores.json (default: skip them)")
     args = p.parse_args()
 
     if not args.dry and not os.environ.get("ANTHROPIC_API_KEY"):
@@ -82,6 +84,13 @@ def main():
     arms_filter = {a.strip() for a in args.arms.split(",") if a.strip()}
     if arms_filter:
         files = [f for f in files if arm_of(f) in arms_filter]
+    # resume-safe: skip already-scored episodes (unless --dry or --rescore) so re-runs don't re-bill
+    if args.save and not args.rescore and not args.dry:
+        _before = len(files)
+        files = [f for f in files if not os.path.exists(f[:-5] + "_supportscores.json")]
+        _skipped = _before - len(files)
+        if _skipped:
+            print(f"(skipping {_skipped} already-scored; --rescore to redo)")
     if args.limit:
         files = files[:args.limit]
 
