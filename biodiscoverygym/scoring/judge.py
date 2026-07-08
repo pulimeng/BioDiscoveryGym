@@ -9,10 +9,47 @@ experiment_quality  — evaluates whether the proposed experiment is
 from __future__ import annotations
 
 import json
+import os
+import types
 
 import anthropic
 
-_DEFAULT_MODEL = "claude-sonnet-4-6"
+_DEFAULT_MODEL = "deepseek-v4-pro"   # NEUTRAL judge (not a benchmarked family) — see memory
+
+
+class _JudgeClient:
+    """Provider-routing shim so the free-text judges run on a NEUTRAL model (default
+    deepseek-v4-pro) instead of Anthropic, without touching each judge function. Exposes
+    .messages.create(...) returning an object with .content[0].text. Routes by model id:
+    claude*->Anthropic; deepseek*/gpt*->OpenAI-compatible (DeepSeek at api.deepseek.com,
+    JSON mode; thinking model gets token headroom)."""
+
+    class _Messages:
+        def create(self, *, model, max_tokens, system, messages):
+            ml = (model or "").lower()
+            if "claude" in ml:
+                return anthropic.Anthropic().messages.create(
+                    model=model, max_tokens=max_tokens, system=system, messages=messages)
+            import openai
+            if ml.startswith("deepseek"):
+                # thinking model: generous timeout + retries (heavier prompts run long)
+                client = openai.OpenAI(base_url="https://api.deepseek.com",
+                                       api_key=os.environ.get("DEEPSEEK_API_KEY"),
+                                       timeout=600.0, max_retries=3)
+                max_tokens = max(max_tokens, 4000)     # thinking model needs headroom
+            else:
+                client = openai.OpenAI(timeout=600.0, max_retries=3)
+            r = client.chat.completions.create(
+                model=model, max_tokens=max_tokens,
+                messages=[{"role": "system", "content": system}] + list(messages),
+                response_format={"type": "json_object"})
+            return types.SimpleNamespace(
+                content=[types.SimpleNamespace(text=r.choices[0].message.content)])
+
+    messages = _Messages()
+
+
+_judge_client = _JudgeClient()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # mechanism_grounding  (weight 2)
@@ -68,7 +105,7 @@ def score_mechanism_grounding(
     if not mechanism_hypothesis:
         return 0.0, {"reason": "no hypothesis submitted"}
     try:
-        client = anthropic.Anthropic()
+        client = _judge_client
         user_msg = (
             f"TOP GENES: {', '.join(top_genes[:15]) if top_genes else 'none'}\n\n"
             f"PATHWAY EVIDENCE: {'; '.join(pathway_evidence) if pathway_evidence else 'none'}\n\n"
@@ -133,7 +170,7 @@ def score_experiment_quality(
     if not next_experiment:
         return 0.0, {"reason": "no experiment proposed"}
     try:
-        client = anthropic.Anthropic()
+        client = _judge_client
         response = client.messages.create(
             model=model,
             max_tokens=512,
@@ -230,7 +267,7 @@ def score_cohort_identity(
         if mislead_cohort else "none"
     )
     try:
-        client = anthropic.Anthropic()
+        client = _judge_client
         user_msg = (
             f"TRUE cancer type: {true_name}\n"
             f"MISLEAD cancer type: {mislead_name}\n\n"
@@ -323,7 +360,7 @@ def score_exam_experiment_depth(
     if not phase2_text:
         return 0.0, {"reason": "no Phase 2 answer text found"}
     try:
-        client = anthropic.Anthropic()
+        client = _judge_client
         commit_summary = f"COMMIT REPORT (first 500 chars):\n{commit_report[:500]}\n\n" if commit_report else ""
         q4_window = phase2_text[:8000]
         user_msg = (
@@ -407,7 +444,7 @@ def score_exam_mechanistic_integration(
     if not phase2_answers:
         return 0.0, {"reason": "no Phase 2 answers found"}
     try:
-        client = anthropic.Anthropic()
+        client = _judge_client
         # Sample each answer block independently (cap per answer, not total) so the
         # judge always sees the start of every Q regardless of how long Q4 is.
         PER_Q = 2000

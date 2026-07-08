@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Score all TCGA episode JSONs in a results folder (faithfulness rubric, includes LLM judge).
-# Usage: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_tcga.sh <results_folder>
-# Example: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_tcga.sh results/tcga/run4
+# Usage: DEEPSEEK_API_KEY=... bash scripts/score_all_tcga.sh <results_folder>
+# Example: DEEPSEEK_API_KEY=... bash scripts/score_all_tcga.sh results/tcga/run4
 #
 # Resume-safe: skips episodes that already have a *_v3scores.json (re-running after a
 # partial batch won't re-bill the LLM judge on already-scored episodes). Pass
@@ -24,7 +24,7 @@ for arg in "$@"; do
 done
 
 if [[ -z "$RESULTS_DIR" ]]; then
-    echo "Usage: ANTHROPIC_API_KEY=sk-... bash scripts/score_all_tcga.sh <results_folder> [--rescore]" >&2
+    echo "Usage: DEEPSEEK_API_KEY=... bash scripts/score_all_tcga.sh <results_folder> [--rescore]" >&2
     exit 1
 fi
 

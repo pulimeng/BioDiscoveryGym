@@ -35,7 +35,9 @@ def parse_args():
                    help="Cohort name (e.g. BRCA, OS). Reads from episode JSON if omitted.")
     p.add_argument("--data-dir", default="data", help="Root data directory (default: data)")
     p.add_argument("--save", action="store_true", help="Save score + trace JSON files")
-    p.add_argument("--llm-model", default="claude-sonnet-4-6")
+    p.add_argument("--llm-model", default="deepseek-v4-pro",
+                   help="judge model for outcome LLM components (NEUTRAL family). "
+                        "deepseek-v4-pro (default) / claude-* / gpt-*")
     p.add_argument("--skip-llm", action="store_true",
                    help="Skip LLM judge components — faster, no API cost")
     return p.parse_args()
@@ -64,15 +66,17 @@ def apply_sample_rename(dataset: dict, sample_id_map: dict) -> dict:
 def main():
     args = parse_args()
 
-    # Fail-fast guard: missing API key silently zeros all LLM judges and looks
-    # like a low real score. Either set the env var or explicitly opt out.
+    # Fail-fast guard: missing judge API key silently zeros all LLM judges and looks
+    # like a low real score. Which key depends on the judge model (neutral by default).
     import os
-    if not args.skip_llm and not os.environ.get("ANTHROPIC_API_KEY"):
-        print("ERROR: ANTHROPIC_API_KEY is not set.", file=sys.stderr)
+    _m = args.llm_model.lower()
+    _need = ("DEEPSEEK_API_KEY" if _m.startswith("deepseek")
+             else "ANTHROPIC_API_KEY" if "claude" in _m else "OPENAI_API_KEY")
+    if not args.skip_llm and not os.environ.get(_need):
+        print(f"ERROR: {_need} is not set (judge model = {args.llm_model}).", file=sys.stderr)
         print("  This script invokes LLM judges that materially affect the score.", file=sys.stderr)
-        print("  Either:", file=sys.stderr)
-        print("    export ANTHROPIC_API_KEY=sk-...    # to run judges", file=sys.stderr)
-        print("    OR pass --skip-llm                  # to score computational components only", file=sys.stderr)
+        print(f"  Either: export {_need}=...   OR  --skip-llm   (computational components only)",
+              file=sys.stderr)
         sys.exit(1)
 
     episode_path = Path(args.episode_json)

@@ -14,19 +14,20 @@ set -uo pipefail
 DIR="${1:?usage: score_run.sh <run_dir> [--outcome-only|--support-only] [score_support args...]}"
 shift || true
 
-DO_OUTCOME=1; DO_SUPPORT=1
+DO_OUTCOME=1; DO_SUPPORT=1; RESCORE=""
 SUPPORT_ARGS=()
 for a in "$@"; do
     case "$a" in
         --outcome-only) DO_SUPPORT=0 ;;
         --support-only) DO_OUTCOME=0 ;;
-        *) SUPPORT_ARGS+=("$a") ;;
+        --rescore)      RESCORE="--rescore"; SUPPORT_ARGS+=("$a") ;;   # both tracks
+        *)              SUPPORT_ARGS+=("$a") ;;
     esac
 done
 
 if [[ $DO_OUTCOME -eq 1 ]]; then
-    echo "=== outcome track  ->  _v3scores.json ==="
-    bash scripts/score_all_tcga.sh "$DIR"
+    echo "=== outcome track  ->  _v3scores.json  (judge: DeepSeek) ==="
+    bash scripts/score_all_tcga.sh "$DIR" $RESCORE
 fi
 
 if [[ $DO_SUPPORT -eq 1 ]]; then
