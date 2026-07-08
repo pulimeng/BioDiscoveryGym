@@ -42,7 +42,8 @@ def parse_args():
     p.add_argument("--target-dir", default=TARGET_DATA_DIR,
                    help="TARGET-OS data directory for Phase 3 external validation")
     p.add_argument("--save", action="store_true", help="Save score + trace JSON files")
-    p.add_argument("--llm-model", default="claude-sonnet-4-6")
+    p.add_argument("--llm-model", default="deepseek-v4-pro",
+                   help="judge model (NEUTRAL family): deepseek-v4-pro (default) / claude-* / gpt-*")
     p.add_argument("--skip-llm", action="store_true",
                    help="Skip LLM judge components — faster, no API cost")
     return p.parse_args()
@@ -76,12 +77,14 @@ def main():
     # Components catch the AuthenticationError defensively and return 0 — useful
     # for batch resilience but a footgun for one-off scoring runs.
     import os
-    if not args.skip_llm and not os.environ.get("ANTHROPIC_API_KEY"):
-        print("ERROR: ANTHROPIC_API_KEY is not set.", file=sys.stderr)
+    _m = args.llm_model.lower()
+    _need = ("DEEPSEEK_API_KEY" if _m.startswith("deepseek")
+             else "ANTHROPIC_API_KEY" if "claude" in _m else "OPENAI_API_KEY")
+    if not args.skip_llm and not os.environ.get(_need):
+        print(f"ERROR: {_need} is not set (judge model = {args.llm_model}).", file=sys.stderr)
         print("  This script invokes 3 LLM judges (~7 of 24 pts).", file=sys.stderr)
-        print("  Either:", file=sys.stderr)
-        print("    export ANTHROPIC_API_KEY=sk-...    # to run judges", file=sys.stderr)
-        print("    OR pass --skip-llm                  # to score computational components only", file=sys.stderr)
+        print(f"  Either: export {_need}=...   OR  --skip-llm   (computational components only)",
+              file=sys.stderr)
         sys.exit(1)
 
     episode_path = Path(args.episode_json)

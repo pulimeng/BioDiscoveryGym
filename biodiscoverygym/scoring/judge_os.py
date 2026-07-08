@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import json
 
-import anthropic
+from biodiscoverygym.scoring.judge import _judge_client   # shared provider-routing shim
 
-_DEFAULT_MODEL = "claude-sonnet-4-6"
+_DEFAULT_MODEL = "deepseek-v4-pro"   # NEUTRAL judge (routes via _judge_client)
 
 
 def _parse_json(text: str) -> dict:
@@ -99,7 +99,7 @@ def score_mechanism_grounding_os(
     if not mechanism_hypothesis:
         return 0.0, {"reason": "no hypothesis submitted"}
     try:
-        client = anthropic.Anthropic()
+        client = _judge_client
         user_msg = (
             f"TOP GENES: {', '.join(top_genes[:15]) if top_genes else 'none'}\n\n"
             f"PATHWAY EVIDENCE: {'; '.join(pathway_evidence[:10]) if pathway_evidence else 'none'}\n\n"
@@ -187,7 +187,7 @@ def score_exam_mechanistic_integration_os(
     if not phase2_answers:
         return 0.0, {"reason": "no Phase 2 answers found"}
     try:
-        client = anthropic.Anthropic()
+        client = _judge_client
         # Sample each answer block independently (cap per answer) so the judge
         # always sees the start of every Q regardless of how long Q4 is.
         PER_Q = 2000
