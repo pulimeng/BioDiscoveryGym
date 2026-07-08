@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# run_tcga.sh — TCGA multi-cohort benchmark runner + scorer
+# run_tcga.sh — TCGA multi-cohort benchmark runner (episodes only; scoring is separate: scripts/score_run.sh)
 #
 # Runs G0/G1/G2/G3 across 4 TCGA cohorts (BRCA LIHC LUAD OV) — trimmed from 7 for
-# cost; G3 pairs depend on OV + LUAD. Then scores every episode. Resume-safe: skips
+# cost; G3 pairs depend on OV + LUAD. Resume-safe: skips
 # runs whose JSON already exists.
 #
 # G3 splits into two sub-arms that share the wrong-barcode mechanic but differ
@@ -13,14 +13,14 @@
 #                     interpretation is formed. Mimics old gate=30 "fooled" regime.
 #
 # Usage:
-#   bash scripts/run_tcga.sh --smoke-test                    # 1 cohort × 1 seed × G0/G1/G2/G3a/G3b at default 100-call budget, scored (~$15, ~1.25 hr)
-#   bash scripts/run_tcga.sh --tag run10                     # full benchmark (40 episodes) + scoring (~$120)
+#   bash scripts/run_tcga.sh --smoke-test                    # 1 cohort × 1 seed × G0/G1/G2/G3a/G3b at default 100-call budget (~$12, ~1 hr); score separately
+#   bash scripts/run_tcga.sh --tag run10                     # full benchmark (48 episodes); score separately with score_run.sh
 #   bash scripts/run_tcga.sh --tag run10 --group G2          # one group only
 #   bash scripts/run_tcga.sh --tag run10 --group G3          # both G3a + G3b
 #   bash scripts/run_tcga.sh --tag run10 --group G3a         # one sub-arm only
 #   bash scripts/run_tcga.sh --tag run10 --no-g3             # G0/G1/G2 only — skip the G3 mislead arms (cost-saving)
 #   bash scripts/run_tcga.sh --tag run10 --score-only        # score existing results
-#   bash scripts/run_tcga.sh --tag run10 --skip-score        # run only, no scoring
+#   (scoring is separate: bash scripts/score_run.sh <dir>  — both tracks; --rescore to overwrite)
 #   bash scripts/run_tcga.sh --tag run10 --dry-run           # print commands only
 #
 # Environment overrides:
@@ -218,21 +218,8 @@ run_g3b() {
     done
 }
 
-score_all() {
-    echo ""
-    echo "============================================================"
-    echo "  Scoring all episodes in ${OUT_DIR}"
-    echo "============================================================"
-    if [[ $DRY_RUN -eq 1 ]]; then
-        echo "  [dry-run] bash scripts/score_all_tcga.sh ${OUT_DIR}"
-        echo "  [dry-run] python scripts/score_support.py ${OUT_DIR} --save"
-        return
-    fi
-    bash scripts/score_all_tcga.sh "$OUT_DIR"          # outcome track -> _v3scores.json
-    echo ""
-    echo "=== support track (strategy x grounding) ==="
-    python scripts/score_support.py "$OUT_DIR" --save   # -> _supportscores.json
-}
+# Scoring is DECOUPLED — run_tcga only runs episodes. Score separately with
+# scripts/score_run.sh (both tracks) so scorers can change without re-running episodes.
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 if [[ $SCORE_ONLY -eq 0 ]]; then
@@ -266,11 +253,20 @@ if [[ ${#FAILED_EPISODES[@]} -gt 0 ]]; then
     echo "============================================================"
 fi
 
-if [[ $SKIP_SCORE -eq 0 ]]; then
-    score_all
+if [[ $SCORE_ONLY -eq 1 ]]; then
+    # backward-compat: --score-only now just invokes the separate scorer
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "  [dry-run] bash scripts/score_run.sh ${OUT_DIR}"
+    else
+        bash scripts/score_run.sh "$OUT_DIR"
+    fi
 fi
 
 echo ""
 echo "============================================================"
-echo "  Done. Results: ${OUT_DIR}/"
+echo "  Done. Episodes: ${OUT_DIR}/"
+if [[ $SCORE_ONLY -eq 0 ]]; then
+    echo "  Scoring is SEPARATE now — run both tracks with:"
+    echo "    bash scripts/score_run.sh ${OUT_DIR}"
+fi
 echo "============================================================"
