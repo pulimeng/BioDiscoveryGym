@@ -18,7 +18,7 @@ COHORT="${SMOKE_COHORT:-BRCA}"
 COHORT_LC="$(echo "$COHORT" | tr '[:upper:]' '[:lower:]')"   # bash 3.2 has no ${var,,}
 SEED="${SMOKE_SEED:-42}"
 CALLS="${SMOKE_CALLS:-50}"
-read -r -a MODELS <<< "${SMOKE_MODELS:-claude-sonnet-5 claude-opus-4-8 gpt-5.5 gemini-3.1-pro-preview}"
+read -r -a MODELS <<< "${SMOKE_MODELS:-claude-sonnet-5 claude-opus-4-8 gpt-5.5 gemini-2.5-pro}"
 OUT="results/tcga/_smoke/ladder"
 mkdir -p "$OUT"
 
