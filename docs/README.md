@@ -114,8 +114,11 @@ Superseded pieces are moved to `scripts/archive/` and `docs/archive/`.
 **Repo layout:** data-download scripts grouped under `scripts/download/`; superseded code in
 `scripts/archive/`, superseded docs in `docs/archive/`.
 
-**Local-only (not on GitHub):** `run_mech_ab.sh`, `gen_run1_report.py`, `gen_run2_report.py`,
-`gen_merged_report.py`, `run_tcga_missings.sh`.
+**Reports:** `scripts/gen_report.py` — one parameterized generator (`--model "Label:dir[:#color]"`,
+repeatable) for any set of runs; auto-includes grounding when `*_supportscores.json` exist.
+Replaced the old per-run one-offs (`gen_run1/run2/merged_report.py`, now removed).
+
+**Local-only (not on GitHub):** `run_mech_ab.sh`, `run_tcga_missings.sh`.
 
 **Reference papers (docs/):** BiomniBench `2026.05.12.724604v1` (process-scoring machinery),
 NatureBench `2606.24530v1` (method-translation = exploit, the content).
