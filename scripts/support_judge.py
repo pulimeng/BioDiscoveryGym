@@ -217,21 +217,33 @@ def _judge_openai_compatible(user_msg: str, model: str) -> dict:
         client = openai.OpenAI(base_url="https://api.deepseek.com",
                                api_key=os.environ.get("DEEPSEEK_API_KEY"))
         # V4 Pro is a thinking model: forced tool_choice is rejected in thinking mode, so use
-        # "auto" (the prompt instructs it to call record_support) + headroom for the reasoning.
-        token_kw = {"max_tokens": 8000}
+        # "auto" (the prompt instructs it to call record_support). The budget must cover BOTH
+        # the reasoning AND the tool-call JSON — too small and the args truncate mid-string
+        # ("Unterminated string" on json.loads). Start generous, and if the response is still
+        # cut off (finish_reason="length") retry once with a bigger budget.
+        tok_key, base_tokens, retry_tokens = "max_tokens", 16000, 32000
         tool_choice = "auto"
     else:                                       # openai gpt/o-series
         client = openai.OpenAI()
-        token_kw = {"max_completion_tokens": 4000}
+        tok_key, base_tokens, retry_tokens = "max_completion_tokens", 4000, 8000
         tool_choice = {"type": "function", "function": {"name": "record_support"}}
     tool = {"type": "function", "function": {
         "name": "record_support", "description": _SUPPORT_TOOL["description"],
         "parameters": _SUPPORT_TOOL["input_schema"]}}
-    r = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "system", "content": JUDGE_SYSTEM},
-                  {"role": "user", "content": user_msg}],
-        tools=[tool], tool_choice=tool_choice, **token_kw)
+
+    def _call(max_toks):
+        return client.chat.completions.create(
+            model=model,
+            messages=[{"role": "system", "content": JUDGE_SYSTEM},
+                      {"role": "user", "content": user_msg}],
+            tools=[tool], tool_choice=tool_choice, **{tok_key: max_toks})
+
+    r = _call(base_tokens)
+    if r.choices[0].finish_reason == "length":   # truncated → verdict JSON is incomplete; retry bigger
+        r = _call(retry_tokens)
+        if r.choices[0].finish_reason == "length":
+            raise ValueError(f"{model} response truncated even at {retry_tokens} tokens "
+                             f"(reasoning overran the budget); increase retry_tokens")
     msg = r.choices[0].message
     if getattr(msg, "tool_calls", None):
         return json.loads(msg.tool_calls[0].function.arguments)

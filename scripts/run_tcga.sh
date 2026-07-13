@@ -19,6 +19,8 @@
 #   bash scripts/run_tcga.sh --tag run10 --group G3          # both G3a + G3b
 #   bash scripts/run_tcga.sh --tag run10 --group G3a         # one sub-arm only
 #   bash scripts/run_tcga.sh --tag run10 --no-g3             # G0/G1/G2 only — skip the G3 mislead arms (cost-saving)
+#   bash scripts/run_tcga.sh --tag _ablation/lean_gpt55 --model gpt-5.5 --group G1 --prompt-file prompts/ablation/tcga_lean.txt
+#   bash scripts/run_tcga.sh --tag _ablation/lean_gpt55 --model gpt-5.5 --group G2 --prompt-file prompts/ablation/tcga_lean.txt  # lean-prompt ablation (G1/G2, --no-examination auto-forced)
 #   bash scripts/run_tcga.sh --tag run10 --score-only        # score existing results
 #   (scoring is separate: bash scripts/score_run.sh <dir>  — both tracks; --rescore to overwrite)
 #   bash scripts/run_tcga.sh --tag run10 --dry-run           # print commands only
@@ -48,6 +50,7 @@ FAILED_EPISODES=()   # episodes that errored/OOM'd — reported at the end, don'
 SKIP_SCORE=0
 SMOKE_TEST=0
 USER_MAX_CALLS=""             # sentinel: tracks whether --max-calls was explicitly passed
+PROMPT_FILE=""               # --prompt-file: override agent system prompt (lean-prompt ablation)
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -56,6 +59,7 @@ while [[ $# -gt 0 ]]; do
         --model)       MODEL="$2";       shift 2 ;;
         --max-calls)   USER_MAX_CALLS="$2"; shift 2 ;;
         --group)       RUN_GROUP="$2";   shift 2 ;;
+        --prompt-file) PROMPT_FILE="$2"; shift 2 ;;
         --no-g3)       NO_G3=1;          shift ;;
         --dry-run)     DRY_RUN=1;        shift ;;
         --score-only)  SCORE_ONLY=1;     shift ;;
@@ -96,9 +100,19 @@ if [[ -z "$TAG" ]]; then
     exit 1
 fi
 
-if [[ $DRY_RUN -eq 0 && -z "${ANTHROPIC_API_KEY:-}" ]]; then
-    echo "Error: ANTHROPIC_API_KEY is not set." >&2
-    exit 1
+# Validate the key for THIS model's provider (not always Anthropic) — routes like the adapters.
+if [[ $DRY_RUN -eq 0 ]]; then
+    case "$(echo "$MODEL" | tr '[:upper:]' '[:lower:]')" in
+        claude*|*anthropic*) KEY_VAR=ANTHROPIC_API_KEY ;;
+        gpt*|o[0-9]*|*openai*) KEY_VAR=OPENAI_API_KEY ;;
+        gemini*|*google*)    KEY_VAR=GEMINI_API_KEY ;;
+        deepseek*)           KEY_VAR=DEEPSEEK_API_KEY ;;
+        *)                   KEY_VAR=ANTHROPIC_API_KEY ;;
+    esac
+    if [[ -z "${!KEY_VAR:-}" ]]; then
+        echo "Error: $KEY_VAR is not set (model '$MODEL'). Run: source load_keys.sh <keys.txt>" >&2
+        exit 1
+    fi
 fi
 
 OUT_DIR="${BASE_DIR}/${TAG}"
@@ -144,6 +158,7 @@ run_episode() {
         --max-tool-calls $MAX_CALLS \
         --results-base $OUT_DIR \
         --no-examination \
+        ${PROMPT_FILE:+--prompt-file $PROMPT_FILE} \
         --quiet \
         --save-log ${label}.json"
     if [[ $DRY_RUN -eq 1 ]]; then

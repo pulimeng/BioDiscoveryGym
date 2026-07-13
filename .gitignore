@@ -4,6 +4,9 @@ data/
 # Episode logs — full conversation histories, large
 results/
 
+# Stray default-path episode artifacts (run_episode.py with no --results-base)
+output_dir/
+
 # Analysis outputs — figures, scratch scripts, intermediate files
 analysis/
 

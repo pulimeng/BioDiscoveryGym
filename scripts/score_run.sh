@@ -33,5 +33,5 @@ fi
 if [[ $DO_SUPPORT -eq 1 ]]; then
     echo ""
     echo "=== support track (strategy x support)  ->  _supportscores.json ==="
-    python scripts/score_support.py "$DIR" --save "${SUPPORT_ARGS[@]:-}"
+    python scripts/score_support.py "$DIR" --save ${SUPPORT_ARGS[@]+"${SUPPORT_ARGS[@]}"}
 fi

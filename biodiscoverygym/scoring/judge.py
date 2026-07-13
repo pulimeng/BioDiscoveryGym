@@ -36,13 +36,25 @@ class _JudgeClient:
                 client = openai.OpenAI(base_url="https://api.deepseek.com",
                                        api_key=os.environ.get("DEEPSEEK_API_KEY"),
                                        timeout=600.0, max_retries=3)
-                max_tokens = max(max_tokens, 4000)     # thinking model needs headroom
+                # Budget must cover BOTH the reasoning AND the JSON answer; too small and the
+                # verdict truncates mid-string (finish_reason="length" → unterminated JSON).
+                # SDK max_retries only covers HTTP errors, not a truncated HTTP-200 body — so
+                # detect "length" and retry once with a bigger budget.
+                max_tokens = max(max_tokens, 8000)
+                retry_tokens = 16000
             else:
                 client = openai.OpenAI(timeout=600.0, max_retries=3)
-            r = client.chat.completions.create(
-                model=model, max_tokens=max_tokens,
-                messages=[{"role": "system", "content": system}] + list(messages),
-                response_format={"type": "json_object"})
+                retry_tokens = max_tokens
+
+            def _call(max_toks):
+                return client.chat.completions.create(
+                    model=model, max_tokens=max_toks,
+                    messages=[{"role": "system", "content": system}] + list(messages),
+                    response_format={"type": "json_object"})
+
+            r = _call(max_tokens)
+            if r.choices[0].finish_reason == "length" and retry_tokens > max_tokens:
+                r = _call(retry_tokens)
             return types.SimpleNamespace(
                 content=[types.SimpleNamespace(text=r.choices[0].message.content)])
 
