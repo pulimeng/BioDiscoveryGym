@@ -56,3 +56,6 @@ set_keys.sh
 
 # local-only provider debug tooling (not for the repo)
 scripts/debug_gemini.py
+
+# Stray agent grouping artifacts at repo root (mis-resolved output_dir)
+grouping_temp.json

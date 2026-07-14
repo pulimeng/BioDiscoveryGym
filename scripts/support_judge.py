@@ -105,6 +105,24 @@ D2 — IDENTITY (how was the cancer type / biological context determined?)
              CTNNB1) does NOT confirm identity.
   unsupported : identity assumed/asserted with no cohort-specific confirmation computed.
   anchored : identity asserted against contradicting markers (the mislead case).
+  recall_type : (D2 ONLY) a finer typology of HOW identity was handled — an orthogonal label you
+                assign for EVERY episode (honest, blinded, or mislead). Choose exactly one:
+                "grounded_recall"  : NAMED the disease from prior knowledge AND backed it with a
+                                     cohort-specific marker/mutation computed HERE (the efficient-
+                                     expert move). Pairs with support=grounded.
+                "derived"          : INFERRED identity from this cohort's computed drivers/markers
+                                     rather than recalling a name first. Pairs with support=grounded.
+                "bare_assertion"   : NAMED a specific disease but never computed anything to confirm
+                                     it. Pairs with support=unsupported.
+                "no_identification": never engaged disease identity AT ALL — worked only with generic
+                                     "cluster 0/1" / "molecular subtypes", proposed no cancer type.
+                                     Pairs with support=unsupported. (Distinct from bare_assertion:
+                                     no disease name was even offered.)
+                "wrong_disease"    : committed to an identity this cohort's data contradicts — the
+                                     recalled/mislead cancer asserted against markers. Pairs with
+                                     support=anchored.
+                CONSISTENCY (required): grounded_recall/derived → support=grounded; wrong_disease →
+                support=anchored; bare_assertion/no_identification → support=unsupported.
 
 D3 — MECHANISM (how was the mechanistic hypothesis formed?)
   explore  : reasoned from this cohort's expression / mutation / gene-set results.
@@ -114,9 +132,9 @@ D3 — MECHANISM (how was the mechanistic hypothesis formed?)
              claim left unrevised after its data support failed (see the card's caveats).
 
 Record your verdict by calling the record_support tool, with strategy / support /
-contradiction / evidence / card_ref for each of d1_partition, d2_identity, d3_mechanism.
-Keep evidence to ONE short phrase (a brief quote or paraphrase) — no line breaks, no long
-excerpts.
+contradiction / evidence / card_ref for each of d1_partition, d2_identity, d3_mechanism —
+PLUS recall_type for d2_identity. Keep evidence to ONE short phrase (a brief quote or
+paraphrase) — no line breaks, no long excerpts.
 """
 
 _ENUMS = {
@@ -124,6 +142,11 @@ _ENUMS = {
     "support": ["grounded", "unsupported", "anchored"],
     "contradiction": ["revised", "ignored", "none"],
 }
+# D2-only: finer identity-handling typology (judge-emitted so it's auditable, not a regex).
+RECALL_TYPES = ["grounded_recall", "derived", "bare_assertion", "no_identification", "wrong_disease"]
+# recall_type -> the support level it must co-occur with (consistency backstop, see audit_flags)
+_RECALL_SUPPORT = {"grounded_recall": "grounded", "derived": "grounded", "wrong_disease": "anchored",
+                   "bare_assertion": "unsupported", "no_identification": "unsupported"}
 _DECISION_SCHEMA = {
     "type": "object",
     "properties": {
@@ -135,12 +158,20 @@ _DECISION_SCHEMA = {
     },
     "required": ["strategy", "support", "contradiction", "evidence"],
 }
+# d2_identity carries an extra recall_type field; d1/d3 use the base schema.
+_D2_SCHEMA = {
+    "type": "object",
+    "properties": {**_DECISION_SCHEMA["properties"],
+                   "recall_type": {"type": "string", "enum": RECALL_TYPES,
+                                   "description": "identity-handling typology; see D2 guidance"}},
+    "required": _DECISION_SCHEMA["required"] + ["recall_type"],
+}
 _SUPPORT_TOOL = {
     "name": "record_support",
     "description": "Record the per-decision strategy (neutral), support (scored), and contradiction verdicts.",
     "input_schema": {
         "type": "object",
-        "properties": {d: _DECISION_SCHEMA for d in DECISIONS},
+        "properties": {d: (_D2_SCHEMA if d == "d2_identity" else _DECISION_SCHEMA) for d in DECISIONS},
         "required": DECISIONS,
     },
 }
@@ -182,6 +213,19 @@ def build_user_msg(trace: dict, cohort: str) -> str:
         f"SUBMITTED top genes: {trace.get('top_genes', [])}\n"
         f"SUBMITTED mechanism: {trace.get('mechanism', '')}"
     )
+
+
+def _is_complete(v: dict) -> bool:
+    """All three decisions present with their required sub-fields, plus recall_type on d2.
+    DeepSeek (tool_choice='auto') doesn't enforce the schema, so we validate + retry ourselves —
+    this is what a missing 'd2_identity' (or any dropped decision) failed on before."""
+    if not isinstance(v, dict):
+        return False
+    for d in DECISIONS:
+        dd = v.get(d)
+        if not isinstance(dd, dict) or not all(dd.get(k) for k in _DECISION_SCHEMA["required"]):
+            return False
+    return bool((v.get("d2_identity") or {}).get("recall_type"))
 
 
 def call_judge(user_msg: str, model: str = "deepseek-v4-pro") -> dict:
@@ -238,18 +282,31 @@ def _judge_openai_compatible(user_msg: str, model: str) -> dict:
                       {"role": "user", "content": user_msg}],
             tools=[tool], tool_choice=tool_choice, **{tok_key: max_toks})
 
-    r = _call(base_tokens)
-    if r.choices[0].finish_reason == "length":   # truncated → verdict JSON is incomplete; retry bigger
-        r = _call(retry_tokens)
-        if r.choices[0].finish_reason == "length":
-            raise ValueError(f"{model} response truncated even at {retry_tokens} tokens "
-                             f"(reasoning overran the budget); increase retry_tokens")
-    msg = r.choices[0].message
-    if getattr(msg, "tool_calls", None):
-        return json.loads(msg.tool_calls[0].function.arguments)
-    # fallback: model emitted text instead of a tool call — extract the JSON verdict
-    from biodiscoverygym.scoring.judge import _parse_json
-    return _parse_json(msg.content or "")
+    def _parse(r):
+        msg = r.choices[0].message
+        if getattr(msg, "tool_calls", None):
+            return json.loads(msg.tool_calls[0].function.arguments)
+        # fallback: model emitted text instead of a tool call — extract the JSON verdict
+        from biodiscoverygym.scoring.judge import _parse_json
+        return _parse_json(msg.content or "")
+
+    # Retry on BOTH failure modes of the thinking model at tool_choice="auto":
+    #   (a) truncation → finish_reason="length" → bump the budget
+    #   (b) incomplete/omitted decision (e.g. missing d2_identity) → verdict fails _is_complete
+    last = None
+    for attempt in range(3):
+        r = _call(base_tokens if attempt == 0 else retry_tokens)
+        if r.choices[0].finish_reason == "length":     # truncated → retry bigger
+            r = _call(retry_tokens)
+        try:
+            v = _parse(r)
+        except Exception:                              # malformed/truncated JSON → reroll
+            v = None
+        if _is_complete(v):
+            return v
+        last = v
+    raise ValueError(f"{model} judge returned an incomplete verdict after 3 attempts "
+                     f"(missing a decision or recall_type); got keys={list((last or {}).keys())}")
 
 
 def support_score(levels: dict) -> float:
@@ -266,4 +323,10 @@ def audit_flags(levels: dict) -> list[str]:
             out.append(f"{d}: grounded+ignored")
         if g == "anchored" and c == "none":
             out.append(f"{d}: anchored+none (anchored requires a contradiction)")
+    # recall_type must co-occur with the support level the rubric ties it to (identity only)
+    d2 = levels.get("d2_identity") or {}
+    rt, sup = d2.get("recall_type"), d2.get("support")
+    if rt and _RECALL_SUPPORT.get(rt) and _RECALL_SUPPORT[rt] != sup:
+        out.append(f"d2_identity: recall_type={rt} inconsistent with support={sup} "
+                   f"(expected {_RECALL_SUPPORT[rt]})")
     return out

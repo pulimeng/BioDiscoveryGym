@@ -126,9 +126,11 @@ def main():
         for d in gj.DECISIONS:
             cross[arm][d][(levels[d].get("strategy"), levels[d].get("support"))] += 1
         rows.append((os.path.basename(f), arm, cohort, levels, sc, flags))
+        _rt = (levels.get("d2_identity") or {}).get("recall_type") or "?"
         print(f"{os.path.basename(f):34} {cohort:5} score={sc:.1f}/5  "
               + "  ".join(f"{d[:2]}:{(levels[d].get('strategy') or '?')[:3]}/"
                           f"{(levels[d].get('support') or '?')[:4]}" for d in gj.DECISIONS)
+              + f"  id:{_rt}"
               + (f"  [audit: {';'.join(flags)}]" if flags else ""))
         if args.save:
             out = {"cohort": cohort, "arm": arm, "levels": levels,
