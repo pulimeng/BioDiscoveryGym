@@ -255,6 +255,10 @@ _ALWAYS_STRIP = [
     # Demographics that can leak cohort identity (e.g. LIHC has high Asian
     # proportion from HBV-endemic regions — a fingerprint that survives mislead)
     "race", "ethnicity",
+    # Sex fingerprints sex-specific cancers: PRAD is 100% male (unique among the 7),
+    # UCEC/OV/BRCA ~100% female. A handed-over label = free identity leak in G2 (sex is
+    # still inferable from XIST/Y-genes if an agent computes it — that path stays open).
+    "gender", "sex",
 ]
 
 

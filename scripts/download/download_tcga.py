@@ -203,6 +203,7 @@ def main() -> None:
             download_gdc_manifest(file_ids, cohort_dir / "expression_raw")
 
     print("\nDone. Run scripts/build_sealed_slice.py next.")
+    # CNA (GISTIC2 thresholded) comes from cBioPortal, not GDC — see download_cbioportal_cna.py
 
 
 if __name__ == "__main__":

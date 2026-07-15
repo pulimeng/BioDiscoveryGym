@@ -35,12 +35,14 @@ TAG=""
 MODEL="${TASK_A_MODEL:-claude-sonnet-4-6}"
 # MAX_CALLS resolved later from USER_MAX_CALLS sentinel + smoke-test mode
 BASE_DIR="results/tcga"
-# G0/G1/G2 cohorts. Trimmed 2026-06-18 from 7 → 4 for cost (dropped LUSC/PRAD/UCEC:
-# LUSC redundant with LUAD, PRAD weak survival signal, UCEC mutation/CN-driven subtypes).
-# OV + LUAD are retained because G3_PAIRS depends on them as the true cohorts.
-COHORTS=(BRCA LIHC LUAD OV)
+# G0/G1/G2 cohorts. Restored to 7 on 2026-07-14 (were trimmed to 4 on 2026-06-18) — the
+# 3 added back (UCEC/PRAD/LUSC) now have reference cards + mutations + CNA. All 7 carry the
+# CNA modality (cna.parquet), so this is the CNA-inclusive benchmark.
+COHORTS=(BRCA LIHC LUAD OV UCEC PRAD LUSC)
 SEEDS=(42 7 123)
-G3_PAIRS=("OV:BRCA" "LUAD:LIHC")   # locked 2026-06-13 — see docs/TASK_A_COHORT.md § G3 cohort pairs
+# G3 mislead pairs "true:mislead" — 2026-07-14: LUAD:LIHC → LUSC:LUAD (both lung; squamous-vs-
+# adeno is a more believable confuser than lung-vs-liver). OV:BRCA kept.
+G3_PAIRS=("OV:BRCA" "LUSC:LUAD")
 
 RUN_GROUP=""
 NO_G3=0                             # --no-g3: skip the G3 mislead arms (cost-saving)

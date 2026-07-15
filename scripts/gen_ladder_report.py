@@ -121,6 +121,98 @@ for m in ranked:
 out_ds = [{'label': m, 'color': COL[m], 'data': [round(S[m]['cby'][c], 3) for c in cohorts], 'errors': [round(S[m]['csd'][c], 3) for c in cohorts]} for m in ranked]
 id_data = {'labels': ranked, 'colors': [COL[m] for m in ranked], 'vals': [round(S[m]['id_ng'], 3) for m in ranked]}
 
+# ---- radar / capability profile (6 axes, outcome-visible -> process-hidden) ----
+def clamp(v): return max(0.0, min(1.0, v))
+RAX = ['Faithfulness', 'Hard-cohort (OV)', 'Consistency', 'Support score', 'Fooling resist.', 'Identity grounding']
+def radar_vals(m):
+    s = S[m]
+    return [round(clamp(s['outcome']/0.65), 3), round(clamp(s['cby']['OV']/0.5), 3),
+            round(clamp(1 - s['osd']/0.15), 3), round(clamp(s['support']/5), 3),
+            round(clamp(1 - (s['fa']+s['fb'])/12), 3), round(clamp(1 - s['id_ng']), 3)]
+radar_models = [{'label': m, 'color': COL[m], 'vals': radar_vals(m)} for m in ranked]
+# companion raw-value table
+raw_axis = [
+    ('Faithfulness', lambda s: f"{s['outcome']:.3f}"),
+    ('Hard-cohort (OV)', lambda s: f"{s['cby']['OV']:.3f}"),
+    ('Consistency (SD, ↓)', lambda s: f"{s['osd']:.3f}"),
+    ('Support score /5', lambda s: f"{s['support']:.2f}"),
+    ('Fooling resist. (fooled/12, ↓)', lambda s: f"{s['fa']+s['fb']}/12"),
+    ('Identity grounding (unsupp, ↓)', lambda s: f"{s['id_ng']:.0%}"),
+]
+radrows = ""
+for lbl, fn in raw_axis:
+    radrows += f'<tr><td>{lbl}</td>' + "".join(f'<td class="num">{fn(S[m])}</td>' for m in ranked) + '</tr>'
+
+# ---- what 'outcome' measures: the 7 v3 components ----
+COMP = [
+    ('clinical_signal', 3, 'Survival separation across the subtypes (Cox / log-rank)'),
+    ('structure_validity', 2, 'Cluster compactness &amp; stability (silhouette, bootstrap ARI)'),
+    ('genomic_coherence_drivers', 2, 'Driver-mutation association with the subtypes'),
+    ('reference_concordance', 2, 'Agreement with canonical TCGA subtypes (NMI)'),
+    ('marker_evidence', 2, 'Submitted markers are real &amp; discriminative (OvR AUC, OncoKB)'),
+    ('mechanism_grounding', 2, 'Hypothesis coherence &amp; data-grounding (LLM-judged)'),
+    ('pathway_validity', 1, 'Submitted pathways valid &amp; enriched (ORA)'),
+]
+# per-component means (honest) from v3scores
+comp_vals = {m: {} for m in ranked}
+for name, root, _ in MODELS:
+    acc = {k: [] for k, _, _ in COMP}
+    for sp in glob.glob(f"{root}/**/*_v3scores.json", recursive=True):
+        lab = os.path.basename(sp)
+        if lab.split('_')[0] not in ('g0', 'g1', 'g2'): continue
+        rs = json.load(open(sp))['raw_scores']
+        for k, _, _ in COMP:
+            if k in rs: acc[k].append(rs[k])
+    for k, _, _ in COMP:
+        comp_vals[name][k] = st.mean(acc[k]) if acc[k] else 0.0
+comprows = ""
+for key, wt, desc in COMP:
+    cells = ""
+    for m in ranked:
+        v = comp_vals[m][key]
+        lo = v < 0.75 * max(comp_vals[mm][key] for mm in ranked)  # flag notably-below-peer
+        cells += f'<td class="num{" mis" if lo else ""}">{v:.2f}</td>'
+    comprows += f'<tr><td class="grp">{key.replace("_", " ")}</td><td class="num">{wt}×</td><td class="lead" style="margin:0">{desc}</td>{cells}</tr>'
+
+# ---- cohort difficulty decomposition (pooled across models, honest) ----
+DIFF_COMP = ['clinical_signal', 'genomic_coherence_drivers', 'reference_concordance', 'structure_validity', 'pathway_validity']
+coh_norm = {c: [] for c in cohorts}; coh_comp = {c: {k: [] for k in DIFF_COMP} for c in cohorts}
+for name, root, _ in MODELS:
+    for sp in glob.glob(f"{root}/**/*_v3scores.json", recursive=True):
+        lab = os.path.basename(sp)
+        if lab.split('_')[0] not in ('g0', 'g1', 'g2'): continue
+        e = json.load(open(sp.replace('_v3scores.json', '.json'))); c = e.get('cohort')
+        if c not in cohorts: continue
+        d = json.load(open(sp)); coh_norm[c].append(d['normalized'])
+        for k in DIFF_COMP:
+            if k in d['raw_scores']: coh_comp[c][k].append(d['raw_scores'][k])
+coh_order = sorted(cohorts, key=lambda c: -st.mean(coh_norm[c]))
+diffrows = ""
+for c in coh_order:
+    cells = ""
+    for k in DIFF_COMP:
+        v = st.mean(coh_comp[c][k]); lo = v < 0.6 * max(st.mean(coh_comp[cc][k]) for cc in cohorts)
+        cells += f'<td class="num{" bad" if v < 0.05 else (" mis" if lo else "")}">{v:.2f}</td>'
+    diffrows += f'<tr><td class="grp">{c}</td><td class="num"><b>{st.mean(coh_norm[c]):.3f}</b></td>{cells}</tr>'
+diffhead = "".join(f'<th class="num">{k.split("_")[0][:6]}{"·"+k.split("_")[-1][:3] if "_" in k else ""}</th>' for k in DIFF_COMP)
+
+# ---- literature volume vs identity grounding ----
+PAPERS = {'BRCA': 13305, 'LUAD': 2091, 'OV': 1982, 'LIHC': 1159}  # PubMed "<cancer> molecular subtypes", 2026-07
+id_grounded = {m: {} for m in ranked}
+for name, root, _ in MODELS:
+    for c in cohorts:
+        vs = []
+        for sp in glob.glob(f"{root}/**/*_supportscores.json", recursive=True):
+            lab = os.path.basename(sp)
+            if lab.split('_')[0] not in ('g0', 'g1', 'g2'): continue
+            e = json.load(open(sp.replace('_supportscores.json', '.json')))
+            if e.get('cohort') != c: continue
+            vs.append(1 if json.load(open(sp))['levels']['d2_identity']['support'] == 'grounded' else 0)
+        id_grounded[name][c] = round(st.mean(vs), 3) if vs else None
+lit_order = sorted(cohorts, key=lambda c: PAPERS[c])
+scat_ds = [{'label': m, 'color': COL[m],
+            'points': [{'x': PAPERS[c], 'y': id_grounded[m][c], 'c': c} for c in lit_order]} for m in ranked]
+
 # ---- tiles + cards ----
 tiles = ""
 for m in ranked:
@@ -182,8 +274,16 @@ var ink='#e6edf3',grid='rgba(255,255,255,0.10)';var OUT=__OUT__,ID=__ID__;
 var errP={id:'err',afterDatasetsDraw:function(chart){var ctx=chart.ctx,y=chart.scales.y;ctx.save();ctx.strokeStyle=ink;ctx.lineWidth=1.2;chart.data.datasets.forEach(function(dset,di){if(!dset.errors)return;var meta=chart.getDatasetMeta(di);meta.data.forEach(function(bar,i){var e=dset.errors[i],m=dset.data[i];if(e==null||m==null||e===0)return;var x=bar.x,yt=y.getPixelForValue(m+e),yb=y.getPixelForValue(m-e),cap=3;ctx.beginPath();ctx.moveTo(x,yt);ctx.lineTo(x,yb);ctx.moveTo(x-cap,yt);ctx.lineTo(x+cap,yt);ctx.moveTo(x-cap,yb);ctx.lineTo(x+cap,yb);ctx.stroke();});});ctx.restore();}};
 new Chart(document.getElementById('out'),{type:'bar',data:{labels:__COH__,datasets:OUT.map(function(d){return{label:d.label,backgroundColor:d.color,data:d.data,errors:d.errors,borderWidth:0,categoryPercentage:0.72,barPercentage:0.9};})},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,max:0.65,ticks:{color:ink,stepSize:0.1,callback:function(v){return v.toFixed(1);}},grid:{color:grid},title:{display:true,text:'outcome (faithfulness)',color:ink}},x:{ticks:{color:ink,font:{size:13}},grid:{display:false}}}},plugins:[errP]});
 new Chart(document.getElementById('idc'),{type:'bar',data:{labels:ID.labels,datasets:[{data:ID.vals,backgroundColor:ID.colors,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return (c.parsed.y*100).toFixed(0)+'% unsupported';}}}},scales:{y:{min:0,max:1,ticks:{color:ink,stepSize:0.2,callback:function(v){return (v*100).toFixed(0)+'%';}},grid:{color:grid},title:{display:true,text:'identity recall — unsupported',color:ink}},x:{ticks:{color:ink,font:{size:13}},grid:{display:false}}}}});
+var RAX=__RAX__,RM=__RM__;
+function hexA(h,a){var n=parseInt(h.slice(1),16);return 'rgba('+(n>>16)+','+((n>>8)&255)+','+(n&255)+','+a+')';}
+new Chart(document.getElementById('radar'),{type:'radar',data:{labels:RAX,datasets:RM.map(function(d){return{label:d.label,data:d.vals,borderColor:d.color,backgroundColor:hexA(d.color,0.12),pointBackgroundColor:d.color,borderWidth:2,pointRadius:2};})},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{r:{min:0,max:1,ticks:{color:'#9aa7b4',backdropColor:'transparent',stepSize:0.25,font:{size:9}},grid:{color:'rgba(255,255,255,0.10)'},angleLines:{color:'rgba(255,255,255,0.10)'},pointLabels:{color:ink,font:{size:11.5}}}}}});
+var SCAT=__SCAT__;
+var lblP={id:'lbl',afterDatasetsDraw:function(chart){var ctx=chart.ctx;ctx.save();ctx.font='10px sans-serif';ctx.fillStyle='#9aa7b4';chart.data.datasets.forEach(function(dset,di){var meta=chart.getDatasetMeta(di);meta.data.forEach(function(pt,i){var c=dset.data[i].c;ctx.fillText(c,pt.x+6,pt.y+3);});});ctx.restore();}};
+new Chart(document.getElementById('lit'),{type:'scatter',data:{datasets:SCAT.map(function(d){return{label:d.label,borderColor:d.color,backgroundColor:d.color,data:d.points,showLine:true,borderWidth:2,pointRadius:4,tension:0};})},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return c.raw.c+': '+(c.raw.y*100).toFixed(0)+'% grounded ('+c.raw.x.toLocaleString()+' papers)';}}}},scales:{x:{type:'logarithmic',ticks:{color:ink,callback:function(v){return v>=1000?(v/1000)+'k':v;}},grid:{color:grid},title:{display:true,text:'PubMed papers ("<cancer> molecular subtypes", log)',color:ink}},y:{min:0,max:1,ticks:{color:ink,stepSize:0.25,callback:function(v){return (v*100).toFixed(0)+'%';}},grid:{color:grid},title:{display:true,text:'identity grounded rate',color:ink}}}},plugins:[lblP]});
 """
-JS = JS.replace('__OUT__', json.dumps(out_ds)).replace('__ID__', json.dumps(id_data)).replace('__COH__', json.dumps(cohorts))
+JS = (JS.replace('__OUT__', json.dumps(out_ds)).replace('__ID__', json.dumps(id_data)).replace('__COH__', json.dumps(cohorts))
+        .replace('__RAX__', json.dumps(RAX)).replace('__RM__', json.dumps(radar_models))
+        .replace('__SCAT__', json.dumps(scat_ds)))
 leg = "".join(f'<span><i style="background:{COL[m]}"></i>{m}</span>' for m in ranked)
 gap = S[worst]['id_ng'] / max(S[best]['id_ng'], 0.01)
 ahead = "".join(f'<th class="num">{a.upper()}</th>' for a in arms)
@@ -201,10 +301,36 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 <div class="kfind"><div class="ix">🎣</div><div><b>All three are fooled by misleading framing</b> (2–4/6), with <b>no consistent early≫late gradient</b>.</div></div>
 </div>
 
+<h2>Capability profile</h2>
+<div class="panel"><div class="legend">{leg}</div>
+<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">
+<div class="chartbox" style="flex:1;min-width:300px;height:340px"><canvas id="radar" role="img" aria-label="Radar chart of six abilities per model."></canvas></div>
+<div style="flex:1;min-width:280px"><table><thead><tr><th>axis (raw)</th>{"".join(f'<th class="num" style="color:{COL[m]}">{m.split()[0]}</th>' for m in ranked)}</tr></thead><tbody>{radrows}</tbody></table></div>
+</div>
+<p class="lead">Axes ordered <b>outcome-visible → process-hidden</b> (Faithfulness…Consistency on the outcome side; Support…Identity grounding on the process side). All three overlap on the outcome side; <b>{worst}'s polygon caves in on the process side</b>, deepest at identity grounding — the asymmetry an outcome-only leaderboard misses. Each spoke normalized 0–1 (Faithfulness ÷0.65, OV ÷0.5, Consistency 1−SD/0.15, Support ÷5, Fooling 1−fooled/12, Identity 1−unsupported); <b>shape, not area</b>, is the comparison — raw values in the table.</p></div>
+
+<h2>What the outcome score measures</h2>
+<div class="panel">
+<p class="lead" style="margin-top:0"><b>Outcome (faithfulness)</b> = weighted mean of 7 components (max 14, reported 0–1), gated by cohort identity: an episode that commits to the <i>wrong</i> cohort has every component zeroed. It scores <b>whether the discovery is correct</b> against the data and canonical references — the "right ↔ wrong" axis. (Separate from the support/grounding scorer, which asks <i>how</i> it got there.)</p>
+<div class="tblwrap"><table><thead><tr><th>component</th><th class="num">wt</th><th>what it checks</th>{"".join(f'<th class="num" style="color:{COL[m]}">{m.split()[0]}</th>' for m in ranked)}</tr></thead><tbody>{comprows}</tbody></table></div>
+<p class="lead">Honest-arm means. Amber = notably below peers. All three cluster similarly on the <b>partition/clinical</b> components; {worst}'s outcome deficit is concentrated in the <b>interpretive</b> components — <code>mechanism_grounding</code> ({comp_vals[worst]['mechanism_grounding']:.2f} vs {comp_vals[best]['mechanism_grounding']:.2f}) and <code>pathway_validity</code> ({comp_vals[worst]['pathway_validity']:.2f} vs {comp_vals[best]['pathway_validity']:.2f}) — echoing its identity-grounding gap.</p></div>
+
 <h2>Outcome by cohort</h2>
 <div class="panel"><div class="legend">{leg}</div>
 <div class="chartbox"><canvas id="out" role="img" aria-label="Outcome by cohort per model."></canvas></div>
 <p class="lead">Honest arms (G0–G2), ±1 SD across seeds. Same difficulty order; OV the floor for all.</p></div>
+
+<h2>Why the cohorts differ in difficulty</h2>
+<div class="panel">
+<div class="tblwrap"><table><thead><tr><th>cohort</th><th class="num">outcome</th>{diffhead}</tr></thead><tbody>{diffrows}</tbody></table></div>
+<p class="lead" style="margin-top:8px">Pooled across all three models (honest arms). The difficulty ranking is <b>identical for every model</b> — it's a property of the <b>biology</b>, not the agent. The gap is dominated by one component: <b>genomic·drivers</b> — OV scores <b>0.00</b> vs ~0.95 for BRCA/LUAD. HGSOC is <b>copy-number–driven with near-universal TP53</b>, so there are <i>no subtype-differentiating point mutations</i> for that component to reward (a real feature of the disease, per the cohort card). Weak prognostic separation (clinical 0.08) and purity-confounded transcriptional structure (0.18) compound it; LIHC sits between because HCC is only partly mutation-driven (drivers 0.33).</p>
+<p class="lead"><b>Note the knowledge components are flat across cohorts</b> (marker/pathway/mechanism ≈ constant) — agents narrate equally well everywhere. Difficulty lives entirely in the <b>data-grounded</b> components. <b>Implication:</b> cross-cohort scores are <b>not directly comparable</b> — an OV 0.37 and a BRCA 0.54 reflect task difficulty, not just agent skill; model comparison is only fair <i>within</i> a cohort or difficulty-normalized across.</p></div>
+
+<h2>Literature volume vs identity grounding</h2>
+<div class="panel"><div class="legend">{leg}</div>
+<div class="chartbox" style="height:320px"><canvas id="lit" role="img" aria-label="Scatter of identity-grounded rate vs PubMed paper count per cohort, one line per model."></canvas></div>
+<p class="lead">x = PubMed hits for "&lt;cancer&gt; molecular subtypes" (log; BRCA 13.3k, LUAD 2.1k, OV 2.0k, LIHC 1.2k, snapshot 2026-07) — a proxy for how much prior knowledge each cohort affords. <b>The story is model-type, not a clean correlation.</b> <span style="color:{COL[worst]}">{worst}</span> is <b>steeply literature-dependent</b>: it grounds identity on the heavily-studied BRCA ({id_grounded[worst]['BRCA']:.0%}) but collapses on the less-studied cohorts ({id_grounded[worst]['LUAD']:.0%}–{id_grounded[worst]['OV']:.0%}) — it recalls identity only when the cancer is well-represented in the literature. <span style="color:{COL[best]}">{best}</span> and <span style="color:{COL[ranked[1]]}">{ranked[1]}</span> stay high (~90–100%) regardless of paper count (dipping only on OV) — they <b>derive</b> identity from computed markers (TP53), so they don't depend on the literature.</p>
+<p class="lead"><b>Caveats:</b> n=4 cohorts — illustrative, not a fit (pooled Pearson r≈0.65). LIHC (least-studied) breaks monotonicity by grounding well, because HCC's liver-specific markers (AFP, CYP450) are easy to <i>derive</i> even with little literature — i.e. both prior-knowledge <i>and</i> biological derivability matter, not paper count alone. #papers is also confounded with cohort commonness and subtype-cleanliness.</p></div>
 
 <h2>The finding: unsupported identity recall</h2>
 <div class="panel"><div class="chartbox" style="height:250px"><canvas id="idc" role="img" aria-label="Unsupported identity-recall rate by model."></canvas></div>

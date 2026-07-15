@@ -1,6 +1,6 @@
 # Cohort Reference Cards — literature ground truth for the support judge
 
-**Status:** draft for review. Four cards (BRCA / LIHC / LUAD / OV), one per benchmark cohort.
+**Status:** draft for review. Seven cards (BRCA / LIHC / LUAD / OV / UCEC / PRAD / LUSC), one per benchmark cohort.
 
 ## Role of these cards (read before using)
 
@@ -158,6 +158,113 @@ mutation is near-universal (~96%), so its presence does not distinguish subtypes
 direction; survival by cluster (weak — see caveat). BRCA1/2 germline status and platinum
 response are **not** in the data — HRD/platinum claims are recall unless a CNA/expression
 proxy is computed.
+
+---
+
+## UCEC — Uterine corpus endometrial carcinoma
+
+**Canonical refs:** TCGA, *Nature* 2013 (497:67, integrated genomic characterization of
+endometrial carcinoma) — the four-group genomic classification.
+
+**Backbone:** UCEC is defined by a **mutation-burden / copy-number** axis more than a clean
+transcriptional one. PI3K/PTEN-pathway alteration is near-ubiquitous in endometrioid tumors
+(PTEN loss, PIK3CA, PIK3R1). Histology splits endometrioid (estrogen-driven, favorable) vs
+serous (TP53-mutant, aggressive).
+
+**Genomic subtypes (4, TCGA 2013):**
+
+| Subtype | Defining feature | Character |
+|---|---|---|
+| **POLE (ultramutated)** | POLE exonuclease-domain mutation; extreme SNV burden | best prognosis despite high grade |
+| **MSI (hypermutated)** | microsatellite instability, MLH1 promoter hypermethylation | high SNV burden, endometrioid |
+| **Copy-number low (endometrioid)** | MSS, low CN; PTEN/PIK3CA/CTNNB1/ARID1A/KRAS mut | estrogen-driven, favorable |
+| **Copy-number high (serous-like)** | TP53 mutation, high CN, low SNV rate | serous + high-grade endometrioid, worst prognosis |
+
+**Mechanistic axes:** (1) mutation burden — POLE/MSI hypermutation vs the CN-defined groups
+(the primary axis, genomic not transcriptional); (2) PI3K/PTEN activation (endometrioid); (3)
+TP53 + copy-number instability = the serous-like/CN-high pole; (4) estrogen signaling
+(ESR1/PGR) in endometrioid vs its loss in serous.
+
+**Literature caveats:** the four groups are **genomic** (SNV burden + CN + TP53), so expression
+clustering may not recover them cleanly — the CN-low vs CN-high (endometrioid vs serous-like)
+split is the most transcriptionally visible. POLE and MSI are hypermutation states, not
+lineages. Grade/stage confound the endometrioid–serous axis.
+
+**Objective anchors:** POLE / MLH1 status and total mutation count by cluster; TP53 mutation
+frequency (marks CN-high/serous-like); PTEN/PIK3CA/CTNNB1/ARID1A frequency (endometrioid);
+ESR1/PGR expression; copy-number burden (needs CNA). MSI status and grade are not in the
+expression data — hypermutation must be read off the mutation matrix.
+
+---
+
+## PRAD — Prostate adenocarcinoma
+
+**Canonical refs:** TCGA, *Cell* 2015 (163:1011, the molecular taxonomy of primary prostate
+cancer).
+
+**Backbone:** primary prostate cancer is **quiet at the point-mutation level** — driven by
+recurrent ETS gene fusions and copy-number, under androgen-receptor (AR) signaling. ~74% fall
+into seven driver-defined classes; ETS fusions (esp. TMPRSS2-ERG) dominate.
+
+**Molecular classes (7, driver-defined):**
+
+| Class | Defining lesion | Notes |
+|---|---|---|
+| **ERG** | TMPRSS2-ERG fusion (~46%) | ERG overexpression; most common |
+| **ETV1 / ETV4 / FLI1** | other ETS-family fusions/overexpression | collectively another ~10–15% |
+| **SPOP** | SPOP mutation | mutually exclusive with ETS; distinct CN |
+| **FOXA1** | FOXA1 mutation | AR-cofactor, ETS-negative |
+| **IDH1** | IDH1 mutation | rare, younger patients |
+
+(~26% remain unclassified by driver.)
+
+**Mechanistic axes:** (1) ETS-fusion status (ERG-high vs ERG-low) — the dominant, most
+transcriptionally visible axis; (2) AR signaling output (KLK3/PSA, NKX3-1); (3) PTEN loss /
+PI3K activation (aggressive); (4) TP53/RB1/BRCA2 loss in the more aggressive tail.
+
+**Literature caveats:** primary PRAD has **excellent survival** (few events) → survival/outcome
+endpoints are weak here. The 7-class scheme is fusion/mutation-defined, not a transcriptional
+taxonomy — expression clustering mainly recovers **ERG-high vs ERG-low**. Gleason grade drives
+aggression; if absent from the data, aggressiveness claims are recall.
+
+**Objective anchors:** ERG expression (TMPRSS2-ERG fusion proxy) by cluster; SPOP / FOXA1 /
+TP53 / PTEN mutation frequency; AR / KLK3 / NKX3-1 expression; PTEN CN loss (needs CNA).
+Gleason and PSA are clinical fields, not expression — check whether they are provided.
+
+---
+
+## LUSC — Lung squamous cell carcinoma
+
+**Canonical refs:** TCGA, *Nature* 2012 (489:519, comprehensive genomic characterization of
+squamous cell lung cancers); Wilkerson et al. (the four expression subtypes).
+
+**Backbone:** near-universal **TP53 mutation (~90%)** and CDKN2A loss; squamous lineage TFs
+**SOX2 (3q amplification) and TP63**. Critically, LUSC **lacks the EGFR/KRAS/ALK drivers of
+LUAD** — squamous markers (TP63, SOX2, KRT5/6/14) vs adeno markers (NKX2-1/TTF1, NAPSA, SFTPC)
+are the key discriminator from lung adenocarcinoma.
+
+**Expression subtypes (4, Wilkerson):**
+
+| Subtype | Defining markers | Character |
+|---|---|---|
+| **Classical** | KEAP1/NFE2L2 (oxidative stress), xenobiotic/KRT, hypermethylation | most common |
+| **Basal** | cell-adhesion, KRT5/KRT6, high TP63/SOX2 | basal squamous |
+| **Secretory** | immune / secretory (surfactant-like), MUC genes | immune-infiltrated |
+| **Primitive** | proliferation, MKI67/cell-cycle | high proliferation, worst prognosis |
+
+**Mechanistic axes:** (1) the squamous lineage program (SOX2/TP63/KRT) — defines LUSC and
+separates it from LUAD; (2) NFE2L2/KEAP1 oxidative-stress activation (classical); (3)
+proliferation gradient (primitive worst); (4) immune/secretory infiltration.
+
+**Literature caveats:** TP53 (~90%) and the squamous markers are near-universal → they identify
+LUSC but do **not** separate the four subtypes. The Wilkerson subtypes have modest, not strong,
+prognostic separation (primitive-worst is the most robust). Secretory/immune signal is
+tumor-purity confounded. FGFR1 and SOX2 amplifications need CNA to see.
+
+**Objective anchors:** SOX2 / TP63 / KRT5 expression (squamous identity, vs LUAD's
+NKX2-1/NAPSA); TP53 mutation frequency (~universal → non-discriminating); MKI67 (primitive);
+KEAP1/NFE2L2 mutation frequency (classical); SOX2/FGFR1 amplification (needs CNA); survival by
+cluster (weak).
 
 ---
 

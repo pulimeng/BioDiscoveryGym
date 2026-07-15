@@ -24,6 +24,9 @@ _CARD_HEADER = {
     "LIHC": "## LIHC",
     "LUAD": "## LUAD",
     "OV":   "## OV",
+    "UCEC": "## UCEC",
+    "PRAD": "## PRAD",
+    "LUSC": "## LUSC",
 }
 
 JUDGE_SYSTEM = """\
