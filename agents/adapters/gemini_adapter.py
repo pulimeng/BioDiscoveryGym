@@ -109,11 +109,25 @@ class GeminiAdapter(Adapter):
                 contents.insert(0, t.Content(role="user", parts=[sys_part]))
 
         # Retry loop handles BOTH: (a) ~1/3 MALFORMED_FUNCTION_CALL -> retry immediately
-        # (sampling clears it); (b) transient 503/429 overload (preview models spike) ->
-        # exponential backoff. 8 tries.
+        # (resampling clears it); (b) transient 503/429 overload -> exponential backoff.
+        #
+        # Both paths MUST log. They used to swallow the error silently, which made a stalled
+        # episode indistinguishable from a slow one: a run parked in the backoff slept 9+ min
+        # at 0% CPU while printing nothing, and could only be diagnosed by sampling the
+        # process stack. Silence here also hid *which* failure was recurring, so there was
+        # nothing to act on.
+        #
+        # Backoff is capped well below the old 5,10,20,40,80,90,90 (=335s/call): at the
+        # ladder's 100 calls/episode that worst case was ~9h for a single episode. Episodes
+        # are resume-safe, so failing fast and retrying the episode later beats sleeping
+        # through the budget. Override via env if a run needs to ride out a real outage.
+        import os
+        import sys
         import time
+        max_attempts = int(os.environ.get("GEMINI_MAX_ATTEMPTS", "6"))
+        cap_s = int(os.environ.get("GEMINI_BACKOFF_CAP_S", "30"))   # 5,10,20,30,30 -> <=95s/call
         cand, parts = None, []
-        for attempt in range(8):
+        for attempt in range(max_attempts):
             try:
                 resp = self._client.models.generate_content(
                     model=model, contents=contents, config=config)
@@ -121,14 +135,33 @@ class GeminiAdapter(Adapter):
                 msg = str(e)
                 transient = any(s in msg for s in (
                     "503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "overloaded", "high demand"))
-                if transient and attempt < 7:
-                    time.sleep(min(5 * 2 ** attempt, 90))   # 5,10,20,40,80,90,90s
+                if transient and attempt < max_attempts - 1:
+                    delay = min(5 * 2 ** attempt, cap_s)
+                    print(f"[gemini] transient error, attempt {attempt + 1}/{max_attempts}, "
+                          f"backing off {delay}s: {msg[:200]}", file=sys.stderr, flush=True)
+                    time.sleep(delay)
                     continue
+                print(f"[gemini] giving up after {attempt + 1} attempt(s) "
+                      f"(transient={transient}): {msg[:300]}", file=sys.stderr, flush=True)
                 raise
             cand = resp.candidates[0]
             parts = (cand.content.parts if getattr(cand, "content", None) else None) or []
             if parts:
                 break
+            # Empty parts = MALFORMED_FUNCTION_CALL, a safety block, or a truncated candidate.
+            # Resampling usually clears it, so retry immediately — but surface finish_reason,
+            # which is the only thing that distinguishes these causes.
+            print(f"[gemini] empty response, attempt {attempt + 1}/{max_attempts}, "
+                  f"finish_reason={getattr(cand, 'finish_reason', None)} — resampling",
+                  file=sys.stderr, flush=True)
+        else:
+            # All attempts returned empty parts. Previously this fell through silently and the
+            # agent received a contentless turn, which reads downstream as the model declining
+            # to act rather than as an adapter failure.
+            if not parts:
+                raise RuntimeError(
+                    f"gemini returned no usable parts after {max_attempts} attempts "
+                    f"(last finish_reason={getattr(cand, 'finish_reason', None)})")
 
         content, saw_call = [], False
         for part in parts:

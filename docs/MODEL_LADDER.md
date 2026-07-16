@@ -36,7 +36,26 @@ secrets (committable); `keys.txt` is gitignored — never commit it.
 |---|---|---|
 | Anthropic | `claude-sonnet-5` | replaced Sonnet 4.6 (2026-06-30). `effort` defaults high (runs at default). |
 | OpenAI | `gpt-5.5` | current flagship (`gpt-5.5-2026-04-23`). Reasoning model — runs at default reasoning_effort. |
-| Google | `gemini-2.5-pro` | GA / stable Pro (chosen over 3.1-pro-preview, which 503s under load). Default thinking; thought_signature round-tripped. adapter backs off on transient 503/429. |
+| Google | `gemini-2.5-flash` | **Flash tier — a deliberate tier downgrade, see the caveat below.** Smoke-passed (submits, grouping 1095). Default thinking; thought_signature round-tripped; adapter logs + backs off on transient 503/429. |
+
+> **⚠️ TIER CAVEAT — Gemini is NOT flagship-for-flagship here (decided 2026-07-16).**
+> The other three are flagship tiers (Sonnet-5, GPT-5.5, Opus-4-8); `gemini-2.5-flash` is
+> Google's *cheap* tier. This is a known, accepted asymmetry, not an oversight — and it
+> partially cuts against the as-deployed reasoning policy below, which exists precisely to
+> pre-empt "you handicapped them."
+>
+> **Why:** `gemini-2.5-pro` (the parity-correct choice, and what the retired 4-cohort ladder in
+> `results/tcga/ladder0/gemini25_` actually ran, 48 eps @ 4.7 min median) began returning
+> sustained `503 ... high demand` — server-side overload, not a quota 429. An episode could not
+> complete. Flash unblocked the run.
+>
+> **Consequence — do not paper over this:** report the tier explicitly wherever Gemini appears,
+> and do NOT headline Gemini as a flagship comparison. A Gemini deficit vs GPT-5.5/Sonnet-5 is
+> confounded by tier and cannot be attributed to the model family. `gemini-3.5-pro` does not
+> exist (404 — 3.5 is Flash-only), so there is no newer Pro to fall back to.
+>
+> **To restore parity later:** re-run `--model gemini-2.5-pro --tag ladder/gemini25pro_<date>`
+> when demand drops, and use Pro as the headline number. No code change needed.
 
 **Parked — production tier** (not running now, but keep in the ladder; add with `--tag ladder/<m>_<date>`):
 
@@ -91,7 +110,7 @@ under `results/tcga/ladder/<model>_<date>/` (analysis is then `for m in results/
 D=$(date +%Y%m%d)     # ONE date per campaign — reuse the SAME tag to resume (see note)
 bash scripts/run_tcga.sh --model claude-sonnet-5  --tag ladder/sonnet5_$D
 bash scripts/run_tcga.sh --model gpt-5.5          --tag ladder/gpt55_$D
-bash scripts/run_tcga.sh --model gemini-2.5-pro --tag ladder/gemini25_$D
+bash scripts/run_tcga.sh --model gemini-2.5-flash --tag ladder/gemini25flash_$D
 # bash scripts/run_tcga.sh --model claude-opus-4-8 --tag ladder/opus_$D   # parked (cost)
 ```
 Episode dirs are **label-named** (`.../ladder/gpt41_20260707/g2_brca_s42/…`), not uuids.
@@ -121,6 +140,10 @@ results/tcga/
   (Anthropic 64k, OpenAI 32768, Gemini 65536) → uniform 32k. (Reasoning tokens count against
   output — **default reasoning can eat the 32k budget**; raise agent `max_tokens` if truncating.)
 - ⚠️ verify `reveal@RO` matches in the smoke output before the full run.
+- ❌ **model tier is NOT equal — Gemini runs Flash, the others run flagship** (see the tier
+  caveat in §2). This is the one knowingly-broken item on this checklist. It was forced by
+  sustained `503 high demand` on `gemini-2.5-pro`, and it means a Gemini deficit is confounded
+  by tier. Report the tier wherever Gemini appears; re-run on Pro to close it.
 
 ## Cost & runtime estimate
 
@@ -134,8 +157,8 @@ first few real episodes.
 | `claude-sonnet-5` | ~$3 | **~$145** | ~15–30 min | slow (many turns) |
 | `claude-opus-4-8` | ~$15 | **~$720** | ~8–15 min | **the cost driver (~65% of the ladder)** |
 | `gpt-5.5` | ~$2 | **~$95** | ~5–10 min | fastest, cheapest-per-token flagship |
-| `gemini-2.5-pro` | ~$3? | **~$145?** | ~15–25 min | Pro tier (pricier than Flash — verify); big context + retries → slow |
-| **Full ladder** | | **~$1000** | | Opus dominates cost; Sonnet/Gemini dominate wall-time |
+| `gemini-2.5-flash` | ~$1? | **~$48?** | ~5–15 min | Flash tier — cheap/fast, but **not flagship-parity** (see tier caveat, §2) |
+| **Full ladder** | | **~$1000** | | Opus dominates cost; Sonnet dominates wall-time |
 
 **Levers if that's too much:**
 - **Drop Opus** → ~$250 for the other three (Opus is ~$600 alone).
