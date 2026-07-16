@@ -118,6 +118,7 @@ if [[ $DRY_RUN -eq 0 ]]; then
 fi
 
 OUT_DIR="${BASE_DIR}/${TAG}"
+LOG_DIR="${OUT_DIR}/_logs"   # per-episode stdout+stderr; survives an episode that never writes JSON
 mkdir -p "$OUT_DIR"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
@@ -169,10 +170,17 @@ run_episode() {
         # Resilient: one episode failing (incl. OOM 'Killed: 9', exit 137) must NOT
         # abort the whole batch — log it and continue. Resume-safe skip means a later
         # re-run retries only the failed/missing episodes.
+        #
+        # Keep a per-episode stdout+stderr log. Without it the only post-hoc record is the
+        # run_log inside the episode JSON — and an episode that never submits writes no JSON
+        # at all, leaving nothing to diagnose (this cost us a full forensic dead-end on a
+        # 21h run and a stalled Gemini episode). pipefail makes the pipeline report
+        # run_episode's exit code, not tee's.
         local rc=0
-        eval "$cmd" || rc=$?
+        mkdir -p "$LOG_DIR"
+        eval "$cmd" 2>&1 | tee "${LOG_DIR}/${label}.log" || rc=$?
         if [[ $rc -ne 0 ]]; then
-            echo "  !! FAILED  $label (exit $rc)$( [[ $rc -eq 137 ]] && echo ' — likely OOM (SIGKILL); see memory notes' )" >&2
+            echo "  !! FAILED  $label (exit $rc)$( [[ $rc -eq 137 ]] && echo ' — likely OOM (SIGKILL); see memory notes' ) — log: ${LOG_DIR}/${label}.log" >&2
             FAILED_EPISODES+=("$label (exit $rc)")
         fi
     fi

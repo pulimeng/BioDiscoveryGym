@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import contextlib
 import io
+import signal
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -60,6 +62,61 @@ _GENESET_BLOCKS = ("data/genesets", "data/cancer_genes")
 # Hard cap on output length returned to Claude (characters)
 _MAX_OUTPUT_CHARS = 20_000
 
+# Wall-clock cap on a SINGLE run_code call. Agents occasionally write correct but
+# pathologically slow analyses: a per-gene t-test loop plus a CNA enrichment loop that
+# re-evaluated `[('amp', cc>0), ('del', cc<0)]` (two full copy-number matrix comparisons)
+# inside its innermost loop once ran 21.4h and returned *successfully* — silently
+# dominating a 21.5h episode whose science was otherwise correct. Observed healthy calls:
+# median 0.1s, p99 37.5s — 600s leaves ~16x headroom over the p99 while bounding the tail.
+_EXEC_TIMEOUT_S = 600
+
+_TIMEOUT_MSG = (
+    "TimeoutError: this run_code call exceeded the {t}s wall-clock limit and was interrupted.\n"
+    "Any stdout above is partial (printed before the interrupt), and the namespace may now hold "
+    "partially-assigned variables from this call — re-assign anything you intend to reuse.\n"
+    "The usual cause is an un-vectorized loop over genes/samples. Prefer array operations: e.g. a "
+    "per-gene `for g in genes: stats.ttest_ind(a[g], b[g])` over thousands of genes should become a "
+    "single `stats.ttest_ind(A, B, axis=0)` on the stacked arrays, which is ~1000x faster.\n"
+    "Rewrite the analysis vectorized and call run_code again."
+)
+
+
+class _ExecTimeout(Exception):
+    """Raised inside exec() by the SIGALRM handler when a call overruns."""
+
+
+@contextlib.contextmanager
+def _time_limit(seconds: int):
+    """
+    Wall-clock cap on one exec() call, via SIGALRM.
+
+    exec() runs in-process so the namespace persists across run_code calls, which rules
+    out the usual subprocess-with-timeout approach. SIGALRM raises at the next bytecode
+    boundary — that catches the Python-level loops which are the actual hazard here. A
+    single long-running C call (one huge BLAS/numpy op) won't interrupt until it returns
+    to the interpreter; that's an accepted gap, since those aren't the observed failure.
+
+    No-ops where SIGALRM can't be used (non-Unix, or off the main thread).
+    """
+    if (
+        seconds <= 0
+        or not hasattr(signal, "SIGALRM")
+        or threading.current_thread() is not threading.main_thread()
+    ):
+        yield
+        return
+
+    def _handler(signum, frame):  # noqa: ARG001
+        raise _ExecTimeout
+
+    prev = signal.signal(signal.SIGALRM, _handler)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, prev)
+
 
 class CodeExecutor:
     """
@@ -71,7 +128,12 @@ class CodeExecutor:
         # → "(1095, 19938)\\n"
     """
 
-    def __init__(self, data_dir: str | Path = "data", output_dir: str | Path | None = None):
+    def __init__(
+        self,
+        data_dir: str | Path = "data",
+        output_dir: str | Path | None = None,
+        exec_timeout_s: int = _EXEC_TIMEOUT_S,
+    ):
         data_dir = Path(data_dir)
         self.output_dir = Path(output_dir) if output_dir else Path("results") / "misc"
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -79,6 +141,7 @@ class CodeExecutor:
         self.namespace: dict = self._build_namespace(data_dir)
         self.timing_log: list[dict] = []
         self._exec_count: int = 0
+        self.exec_timeout_s = exec_timeout_s  # per-call wall-clock cap; <=0 disables
 
     # ------------------------------------------------------------------
     # Public API
@@ -107,10 +170,17 @@ class CodeExecutor:
 
         buf = io.StringIO()
         t0 = time.perf_counter()
+        timed_out = False
         try:
-            with contextlib.redirect_stdout(buf):
+            with contextlib.redirect_stdout(buf), _time_limit(self.exec_timeout_s):
                 exec(code, self.namespace)  # noqa: S102
             is_error = False
+        except _ExecTimeout:
+            # Recoverable by design: surfaced to the agent as a normal tool error so it can
+            # rewrite the call vectorized and continue, rather than aborting the episode.
+            buf.write("\n" + _TIMEOUT_MSG.format(t=self.exec_timeout_s))
+            is_error = True
+            timed_out = True
         except Exception:
             buf.write(traceback.format_exc())
             is_error = True
@@ -135,6 +205,7 @@ class CodeExecutor:
             "exec_time_s": round(exec_time, 4),
             "output_chars": len(output),
             "is_error": is_error,
+            "timed_out": timed_out,
         })
         self._exec_count += 1
         return output
