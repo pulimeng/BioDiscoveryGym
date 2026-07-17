@@ -36,23 +36,34 @@ secrets (committable); `keys.txt` is gitignored — never commit it.
 |---|---|---|
 | Anthropic | `claude-sonnet-5` | replaced Sonnet 4.6 (2026-06-30). `effort` defaults high (runs at default). |
 | OpenAI | `gpt-5.5` | current flagship (`gpt-5.5-2026-04-23`). Reasoning model — runs at default reasoning_effort. |
-| Google | `gemini-2.5-flash` | **Flash tier — a deliberate tier downgrade, see the caveat below.** Smoke-passed (submits, grouping 1095). Default thinking; thought_signature round-tripped; adapter logs + backs off on transient 503/429. |
+| Google | `gemini-3.5-flash` | **Flash tier — a deliberate tier downgrade, see the caveat below.** Smoke-passed (submits, grouping 1095). Default thinking; thought_signature round-tripped; adapter logs + backs off on transient 503/429. |
 
-> **⚠️ TIER CAVEAT — Gemini is NOT flagship-for-flagship here (decided 2026-07-16).**
-> The other three are flagship tiers (Sonnet-5, GPT-5.5, Opus-4-8); `gemini-2.5-flash` is
-> Google's *cheap* tier. This is a known, accepted asymmetry, not an oversight — and it
-> partially cuts against the as-deployed reasoning policy below, which exists precisely to
-> pre-empt "you handicapped them."
+> **⚠️ TIER CAVEAT — Gemini is a Flash tier; the others are flagship (decided 2026-07-16).**
+> Disclose this wherever Gemini appears. It is a known, accepted asymmetry, not an oversight.
 >
-> **Why:** `gemini-2.5-pro` (the parity-correct choice, and what the retired 4-cohort ladder in
-> `results/tcga/ladder0/gemini25_` actually ran, 48 eps @ 4.7 min median) began returning
-> sustained `503 ... high demand` — server-side overload, not a quota 429. An episode could not
-> complete. Flash unblocked the run.
+> **Why:** `gemini-2.5-pro` — the parity-correct choice, and what the retired 4-cohort ladder in
+> `results/tcga/ladder0/gemini25_` actually ran (48 eps @ 4.7 min median) — began returning
+> sustained `503 ... high demand`: *server-side overload, not a quota 429*, so no key upgrade
+> fixes it. Episodes could not complete (the adapter slept in backoff at 0% CPU). Flash unblocked
+> the run.
 >
-> **Consequence — do not paper over this:** report the tier explicitly wherever Gemini appears,
-> and do NOT headline Gemini as a flagship comparison. A Gemini deficit vs GPT-5.5/Sonnet-5 is
-> confounded by tier and cannot be attributed to the model family. `gemini-3.5-pro` does not
-> exist (404 — 3.5 is Flash-only), so there is no newer Pro to fall back to.
+> **Mitigating — why `gemini-3.5-flash` and not `gemini-2.5-flash`:** 3.5 is **Flash-only** —
+> `gemini-3.5-pro` returns 404, it does not exist. So 3.5-flash is the *top of its own family*,
+> not a cheap variant sitting below a Pro. "We ran the newest Gemini model Google ships; there is
+> no Pro in that generation" is materially stronger than "we used Flash because Pro was busy."
+> This **blunts the tier objection — it does not eliminate it.** A Flash model is still distilled,
+> and a reviewer may fairly say it isn't comparable to GPT-5.5.
+>
+> **Consequence — do not paper over this:** a Gemini deficit vs GPT-5.5/Sonnet-5 remains
+> **confounded by tier** and must not be attributed to the model family.
+>
+> **Smoke evidence (2026-07-16, G2/BRCA/s42, n=1 each — qualitative, not a measurement):**
+> both Flash models passed parity (`reveal@RO=3`, both submitted). 3.5-flash ran **40 run_code**
+> calls and recovered canonical BRCA structure (ESR1/GATA3/FOXA1 luminal, ERBB2, CDC20/CENPA
+> proliferation → luminal/luminal/basal-TP53/normal-like). 2.5-flash ran **7** and returned
+> generic cancer boilerplate (KRAS/EGFR/TWIST1/VIM EMT vocabulary — not BRCA subtype drivers) at
+> `confidence: high` — i.e. answering from priors with minimal data engagement, the exact failure
+> this benchmark exists to detect. 3.5-flash also absorbed 2× transient 503 at attempt 1/6.
 >
 > **To restore parity later:** re-run `--model gemini-2.5-pro --tag ladder/gemini25pro_<date>`
 > when demand drops, and use Pro as the headline number. No code change needed.
@@ -110,11 +121,13 @@ under `results/tcga/ladder/<model>_<date>/` (analysis is then `for m in results/
 D=$(date +%Y%m%d)     # ONE date per campaign — reuse the SAME tag to resume (see note)
 bash scripts/run_tcga.sh --model claude-sonnet-5  --tag ladder/sonnet5_$D
 bash scripts/run_tcga.sh --model gpt-5.5          --tag ladder/gpt55_$D
-bash scripts/run_tcga.sh --model gemini-2.5-flash --tag ladder/gemini25flash_$D
+bash scripts/run_tcga.sh --model gemini-3.5-flash --tag ladder/gemini35flash_$D
 # bash scripts/run_tcga.sh --model claude-opus-4-8 --tag ladder/opus_$D   # parked (cost)
 ```
 Episode dirs are **label-named** (`.../ladder/gpt41_20260707/g2_brca_s42/…`), not uuids.
-`run_tcga.sh` scores each episode as it goes (both tracks) and is **resume-safe** — re-run
+`run_tcga.sh` runs **episodes only — it does NOT score** (its own header says so; score separately
+with `scripts/score_run.sh`, or `scripts/score_support.py <dir> --save` for a whole model dir).
+An unscored ladder dir is therefore expected, not a symptom. It is **resume-safe** — re-run
 the *same tag* to continue. **Note:** the timestamp versions a campaign; to resume across days,
 hardcode the date (`--tag ladder/gpt41_20260707`) rather than `$(date)`, which would roll to a
 new dir. To (re)score a whole model dir: `python scripts/score_support.py results/tcga/ladder/<dir> --save`.
@@ -157,7 +170,7 @@ first few real episodes.
 | `claude-sonnet-5` | ~$3 | **~$145** | ~15–30 min | slow (many turns) |
 | `claude-opus-4-8` | ~$15 | **~$720** | ~8–15 min | **the cost driver (~65% of the ladder)** |
 | `gpt-5.5` | ~$2 | **~$95** | ~5–10 min | fastest, cheapest-per-token flagship |
-| `gemini-2.5-flash` | ~$1? | **~$48?** | ~5–15 min | Flash tier — cheap/fast, but **not flagship-parity** (see tier caveat, §2) |
+| `gemini-3.5-flash` | ~$1? | **~$48?** | ~20 min (measured, smoke) | Flash tier — **not flagship-parity** (see tier caveat, §2). 40 run_code/ep; occasional transient 503, self-recovers at attempt 1/6 |
 | **Full ladder** | | **~$1000** | | Opus dominates cost; Sonnet dominates wall-time |
 
 **Levers if that's too much:**
