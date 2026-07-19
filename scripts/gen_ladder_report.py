@@ -1,15 +1,43 @@
 #!/usr/bin/env python3
 """Detailed 3-model report — outcome (v3) + support/grounding, with per-model cards,
 per-episode tables, and the judge's evidence quotes. Judge: DeepSeek-v4-pro (neutral)."""
-import glob, os, json, html as H, statistics as st
+import argparse, glob, math, os, json, html as H, statistics as st
 from collections import Counter
 
+# PubMed hits for "<cancer> molecular subtypes" — proxy for prior-knowledge volume.
+# ONLY the first four are verified (snapshot 2026-07). LUSC/PRAD/UCEC are NOT filled in:
+# leave them out rather than fabricate a count. A cohort absent here is dropped from the
+# literature-vs-grounding scatter only (never from the main aggregates), with a visible note.
+# To include a new cohort in that panel, add its real PubMed count here.
+PAPERS = {'BRCA': 13305, 'LUAD': 2091, 'OV': 1982, 'LIHC': 1159}
+
+# (label, results_dir, color, tier). tier ∈ {'flagship','flash',...} — drives the tier caveat.
+# The tier field is REQUIRED for honest reporting: Gemini runs a Flash tier while the others
+# run flagship, so a Gemini deficit is confounded by tier (see docs/MODEL_LADDER.md §2).
 MODELS = [
-    ('Sonnet 5', 'results/tcga/ladder/sonnet5_20260713', '#7F77DD'),
-    ('GPT-5.5', 'results/tcga/ladder/gpt55_20260707', '#1D9E75'),
-    ('Gemini 2.5', 'results/tcga/ladder/gemini25_', '#EF9F27'),
+    ('Sonnet 5', 'results/tcga/ladder/sonnet5_20260713', '#7F77DD', 'flagship'),
+    ('GPT-5.5', 'results/tcga/ladder/gpt55_20260707', '#1D9E75', 'flagship'),
+    ('Gemini 3.5 Flash', 'results/tcga/ladder/gemini35flash_20260716', '#EF9F27', 'flash'),
 ]
-cohorts = ['BRCA', 'LIHC', 'LUAD', 'OV']
+OUT_PATH = 'results/tcga/ladder/LADDER_3MODEL.html'
+
+_ap = argparse.ArgumentParser(description=__doc__)
+_ap.add_argument('--model', action='append', metavar='LABEL:DIR:#COLOR:TIER',
+                 help='override a model (repeatable); replaces the built-in list on first use')
+_ap.add_argument('--cohorts', default=None, help='comma-separated; default = auto-derive from the data')
+_ap.add_argument('--out', default=None, help=f'output HTML path (default {OUT_PATH})')
+_args = _ap.parse_args()
+if _args.model:
+    MODELS = []
+    for spec in _args.model:
+        parts = spec.split(':')
+        lab, d = parts[0], parts[1]
+        col = next((p for p in parts[2:] if p.startswith('#')), '#888')
+        tier = next((p for p in parts[2:] if not p.startswith('#')), 'flagship')
+        MODELS.append((lab, d, col, tier))
+if _args.out:
+    OUT_PATH = _args.out
+cohorts = [c.strip().upper() for c in _args.cohorts.split(',')] if _args.cohorts else None  # None → derive post-load
 
 def load(root):
     R = []
@@ -24,34 +52,93 @@ def load(root):
             lvl={k: L[k] for k in ('d1_partition', 'd2_identity', 'd3_mechanism')}, mech=mech))
     return R
 
-DATA = {name: load(root) for name, root, _ in MODELS}
-COL = {name: col for name, _, col in MODELS}
+DATA = {name: load(root) for name, root, *_ in MODELS}
+COL = {t[0]: t[2] for t in MODELS}
+TIER = {t[0]: t[3] for t in MODELS}
+
+# Cohorts: derive from the data unless pinned on the CLI. Ordering = most-studied first
+# (PAPERS desc), unknown-paper cohorts alphabetical after — so a 4- or 7-cohort run both work.
+if cohorts is None:
+    seen = {x['cohort'] for R in DATA.values() for x in R
+            if x['arm'] in ('g0', 'g1', 'g2') and x['cohort']}
+    cohorts = sorted(seen, key=lambda c: (-(PAPERS.get(c) or 0), c))
+LIT_COHORTS = [c for c in cohorts if c in PAPERS]          # only these appear in the literature panel
+LIT_MISSING = [c for c in cohorts if c not in PAPERS]      # noted, not fabricated
 
 def stats(R):
     hon = [x for x in R if x['arm'] in ('g0', 'g1', 'g2')]
     def ng(dk):
         c = Counter(x['lvl'][dk]['support'] for x in hon); t = sum(c.values())
         return (c.get('unsupported', 0) + c.get('anchored', 0)) / t
-    return dict(outcome=st.mean([x['norm'] for x in hon]), osd=st.pstdev([x['norm'] for x in hon]),
+    hv = [x['norm'] for x in hon]
+    n = len(hv)
+    # 95% CI half-width on the honest-arm outcome mean (t-approx; ~1.96 at these n).
+    ci = (_tcrit(n - 1) * st.stdev(hv) / math.sqrt(n)) if n > 1 else 0.0
+    return dict(outcome=st.mean(hv), osd=st.pstdev(hv), n_honest=n, ci=ci,
         support=st.mean([x['ss'] for x in hon]),
-        cby={c: st.mean([x['norm'] for x in hon if x['cohort'] == c]) for c in cohorts},
-        csd={c: st.pstdev([x['norm'] for x in hon if x['cohort'] == c]) for c in cohorts},
+        cby={c: st.mean([x['norm'] for x in hon if x['cohort'] == c] or [0]) for c in cohorts},
+        csd={c: st.pstdev([x['norm'] for x in hon if x['cohort'] == c] or [0]) for c in cohorts},
         id_ng=ng('d2_identity'), d1_ng=ng('d1_partition'), d3_ng=ng('d3_mechanism'),
         fa=sum(1 for x in R if x['arm'] == 'g3a' and x['verdict'] == 'mislead_cohort'),
         fb=sum(1 for x in R if x['arm'] == 'g3b' and x['verdict'] == 'mislead_cohort'))
+
+def _tcrit(df):
+    # two-sided 95% t critical, small table + normal floor — avoids a scipy dependency.
+    T = {1:12.71,2:4.30,3:3.18,4:2.78,5:2.57,6:2.45,8:2.31,10:2.23,15:2.13,20:2.09,30:2.04,60:2.00}
+    if df <= 0: return 0.0
+    for k in sorted(T):
+        if df <= k: return T[k]
+    return 1.96
+
 S = {m: stats(DATA[m]) for m in DATA}
 ranked = sorted(S, key=lambda m: -S[m]['outcome'])
 best, worst = ranked[0], ranked[-1]
+NEP = {m: len(DATA[m]) for m in DATA}                 # episodes per model (any arm)
+N_TOTAL = sum(NEP.values())
+N_TYP = Counter(NEP.values()).most_common(1)[0][0] if NEP else 0  # typical eps/model
+SEEDS = sorted({x['seed'] for R in DATA.values() for x in R if x['seed'] is not None})
 
-CAV = {
- 'Sonnet 5': "Strongest on both axes and the best-grounded identity caller ({id}%). Weakness: most susceptible to <b>early</b> mislead (g3a {fa}/6) — when the false frame lands before it forms its own read, it anchors; and it leans on recalled schemes for partition slightly more than the others.",
- 'GPT-5.5': "The balanced all-rounder — middle on both axes, top on BRCA ({brca}). Always derives its partition and grounds mechanism. Weakness: moderate identity recall ({id}%) and symmetric fooling ({fa}/6 early, {fb}/6 late) — no standout strength or failure.",
- 'Gemini 2.5': "Weakest on both axes, highest variance. Defining flaw is <b>identity</b>: it commits to a grouping without ever identifying the cancer type <b>{id}%</b> of the time (~{gap:.0f}× {best}); the only model with anchored mechanisms (D3 {d3}%). Most fooled <b>late</b> (g3b {fb}/6). An outcome-only leaderboard badly understates this gap.",
-}
+# Outcome-ranking significance: do the top-two models' honest-outcome CIs overlap?
+# If so, the *outcome* leaderboard is not statistically separated — which is precisely
+# this report's thesis (the split is on identity grounding, not outcome). Report it plainly.
+def _sep(a, b):
+    sa, sb = S[a], S[b]
+    se = math.sqrt((sa['ci'] / max(_tcrit(sa['n_honest'] - 1), 1e-9)) ** 2
+                   + (sb['ci'] / max(_tcrit(sb['n_honest'] - 1), 1e-9)) ** 2)
+    if se == 0: return None
+    return abs(sa['outcome'] - sb['outcome']) / se          # z-like separation
+OUT_Z = _sep(ranked[0], ranked[1]) if len(ranked) > 1 else None
+OUT_SIG = (OUT_Z is not None and OUT_Z >= 1.96)
+sig_txt = (f"the top-two outcome means are separated ({ranked[0]} vs {ranked[1]}, z≈{OUT_Z:.1f})"
+           if OUT_SIG else
+           f"the top outcome means are <b>within noise</b> (95% CIs overlap"
+           + (f", {ranked[0]} vs {ranked[1]} z≈{OUT_Z:.1f}" if OUT_Z is not None else "") + ")")
+
+# Caveats are generated from each model's stats by RANK (best / middle / worst on outcome),
+# not keyed by model name — so renaming or swapping a model can never KeyError, and the prose
+# always tracks the actual numbers. n3 = G3 arm denominator (episodes per mislead sub-arm).
 def cav(m):
-    s = S[m]; gap = S[worst]['id_ng'] / max(S[best]['id_ng'], 0.01)
-    return CAV[m].format(id=f"{s['id_ng']:.0%}", d3=f"{s['d3_ng']:.0%}", fa=s['fa'], fb=s['fb'],
-                         brca=f"{s['cby']['BRCA']:.3f}", gap=gap, best=best)
+    s = S[m]; rank = ranked.index(m)
+    gap = s['id_ng'] / max(S[best]['id_ng'], 0.01)
+    n3 = max(sum(1 for x in DATA[m] if x['arm'] == 'g3a'), 1)
+    tier_note = (f" <b>Tier:</b> {TIER[m]} — a lighter tier than the flagship models here, so any "
+                 f"deficit is <b>confounded by tier</b>, not attributable to the model family."
+                 if TIER.get(m) != 'flagship' else "")
+    id_s = f"{s['id_ng']:.0%}"
+    fool = f"fooled g3a {s['fa']}/{n3} · g3b {s['fb']}/{n3}"
+    if rank == 0:
+        body = (f"Top outcome ({s['outcome']:.3f}) and best-grounded identity caller "
+                f"(unsupported {id_s}). Watch: early-mislead susceptibility ({fool}) and any lean "
+                f"on recalled partitions.")
+    elif rank == len(ranked) - 1:
+        body = (f"Lowest outcome ({s['outcome']:.3f}), highest variance (SD {s['osd']:.3f}). "
+                f"Defining gap is <b>identity</b>: commits to a grouping without grounding the "
+                f"cancer type <b>{id_s}</b> of the time (~{gap:.0f}× {best}); {fool}. An "
+                f"outcome-only leaderboard understates this.")
+    else:
+        body = (f"Mid-pack on outcome ({s['outcome']:.3f}); top on BRCA ({s['cby'].get('BRCA', 0):.3f}). "
+                f"Identity unsupported {id_s}; {fool} — no standout strength or failure.")
+    return body + tier_note
 
 def esc(t): return H.escape(str(t or ''))
 CH = {'grounded': ('g', 'gr'), 'unsupported': ('m', 'un'), 'anchored': ('b', 'an')}
@@ -111,7 +198,7 @@ def ep_rows(R):
     return rows
 epsections = ""
 for m in ranked:
-    epsections += (f'<details><summary><b style="color:{COL[m]}">{m}</b> — 48 episodes '
+    epsections += (f'<details><summary><b style="color:{COL[m]}">{m}</b> — {NEP[m]} episodes '
         f'(outcome {S[m]["outcome"]:.3f} · identity-unsupported {S[m]["id_ng"]:.0%})</summary>'
         f'<div class="tblwrap"><table class="ep"><thead><tr><th>arm</th><th>cohort</th><th class="num">seed</th>'
         f'<th class="num">outcome</th><th class="num">support</th><th>D1·D2·D3</th><th>D2 identity — judge evidence</th></tr></thead>'
@@ -123,20 +210,24 @@ id_data = {'labels': ranked, 'colors': [COL[m] for m in ranked], 'vals': [round(
 
 # ---- radar / capability profile (6 axes, outcome-visible -> process-hidden) ----
 def clamp(v): return max(0.0, min(1.0, v))
-RAX = ['Faithfulness', 'Hard-cohort (OV)', 'Consistency', 'Support score', 'Fooling resist.', 'Identity grounding']
+# Hardest cohort = lowest pooled outcome across models (was hardcoded 'OV'). Fooling denominator
+# = actual #G3 episodes/model (was hardcoded 12), so 4- and 7-cohort runs both normalize right.
+HARD_COH = min(cohorts, key=lambda c: st.mean([S[m]['cby'][c] for m in ranked])) if cohorts else 'OV'
+G3N = {m: max(sum(1 for x in DATA[m] if x['arm'] in ('g3a', 'g3b')), 1) for m in ranked}
+RAX = ['Faithfulness', f'Hard-cohort ({HARD_COH})', 'Consistency', 'Support score', 'Fooling resist.', 'Identity grounding']
 def radar_vals(m):
     s = S[m]
-    return [round(clamp(s['outcome']/0.65), 3), round(clamp(s['cby']['OV']/0.5), 3),
+    return [round(clamp(s['outcome']/0.65), 3), round(clamp(s['cby'][HARD_COH]/0.5), 3),
             round(clamp(1 - s['osd']/0.15), 3), round(clamp(s['support']/5), 3),
-            round(clamp(1 - (s['fa']+s['fb'])/12), 3), round(clamp(1 - s['id_ng']), 3)]
+            round(clamp(1 - (s['fa']+s['fb'])/G3N[m]), 3), round(clamp(1 - s['id_ng']), 3)]
 radar_models = [{'label': m, 'color': COL[m], 'vals': radar_vals(m)} for m in ranked]
 # companion raw-value table
 raw_axis = [
     ('Faithfulness', lambda s: f"{s['outcome']:.3f}"),
-    ('Hard-cohort (OV)', lambda s: f"{s['cby']['OV']:.3f}"),
+    (f'Hard-cohort ({HARD_COH})', lambda s: f"{s['cby'][HARD_COH]:.3f}"),
     ('Consistency (SD, ↓)', lambda s: f"{s['osd']:.3f}"),
     ('Support score /5', lambda s: f"{s['support']:.2f}"),
-    ('Fooling resist. (fooled/12, ↓)', lambda s: f"{s['fa']+s['fb']}/12"),
+    ('Fooling resist. (# fooled, ↓)', lambda s: f"{s['fa']+s['fb']} fooled"),
     ('Identity grounding (unsupp, ↓)', lambda s: f"{s['id_ng']:.0%}"),
 ]
 radrows = ""
@@ -155,7 +246,7 @@ COMP = [
 ]
 # per-component means (honest) from v3scores
 comp_vals = {m: {} for m in ranked}
-for name, root, _ in MODELS:
+for name, root, *_ in MODELS:
     acc = {k: [] for k, _, _ in COMP}
     for sp in glob.glob(f"{root}/**/*_v3scores.json", recursive=True):
         lab = os.path.basename(sp)
@@ -177,7 +268,7 @@ for key, wt, desc in COMP:
 # ---- cohort difficulty decomposition (pooled across models, honest) ----
 DIFF_COMP = ['clinical_signal', 'genomic_coherence_drivers', 'reference_concordance', 'structure_validity', 'pathway_validity']
 coh_norm = {c: [] for c in cohorts}; coh_comp = {c: {k: [] for k in DIFF_COMP} for c in cohorts}
-for name, root, _ in MODELS:
+for name, root, *_ in MODELS:
     for sp in glob.glob(f"{root}/**/*_v3scores.json", recursive=True):
         lab = os.path.basename(sp)
         if lab.split('_')[0] not in ('g0', 'g1', 'g2'): continue
@@ -196,10 +287,9 @@ for c in coh_order:
     diffrows += f'<tr><td class="grp">{c}</td><td class="num"><b>{st.mean(coh_norm[c]):.3f}</b></td>{cells}</tr>'
 diffhead = "".join(f'<th class="num">{k.split("_")[0][:6]}{"·"+k.split("_")[-1][:3] if "_" in k else ""}</th>' for k in DIFF_COMP)
 
-# ---- literature volume vs identity grounding ----
-PAPERS = {'BRCA': 13305, 'LUAD': 2091, 'OV': 1982, 'LIHC': 1159}  # PubMed "<cancer> molecular subtypes", 2026-07
+# ---- literature volume vs identity grounding ---- (PAPERS defined at top; extend it there)
 id_grounded = {m: {} for m in ranked}
-for name, root, _ in MODELS:
+for name, root, *_ in MODELS:
     for c in cohorts:
         vs = []
         for sp in glob.glob(f"{root}/**/*_supportscores.json", recursive=True):
@@ -209,9 +299,41 @@ for name, root, _ in MODELS:
             if e.get('cohort') != c: continue
             vs.append(1 if json.load(open(sp))['levels']['d2_identity']['support'] == 'grounded' else 0)
         id_grounded[name][c] = round(st.mean(vs), 3) if vs else None
-lit_order = sorted(cohorts, key=lambda c: PAPERS[c])
+# Only cohorts with a known PubMed count go in the scatter (no fabricated x-values).
+lit_order = sorted(LIT_COHORTS, key=lambda c: PAPERS[c])
 scat_ds = [{'label': m, 'color': COL[m],
             'points': [{'x': PAPERS[c], 'y': id_grounded[m][c], 'c': c} for c in lit_order]} for m in ranked]
+lit_note = (f' <b>Not shown</b> (no PubMed count on file): {", ".join(LIT_MISSING)} — add their counts '
+            f'to <code>PAPERS</code> to include them.' if LIT_MISSING else '')
+
+# ---- CNA modality engagement (proxy) ----
+# The 7-cohort benchmark added a third modality (expression + mutation + CNA). There is no
+# scored "did it use CNA" field, so this is a PROXY: mean # of run_code calls per honest
+# episode whose code references copy-number, read from the episode trace. It measures
+# engagement, NOT correctness. Fully guarded — any parse failure yields None (panel omitted),
+# and it reads ~0 for pre-CNA runs (e.g. the old 4-cohort ladder), which is correct.
+def _cna_engagement(root):
+    per_ep = []
+    for sp in glob.glob(f"{root}/**/*_supportscores.json", recursive=True):
+        if os.path.basename(sp).split('_')[0] not in ('g0', 'g1', 'g2'):
+            continue
+        try:
+            e = json.load(open(sp.replace('_supportscores.json', '.json')))
+            hits = 0
+            for msg in e.get('messages', []):
+                content = msg.get('content')
+                blocks = content if isinstance(content, list) else []
+                for b in blocks:
+                    if isinstance(b, dict) and b.get('type') == 'tool_use' and b.get('name') == 'run_code':
+                        code = (b.get('input') or {}).get('code', '') or ''
+                        if 'cna' in code.lower() or 'copy number' in code.lower() or 'copy_number' in code.lower():
+                            hits += 1
+            per_ep.append(hits)
+        except Exception:
+            continue
+    return round(st.mean(per_ep), 1) if per_ep else None
+CNA_ENG = {m: _cna_engagement(root) for m, root, *_ in MODELS}
+HAS_CNA = any(v for v in CNA_ENG.values())  # any model actually touched CNA → show the panel
 
 # ---- tiles + cards ----
 tiles = ""
@@ -232,7 +354,7 @@ for i, m in enumerate(ranked):
     cards += (f'<div class="card" style="border-top:3px solid {COL[m]}"><div class="chd"><span class="rank">#{i+1}</span><h3>{m}</h3></div>'
         f'<div class="idbox {idc}"><span>identity recall unsupported</span><b>{s["id_ng"]:.0%}</b></div>'
         f'<div class="cbars">{cb}</div>'
-        f'<div class="mini">fooled g3a {s["fa"]}/6 · g3b {s["fb"]}/6 · D1/D3 not-grounded {s["d1_ng"]:.0%}/{s["d3_ng"]:.0%}</div>'
+        f'<div class="mini">fooled g3a {s["fa"]}/{max(sum(1 for x in DATA[m] if x["arm"]=="g3a"),1)} · g3b {s["fb"]}/{max(sum(1 for x in DATA[m] if x["arm"]=="g3b"),1)} · D1/D3 not-grounded {s["d1_ng"]:.0%}/{s["d3_ng"]:.0%}</div>'
         f'<div class="cav"><b>Caveat.</b> {cav(m)}</div></div>')
 
 CSS = """
@@ -288,17 +410,42 @@ leg = "".join(f'<span><i style="background:{COL[m]}"></i>{m}</span>' for m in ra
 gap = S[worst]['id_ng'] / max(S[best]['id_ng'], 0.01)
 ahead = "".join(f'<th class="num">{a.upper()}</th>' for a in arms)
 
+# ---- dynamic header bits (model count, tier banner, CNA panel) ----
+NM = len(ranked)
+model_line = " · ".join(ranked)
+def pct(v): return f"{v:.0%}" if isinstance(v, (int, float)) else "n/a"
+_ft = [m for m in ranked if TIER.get(m) != 'flagship']
+tier_banner = ""
+if _ft:
+    tier_banner = ('<div class="warn"><b>⚠️ Tier asymmetry — read before ranking.</b> '
+        + ", ".join(f'{m} runs a <b>{TIER[m]}</b> tier' for m in _ft)
+        + f', while the others run flagship tiers. Any deficit for {", ".join(_ft)} is '
+          '<b>confounded by tier</b> and must not be attributed to the model family '
+          '(see <code>docs/MODEL_LADDER.md</code> §2). Restore parity by re-running on the flagship tier.</div>')
+cna_panel = ""
+if HAS_CNA:
+    crows = "".join(f'<tr><td class="grp" style="color:{COL[m]}">{m}</td>'
+                    f'<td class="num">{CNA_ENG[m] if CNA_ENG[m] is not None else "n/a"}</td></tr>' for m in ranked)
+    cna_panel = ('<h2>CNA modality engagement</h2><div class="panel">'
+        f'<div class="tblwrap"><table><thead><tr><th>model</th>'
+        f'<th class="num">CNA run_code calls / honest ep</th></tr></thead><tbody>{crows}</tbody></table></div>'
+        '<p class="lead">The benchmark carries three modalities (expression + mutation + <b>CNA</b>). '
+        '<b>Proxy</b> = mean run_code calls per honest episode whose code references copy-number — it measures '
+        '<b>engagement, not correctness</b>, and reads ~0 for pre-CNA runs.</p></div>')
+
 html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TCGA Benchmark — 3-Model Detailed Report</title><style>{CSS}</style></head><body><div class="wrap">
-<h1>TCGA Agent Benchmark — 3-Model Detailed Report</h1>
-<div class="meta">Sonnet 5 · GPT-5.5 · Gemini 2.5 · 48 episodes each (144 total) · two-part scoring: outcome (v3) + support/grounding · grounding judge = <b>DeepSeek-v4-pro</b> (neutral, not in tested set)</div>
+<title>TCGA Benchmark — {NM}-Model Detailed Report</title><style>{CSS}</style></head><body><div class="wrap">
+<h1>TCGA Agent Benchmark — {NM}-Model Detailed Report</h1>
+<div class="meta">{model_line} · {N_TYP} episodes each ({N_TOTAL} total, {len(SEEDS)} seeds) · two-part scoring: outcome (v3) + support/grounding · grounding judge = <b>DeepSeek-v4-pro</b> (neutral, not in tested set)</div>
+{tier_banner}
 <div class="tiles">{tiles}</div>
 
 <h2>Headline</h2>
 <div class="panel">
 <div class="kfind"><div class="ix">🔍</div><div><b>Identity is where the models split — and outcome scores hide it.</b> {best} and {worst} differ modestly on outcome ({S[best]['outcome']:.3f} vs {S[worst]['outcome']:.3f}) but ~{gap:.0f}× on unsupported identity recall ({S[best]['id_ng']:.0%} vs {S[worst]['id_ng']:.0%}).</div></div>
+<div class="kfind"><div class="ix">📏</div><div><b>The outcome ranking is not the story — its margin is thin.</b> On honest-arm outcome, {sig_txt}. Outcome means carry ±{S[best]['ci']:.3f} (95% CI, {best}); the models are separated on <b>identity grounding</b>, not outcome.</div></div>
 <div class="kfind"><div class="ix">📊</div><div><b>Outcome and grounding are positively correlated</b> — better models both discover and ground more. "Higher-outcome models just recall more" is <b>not</b> what's happening.</div></div>
-<div class="kfind"><div class="ix">🎣</div><div><b>All three are fooled by misleading framing</b> (2–4/6), with <b>no consistent early≫late gradient</b>.</div></div>
+<div class="kfind"><div class="ix">🎣</div><div><b>All models are fooled by misleading framing</b> ({min(S[m]['fa']+S[m]['fb'] for m in ranked)}–{max(S[m]['fa']+S[m]['fb'] for m in ranked)} of {sum(1 for x in DATA[best] if x['arm'] in ('g3a','g3b'))} G3 episodes), with <b>no consistent early≫late gradient</b>.</div></div>
 </div>
 
 <h2>Capability profile</h2>
@@ -307,7 +454,7 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 <div class="chartbox" style="flex:1;min-width:300px;height:340px"><canvas id="radar" role="img" aria-label="Radar chart of six abilities per model."></canvas></div>
 <div style="flex:1;min-width:280px"><table><thead><tr><th>axis (raw)</th>{"".join(f'<th class="num" style="color:{COL[m]}">{m.split()[0]}</th>' for m in ranked)}</tr></thead><tbody>{radrows}</tbody></table></div>
 </div>
-<p class="lead">Axes ordered <b>outcome-visible → process-hidden</b> (Faithfulness…Consistency on the outcome side; Support…Identity grounding on the process side). All three overlap on the outcome side; <b>{worst}'s polygon caves in on the process side</b>, deepest at identity grounding — the asymmetry an outcome-only leaderboard misses. Each spoke normalized 0–1 (Faithfulness ÷0.65, OV ÷0.5, Consistency 1−SD/0.15, Support ÷5, Fooling 1−fooled/12, Identity 1−unsupported); <b>shape, not area</b>, is the comparison — raw values in the table.</p></div>
+<p class="lead">Axes ordered <b>outcome-visible → process-hidden</b> (Faithfulness…Consistency on the outcome side; Support…Identity grounding on the process side). All three overlap on the outcome side; <b>{worst}'s polygon caves in on the process side</b>, deepest at identity grounding — the asymmetry an outcome-only leaderboard misses. Each spoke normalized 0–1 (Faithfulness ÷0.65, {HARD_COH} ÷0.5, Consistency 1−SD/0.15, Support ÷5, Fooling 1−fooled/#G3, Identity 1−unsupported); <b>shape, not area</b>, is the comparison — raw values in the table.</p></div>
 
 <h2>What the outcome score measures</h2>
 <div class="panel">
@@ -323,14 +470,14 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 <h2>Why the cohorts differ in difficulty</h2>
 <div class="panel">
 <div class="tblwrap"><table><thead><tr><th>cohort</th><th class="num">outcome</th>{diffhead}</tr></thead><tbody>{diffrows}</tbody></table></div>
-<p class="lead" style="margin-top:8px">Pooled across all three models (honest arms). The difficulty ranking is <b>identical for every model</b> — it's a property of the <b>biology</b>, not the agent. The gap is dominated by one component: <b>genomic·drivers</b> — OV scores <b>0.00</b> vs ~0.95 for BRCA/LUAD. HGSOC is <b>copy-number–driven with near-universal TP53</b>, so there are <i>no subtype-differentiating point mutations</i> for that component to reward (a real feature of the disease, per the cohort card). Weak prognostic separation (clinical 0.08) and purity-confounded transcriptional structure (0.18) compound it; LIHC sits between because HCC is only partly mutation-driven (drivers 0.33).</p>
+<p class="lead" style="margin-top:8px">Pooled across all {NM} models (honest arms). The difficulty ranking is <b>identical for every model</b> — it's a property of the <b>biology</b>, not the agent. The gap is dominated by one component: <b>genomic·drivers</b> — OV scores <b>0.00</b> vs ~0.95 for BRCA/LUAD. HGSOC is <b>copy-number–driven with near-universal TP53</b>, so there are <i>no subtype-differentiating point mutations</i> for that component to reward (a real feature of the disease, per the cohort card). Weak prognostic separation (clinical 0.08) and purity-confounded transcriptional structure (0.18) compound it; LIHC sits between because HCC is only partly mutation-driven (drivers 0.33).</p>
 <p class="lead"><b>Note the knowledge components are flat across cohorts</b> (marker/pathway/mechanism ≈ constant) — agents narrate equally well everywhere. Difficulty lives entirely in the <b>data-grounded</b> components. <b>Implication:</b> cross-cohort scores are <b>not directly comparable</b> — an OV 0.37 and a BRCA 0.54 reflect task difficulty, not just agent skill; model comparison is only fair <i>within</i> a cohort or difficulty-normalized across.</p></div>
 
 <h2>Literature volume vs identity grounding</h2>
 <div class="panel"><div class="legend">{leg}</div>
 <div class="chartbox" style="height:320px"><canvas id="lit" role="img" aria-label="Scatter of identity-grounded rate vs PubMed paper count per cohort, one line per model."></canvas></div>
-<p class="lead">x = PubMed hits for "&lt;cancer&gt; molecular subtypes" (log; BRCA 13.3k, LUAD 2.1k, OV 2.0k, LIHC 1.2k, snapshot 2026-07) — a proxy for how much prior knowledge each cohort affords. <b>The story is model-type, not a clean correlation.</b> <span style="color:{COL[worst]}">{worst}</span> is <b>steeply literature-dependent</b>: it grounds identity on the heavily-studied BRCA ({id_grounded[worst]['BRCA']:.0%}) but collapses on the less-studied cohorts ({id_grounded[worst]['LUAD']:.0%}–{id_grounded[worst]['OV']:.0%}) — it recalls identity only when the cancer is well-represented in the literature. <span style="color:{COL[best]}">{best}</span> and <span style="color:{COL[ranked[1]]}">{ranked[1]}</span> stay high (~90–100%) regardless of paper count (dipping only on OV) — they <b>derive</b> identity from computed markers (TP53), so they don't depend on the literature.</p>
-<p class="lead"><b>Caveats:</b> n=4 cohorts — illustrative, not a fit (pooled Pearson r≈0.65). LIHC (least-studied) breaks monotonicity by grounding well, because HCC's liver-specific markers (AFP, CYP450) are easy to <i>derive</i> even with little literature — i.e. both prior-knowledge <i>and</i> biological derivability matter, not paper count alone. #papers is also confounded with cohort commonness and subtype-cleanliness.</p></div>
+<p class="lead">x = PubMed hits for "&lt;cancer&gt; molecular subtypes" (log; {", ".join(f"{c} {PAPERS[c]/1000:.1f}k" for c in lit_order)}; snapshot 2026-07) — a proxy for how much prior knowledge each cohort affords. <b>The story is model-type, not a clean correlation.</b> <span style="color:{COL[worst]}">{worst}</span> is the most <b>literature-dependent</b>: it grounds identity best on the most-studied cohort ({pct(id_grounded[worst].get(lit_order[-1]) if lit_order else None)} on {lit_order[-1] if lit_order else "—"}) and weakest on the least-studied — it recalls identity mainly when the cancer is well-represented in the literature. The stronger models stay high regardless of paper count — they <b>derive</b> identity from computed markers (e.g. TP53), so they don't depend on the literature.{lit_note}</p>
+<p class="lead"><b>Caveats:</b> n={len(LIT_COHORTS)} cohorts — illustrative, not a fit. Biological derivability matters alongside prior-knowledge volume (e.g. HCC's liver-specific AFP/CYP450 are easy to derive even with little literature), and #papers is confounded with cohort commonness and subtype-cleanliness.</p></div>
 
 <h2>The finding: unsupported identity recall</h2>
 <div class="panel"><div class="chartbox" style="height:250px"><canvas id="idc" role="img" aria-label="Unsupported identity-recall rate by model."></canvas></div>
@@ -346,20 +493,23 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 <h2>Per-model performance &amp; caveats</h2>
 <div class="cards">{cards}</div>
 
+{cna_panel}
+
 <h2>Outcome × support by arm</h2>
 <div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th>{ahead}</tr></thead><tbody>{armtab}</tbody></table></div>
 <p class="lead">Each cell: mean outcome, with mean support-score (/5) below. G3a/G3b are the mislead arms.</p></div>
 
-<h2>Per-episode detail (all 144)</h2>
+<h2>Per-episode detail (all {N_TOTAL})</h2>
 <p class="lead">Chips = grounding verdict per decision (D1·D2·D3): <span class="chip g">gr</span> grounded · <span class="chip m">un</span> unsupported · <span class="chip b">an</span> anchored. 🎣 = fooled (mislead cohort).</p>
 {epsections}
 
 <h2>Open gates before publication</h2>
 <div class="warn">
 (1) <b>D1/D3 constant-grounded</b> — hand-audit ~10 to confirm agents genuinely ground partition/mechanism vs. a judge default.<br>
-(2) <b>Multi-judge robustness</b> — re-score a subset with a second neutral judge; confirm the {ranked[0]}&lt;{ranked[1]}&lt;{ranked[2]} identity ordering holds before {worst}'s {S[worst]['id_ng']:.0%} is a headline number.<br>
+(2) <b>Multi-judge robustness</b> — re-score a subset with a second neutral judge; confirm the identity ordering ({" &lt; ".join(reversed(ranked))} by grounding) holds before {worst}'s {S[worst]['id_ng']:.0%} is a headline number.<br>
 (3) <b>Record the judge model</b> in the score files (currently absent).<br>
-(4) n=48/model — modest; add seeds for significance.</div>
+(4) n={N_TYP}/model across {len(SEEDS)} seeds — the outcome CIs overlap ({sig_txt}); the defensible claims are on identity grounding, not the outcome ranking. Add seeds to separate outcome.<br>
+{'(5) <b>Tier confound</b> — ' + ", ".join(_ft) + f" run a non-flagship tier; the Gemini gap is not a clean model-family result until re-run on the flagship tier.<br>" if _ft else ''}</div>
 
 <div class="foot">Outcome from <code>*_v3scores.json</code>, grounding from <code>*_supportscores.json</code> (judge: DeepSeek-v4-pro). Honest arms = G0–G2. Generated by <code>scripts/gen_ladder_report.py</code>. Charts are live Chart.js (cdnjs, online).</div>
 </div>
@@ -367,6 +517,6 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 <script>{JS}</script>
 </body></html>"""
 
-out = 'results/tcga/ladder/LADDER_3MODEL.html'
+out = OUT_PATH
 open(out, 'w').write(html)
 print("wrote", out, len(html), "bytes")
