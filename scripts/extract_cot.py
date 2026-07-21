@@ -65,16 +65,31 @@ CODEBOOK_PAT = re.compile(
     re.I,
 )
 
-# Disease-naming signatures (broad cancer naming) — first call where agent commits to a diagnosis
+# Disease-naming signatures (broad cancer naming) — first call where agent commits to a diagnosis.
+# Covers the 7-cohort TCGA ladder (BRCA/LIHC/LUAD/LUSC/OV/PRAD/UCEC) AND the legacy pediatric set.
+# Without the TCGA terms, disease_at/pre-codebook leak detection was blind to OV/PRAD/UCEC/LUSC.
 DISEASE_PAT = re.compile(
-    r"\b(osteosarcoma|ewing\s+sarcoma|rhabdomyosarcoma|wilms|chondrosarcoma|"
-    r"acute\s+myeloid\s+leukemia|breast\s+cancer|lung\s+adenocarcinoma|"
-    r"hepatocellular|glioblastoma|melanoma)\b",
+    r"\b("
+    # legacy (SGH-OS / external runs)
+    r"osteosarcoma|ewing\s+sarcoma|rhabdomyosarcoma|wilms|chondrosarcoma|"
+    r"acute\s+myeloid\s+leukemia|glioblastoma|melanoma|"
+    # TCGA ladder cohorts
+    r"breast\s+(?:cancer|carcinoma)|BRCA|"
+    r"hepatocellular|liver\s+(?:cancer|carcinoma)|LIHC|"
+    r"lung\s+adenocarcinoma|LUAD|"
+    r"lung\s+squamous|squamous\s+cell\s+carcinoma|LUSC|"
+    r"ovarian|high[-\s]?grade\s+serous|serous\s+carcinoma|HGSOC|"
+    r"prostate|PRAD|"
+    r"endometrial|uterine\s+corpus|UCEC"
+    r")\b",
     re.I,
 )
 
 # Pediatric/young-patient inference signatures — first call where clinical-metadata
-# narrowing has occurred (this is the leak channel we identified in run8)
+# narrowing has occurred (the leak channel identified in the run8 SGH-OS analysis).
+# LEGACY: this channel is meaningful only for the pediatric osteosarcoma cohort; TCGA
+# ladder cohorts are adult, so pediatric_at is expected to stay None there (kept for
+# back-compat with external-run reports, harmless on TCGA).
 PEDIATRIC_PAT = re.compile(
     r"\b(pediatric|paediatric|adolescent|young\s+patients?|young\s+adult|"
     r"median\s+(?:age\s+)?(?:1[0-9]|2[0-5])|AYA\s+cancer|childhood\s+(?:cancer|tumor))\b",
@@ -152,11 +167,14 @@ def extract_episode(path: str) -> dict:
     ep = json.load(open(path))
     msgs    = ep.get("messages", [])
     disc    = ep.get("discovery", {}) or {}
-    episode_id = ep.get("episode_id", Path(path).parent.name)
+    # Prefer the descriptive label (file stem, e.g. g2_brca_s42) so ladder traces are
+    # navigable; legacy runs whose files are uuid-named keep the uuid stem unchanged.
+    episode_id = Path(path).stem
     mode = _infer_mode(Path(path).name)
 
     calls: list[dict] = []
     text_blocks: list[dict] = []
+    think_blocks: list[dict] = []   # model chain-of-thought (Anthropic 'thinking' / provider 'reasoning')
     current_stage = ""
     current_stage_num: Optional[int] = None
     call_idx = 0
@@ -197,6 +215,15 @@ def extract_episode(path: str) -> dict:
                 tool   = block.get("name", "")
                 code   = block.get("input", {}).get("code", "") if tool == "run_code" else ""
                 intent = _code_intent(code)
+                # record_observation is the richest SYMMETRIC reasoning channel (all models use it,
+                # ~200-375 words each) — the auditable hypothesis-evolution log the prompt asks for.
+                # Capture its inputs; previously only the bare call + result string were kept.
+                obs = None
+                if tool == "record_observation":
+                    inp = block.get("input", {}) or {}
+                    obs = {k: inp.get(k) for k in ("current_hypothesis", "evidence_for",
+                           "evidence_against", "alternatives_considered", "confidence", "next_action")
+                           if inp.get(k)}
                 if intent["stage"]:
                     current_stage = intent["stage"]
                     new_num = intent["stage_num"]
@@ -238,12 +265,15 @@ def extract_episode(path: str) -> dict:
                 if codebook_at is None and CODEBOOK_PAT.search(result_text):
                     codebook_at = call_idx
 
-                # Disease + pediatric inference signatures (search WHY/EXPECTS + result_head)
+                # Disease + pediatric inference signatures — scan ONLY the agent's stated intent
+                # (WHY/EXPECTS), NOT the result blob: a MSigDB pathway or gene name containing a
+                # disease word (e.g. a "…BREAST…" signature) would otherwise false-positive the
+                # "agent named the disease" signal. WHY/EXPECTS is available for every model, so
+                # this stays symmetric across the ladder (thinking, Sonnet-only, is not scanned).
                 why_exp = (intent["why"] + " " + intent["expects"]).strip()
-                head_for_signals = (why_exp + " " + result_text[:1500]).strip()
-                if disease_at is None and DISEASE_PAT.search(head_for_signals):
+                if disease_at is None and why_exp and DISEASE_PAT.search(why_exp):
                     disease_at = call_idx
-                if pediatric_at is None and PEDIATRIC_PAT.search(head_for_signals):
+                if pediatric_at is None and why_exp and PEDIATRIC_PAT.search(why_exp):
                     pediatric_at = call_idx
 
                 # WHY-text milestones (agent's hypothesis-tracking lives in WHY comments)
@@ -262,8 +292,9 @@ def extract_episode(path: str) -> dict:
                     "stats":   stats,
                     "error":   is_error,
                     "code_head": "\n".join(code.strip().split("\n")[:5]),
+                    "obs":       obs,                       # record_observation inputs (hypothesis log)
                     "pre_codebook":  codebook_at is None or call_idx < codebook_at,
-                    "is_milestone":  why_is_milestone,
+                    "is_milestone":  why_is_milestone or bool(obs),   # observations are checkpoints
                 })
 
             elif btype == "text" and role == "assistant":
@@ -273,6 +304,22 @@ def extract_episode(path: str) -> dict:
                         "call_after": call_idx,
                         "msg":        i,
                         "text":       txt,
+                        "is_milestone": bool(HYPOTHESIS_KW.search(txt)),
+                    })
+
+            # THE ACTUAL CHAIN-OF-THOUGHT. Anthropic emits 'thinking' blocks (text under the
+            # 'thinking' key); some providers use 'reasoning'. Previously dropped entirely, so
+            # the "CoT" traces contained no CoT. NOTE: only Sonnet persists these — GPT and
+            # Gemini episodes carry ZERO thinking blocks (OpenAI doesn't return reasoning; the
+            # Gemini adapter strips 'thought' parts), so cross-model CoT is inherently asymmetric.
+            elif btype in ("thinking", "reasoning") and role == "assistant":
+                txt = (block.get("thinking") or block.get("reasoning")
+                       or block.get("text") or "").strip()
+                if txt:
+                    think_blocks.append({
+                        "call_after":   call_idx,
+                        "msg":          i,
+                        "text":         txt,
                         "is_milestone": bool(HYPOTHESIS_KW.search(txt)),
                     })
 
@@ -307,9 +354,11 @@ def extract_episode(path: str) -> dict:
         "mode":        mode,
         "n_calls":     call_idx,
         "n_text":      len(text_blocks),
+        "n_think":     len(think_blocks),                  # new: CoT block count (0 for GPT/Gemini)
         "discovery":   disc,
         "calls":       calls,
         "text_blocks": text_blocks,
+        "think_blocks": think_blocks,                      # new: model chain-of-thought
         "stage_calls": dict(stage_calls),                  # legacy: full-string keys
         "stage_calls_by_num": dict(stage_calls_by_num),    # new: integer-keyed
         "stage_canonical":    stage_canonical,             # new: int → canonical label
@@ -325,6 +374,11 @@ def extract_episode(path: str) -> dict:
 
 
 def _infer_mode(filename: str) -> str:
+    # Ladder labels put the arm at the START: g0_brca_s42, g3a_ov_mislead_brca_s7.
+    m = re.match(r"g([0-3])([ab])?_", filename, re.I)
+    if m:
+        return f"G{m.group(1)}{(m.group(2) or '').upper()}"   # G0/G1/G2/G3A/G3B
+    # Legacy external runs used a mid-string _g2_ form.
     m = re.search(r"_g([012])_", filename, re.I)
     return f"G{m.group(1)}" if m else "?"
 
@@ -467,10 +521,24 @@ def render_cot(ep: dict, detail: str = "normal") -> str:
             out.append(f"  WHY: {c['why']}")
         if c["expects"]:
             out.append(f"  EXPECTS: {c['expects']}")
+        if c.get("obs"):                                    # record_observation: hypothesis-evolution log
+            for k, v in c["obs"].items():
+                out.append(f"  {k.upper()}: {_trunc(str(v), 400)}")
         if c["result_head"]:
             out.append(f"  → {_trunc(c['result_head'], 300)}")
         if c["stats"]:
             out.append(f"  → stats: {', '.join(c['stats'])}")
+
+    # Chain-of-thought — the model's actual 'thinking' blocks (Sonnet only; GPT/Gemini persist
+    # none). Truncated per block for readability; the full text lives in ep['think_blocks'].
+    think = ep.get("think_blocks", [])
+    if think:
+        out.append("")
+        out.append(f"## Chain-of-thought (model thinking — {len(think)} blocks)")
+        for tb in think:
+            out.append("")
+            out.append(f"### CoT after call {tb['call_after']}" + (" ⭐" if tb.get("is_milestone") else ""))
+            out.append(_trunc(tb["text"], 1000))
 
     # Text reasoning milestones
     milestones = [t for t in ep["text_blocks"] if t["is_milestone"]]
@@ -660,7 +728,7 @@ def main():
     ap.add_argument("--results", default="results/external/run8",
                     help="Root directory containing run episode subdirs")
     ap.add_argument("--out", default=None,
-                    help="Output directory (default: analysis/cot_<run_dirname>)")
+                    help="Output directory (default: <results_dir>/_cot, i.e. beside the run)")
     ap.add_argument("--episode", default=None,
                     help="Restrict to one episode ID (substring match)")
     ap.add_argument("--detail", choices=["compact", "normal"], default="normal",
@@ -668,7 +736,8 @@ def main():
     args = ap.parse_args()
 
     run_name = Path(args.results).name
-    out_dir  = Path(args.out) if args.out else Path("analysis") / f"cot_{run_name}"
+    # Default output now lives WITH the run (results/.../<run>/_cot), not under analysis/.
+    out_dir  = Path(args.out) if args.out else Path(args.results) / "_cot"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     paths = find_episode_jsons(args.results)
