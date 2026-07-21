@@ -194,7 +194,11 @@ def main():
     ap.add_argument("run_dir")
     ap.add_argument("--model", default="deepseek-v4-pro",
                     help="NEUTRAL judge (not a benchmarked family): deepseek-v4-pro / claude-* / gpt-*")
-    ap.add_argument("--save", action="store_true", help="write <episode>_cotsummary.json")
+    ap.add_argument("--save", action="store_true", help="write <episode><out-suffix>")
+    ap.add_argument("--out-suffix", default="_cotsummary.json",
+                    help="output filename suffix. Use a distinct one (e.g. _cotsummary_j2.json) "
+                         "for a SECOND judge so it doesn't clobber the first — enables the "
+                         "multi-judge robustness check (cot_compare.py --agree).")
     ap.add_argument("--dry", action="store_true", help="print the distilled LLM input, no API call")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--arms", default="", help="comma list to include, e.g. g0,g1,g2")
@@ -209,15 +213,19 @@ def main():
         if not os.environ.get(need):
             sys.exit(f"{need} not set for judge model {args.model} (or use --dry)")
 
+    # Exclude every derived artifact — crucially "summary", so a re-run never re-ingests its own
+    # _cotsummary.json output (which starts with the g0.. label and matched the glob → produced
+    # a double-suffixed _cotsummary_cotsummary.json).
     files = sorted(f for f in glob.glob(f"{args.run_dir}/*/g[0-3]*_s*.json")
                    if all(x not in os.path.basename(f) for x in
-                          ("scores", "trace", "codebook", "gene_map", "grouping", "sample_codebook")))
+                          ("scores", "trace", "summary", "codebook", "gene_map", "grouping",
+                           "sample_codebook")))
     arms = {a.strip() for a in args.arms.split(",") if a.strip()}
     if arms:
         files = [f for f in files if os.path.basename(f).split("_")[0] in arms]
     if args.save and not args.rescore and not args.dry:
         before = len(files)
-        files = [f for f in files if not os.path.exists(f[:-5] + "_cotsummary.json")]
+        files = [f for f in files if not os.path.exists(f[:-5] + args.out_suffix)]
         if before - len(files):
             print(f"(skipping {before - len(files)} already-summarized; --rescore to redo)")
     if args.limit:
@@ -244,7 +252,7 @@ def main():
               f"id:{v['identity_derivation']:13} rigor:{v['validation_rigor']:6} "
               f"pivots:{v['num_pivots']}  {_trunc(v['overall_verdict'], 60)}")
         if args.save:
-            json.dump(v, open(f[:-5] + "_cotsummary.json", "w"), indent=2)
+            json.dump(v, open(f[:-5] + args.out_suffix, "w"), indent=2)
         done += 1
 
     if not args.dry:
