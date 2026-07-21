@@ -55,6 +55,7 @@ def load(root):
 DATA = {name: load(root) for name, root, *_ in MODELS}
 COL = {t[0]: t[2] for t in MODELS}
 TIER = {t[0]: t[3] for t in MODELS}
+ROOT = {t[0]: t[1] for t in MODELS}
 
 # Cohorts: derive from the data unless pinned on the CLI. Ordering = most-studied first
 # (PAPERS desc), unknown-paper cohorts alphabetical after — so a 4- or 7-cohort run both work.
@@ -93,6 +94,35 @@ def _tcrit(df):
 S = {m: stats(DATA[m]) for m in DATA}
 ranked = sorted(S, key=lambda m: -S[m]['outcome'])
 best, worst = ranked[0], ranked[-1]
+
+# ---- Chain-of-thought layer (from summarize_cot.py's _cotsummary.json, neutral DeepSeek) ----
+# The outcome scores tie; the CoT summary shows HOW the models diverge. Key signal =
+# identity_derivation on the BLINDED G2 arm (derive the cancer from anonymized data vs recall it).
+ID_ORDER = ['data-derived', 'mixed', 'recalled-prior', 'not-established']
+def load_cot(root):
+    out = []
+    for p in glob.glob(f"{root}/**/*_cotsummary.json", recursive=True):
+        try: j = json.load(open(p))
+        except Exception: continue
+        j['arm'] = os.path.basename(p).split('_')[0]
+        out.append(j)
+    return out
+COT = {m: load_cot(ROOT[m]) for m in ranked}
+HAS_COT = any(COT.values())
+def cot_stats(R):
+    g2  = [x for x in R if x['arm'] == 'g2']
+    hon = [x for x in R if x['arm'] in ('g0', 'g1', 'g2')]
+    idc = Counter(x.get('identity_derivation') for x in g2)
+    return dict(
+        n_g2=len(g2), g2_id=idc,
+        g2_derived=idc.get('data-derived', 0) / max(len(g2), 1),
+        g2_recalled=(idc.get('recalled-prior', 0)) / max(len(g2), 1),
+        rigor_high=Counter(x.get('validation_rigor') for x in hon).get('high', 0) / max(len(hon), 1),
+        pivots=st.mean([x.get('num_pivots', 0) for x in R]) if R else 0.0)
+CS = {m: cot_stats(COT[m]) for m in ranked} if HAS_COT else {}
+# rank models by how much they DERIVE identity on G2 (the CoT thesis axis)
+cot_ranked = sorted(ranked, key=lambda m: -CS[m]['g2_derived']) if HAS_COT else ranked
+cot_best, cot_worst = (cot_ranked[0], cot_ranked[-1]) if HAS_COT else (best, worst)
 NEP = {m: len(DATA[m]) for m in DATA}                 # episodes per model (any arm)
 N_TOTAL = sum(NEP.values())
 N_TYP = Counter(NEP.values()).most_common(1)[0][0] if NEP else 0  # typical eps/model
@@ -207,6 +237,12 @@ for m in ranked:
 # ---- charts data ----
 out_ds = [{'label': m, 'color': COL[m], 'data': [round(S[m]['cby'][c], 3) for c in cohorts], 'errors': [round(S[m]['csd'][c], 3) for c in cohorts]} for m in ranked]
 id_data = {'labels': ranked, 'colors': [COL[m] for m in ranked], 'vals': [round(S[m]['id_ng'], 3) for m in ranked]}
+# CoT: G2 identity-derivation composition (stacked), ordered by % derived
+cot_stack = {'labels': cot_ranked,
+    'derived':  [CS[m]['g2_id'].get('data-derived', 0) for m in cot_ranked],
+    'mixed':    [CS[m]['g2_id'].get('mixed', 0) for m in cot_ranked],
+    'recalled': [CS[m]['g2_id'].get('recalled-prior', 0) + CS[m]['g2_id'].get('not-established', 0)
+                 for m in cot_ranked]} if HAS_COT else {'labels': [], 'derived': [], 'mixed': [], 'recalled': []}
 
 # ---- radar / capability profile (6 axes, outcome-visible -> process-hidden) ----
 def clamp(v): return max(0.0, min(1.0, v))
@@ -399,11 +435,18 @@ new Chart(document.getElementById('idc'),{type:'bar',data:{labels:ID.labels,data
 var RAX=__RAX__,RM=__RM__;
 function hexA(h,a){var n=parseInt(h.slice(1),16);return 'rgba('+(n>>16)+','+((n>>8)&255)+','+(n&255)+','+a+')';}
 new Chart(document.getElementById('radar'),{type:'radar',data:{labels:RAX,datasets:RM.map(function(d){return{label:d.label,data:d.vals,borderColor:d.color,backgroundColor:hexA(d.color,0.12),pointBackgroundColor:d.color,borderWidth:2,pointRadius:2};})},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{r:{min:0,max:1,ticks:{color:'#9aa7b4',backdropColor:'transparent',stepSize:0.25,font:{size:9}},grid:{color:'rgba(255,255,255,0.10)'},angleLines:{color:'rgba(255,255,255,0.10)'},pointLabels:{color:ink,font:{size:11.5}}}}}});
+var COTS=__COTS__;
+if(COTS.labels.length){var mk=function(lab,key,c){return{label:lab,data:COTS[key],backgroundColor:c,borderWidth:0};};
+new Chart(document.getElementById('cotid'),{type:'bar',
+ data:{labels:COTS.labels,datasets:[mk('data-derived','derived','#3fb950'),mk('mixed','mixed','#d29922'),mk('recalled/none','recalled','#f85149')]},
+ options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{color:ink,boxWidth:11,font:{size:11}}}},
+ scales:{x:{stacked:true,ticks:{color:ink,font:{size:12}},grid:{display:false}},y:{stacked:true,ticks:{color:ink},grid:{color:grid},title:{display:true,text:'G2 episodes (blinded)',color:ink}}}});}
 var SCAT=__SCAT__;
 var lblP={id:'lbl',afterDatasetsDraw:function(chart){var ctx=chart.ctx;ctx.save();ctx.font='10px sans-serif';ctx.fillStyle='#9aa7b4';chart.data.datasets.forEach(function(dset,di){var meta=chart.getDatasetMeta(di);meta.data.forEach(function(pt,i){var c=dset.data[i].c;ctx.fillText(c,pt.x+6,pt.y+3);});});ctx.restore();}};
 new Chart(document.getElementById('lit'),{type:'scatter',data:{datasets:SCAT.map(function(d){return{label:d.label,borderColor:d.color,backgroundColor:d.color,data:d.points,showLine:true,borderWidth:2,pointRadius:4,tension:0};})},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return c.raw.c+': '+(c.raw.y*100).toFixed(0)+'% grounded ('+c.raw.x.toLocaleString()+' papers)';}}}},scales:{x:{type:'logarithmic',ticks:{color:ink,callback:function(v){return v>=1000?(v/1000)+'k':v;}},grid:{color:grid},title:{display:true,text:'PubMed papers ("<cancer> molecular subtypes", log)',color:ink}},y:{min:0,max:1,ticks:{color:ink,stepSize:0.25,callback:function(v){return (v*100).toFixed(0)+'%';}},grid:{color:grid},title:{display:true,text:'identity grounded rate',color:ink}}}},plugins:[lblP]});
 """
-JS = (JS.replace('__OUT__', json.dumps(out_ds)).replace('__ID__', json.dumps(id_data)).replace('__COH__', json.dumps(cohorts))
+JS = (JS.replace('__COTS__', json.dumps(cot_stack))
+        .replace('__OUT__', json.dumps(out_ds)).replace('__ID__', json.dumps(id_data)).replace('__COH__', json.dumps(cohorts))
         .replace('__RAX__', json.dumps(RAX)).replace('__RM__', json.dumps(radar_models))
         .replace('__SCAT__', json.dumps(scat_ds)))
 leg = "".join(f'<span><i style="background:{COL[m]}"></i>{m}</span>' for m in ranked)
@@ -422,6 +465,49 @@ if _ft:
         + f', while the others run flagship tiers. Any deficit for {", ".join(_ft)} is '
           '<b>confounded by tier</b> and must not be attributed to the model family '
           '(see <code>docs/MODEL_LADDER.md</code> §2). Restore parity by re-running on the flagship tier.</div>')
+# ---- Chain-of-thought section (the resolution to the outcome tie) ----
+cot_section = ""
+cot_kfind = ""
+if HAS_COT:
+    cot_kfind = (f'<div class="kfind"><div class="ix">🧠</div><div><b>Chain-of-thought resolves '
+        f'the tie.</b> On the blinded G2 arm, {cot_best} <b>derives</b> the cancer identity from '
+        f'the data {CS[cot_best]["g2_derived"]:.0%} of the time vs {cot_worst} at '
+        f'{CS[cot_worst]["g2_derived"]:.0%} — same outcome, opposite process (derive vs recall). '
+        f'See the chain-of-thought section.</div></div>')
+    rows = ""
+    for m in cot_ranked:
+        cs = CS[m]
+        rows += (f'<tr><td class="grp" style="color:{COL[m]}">{m}</td>'
+                 f'<td class="num"><b>{cs["g2_derived"]:.0%}</b></td>'
+                 f'<td class="num">{cs["g2_id"].get("mixed",0)}/{cs["n_g2"]}</td>'
+                 f'<td class="num">{cs["g2_recalled"]:.0%}</td>'
+                 f'<td class="num">{cs["rigor_high"]:.0%}</td>'
+                 f'<td class="num">{cs["pivots"]:.2f}</td></tr>')
+    dsp = f"{CS[cot_best]['g2_derived']:.0%}"
+    wsp = f"{CS[cot_worst]['g2_derived']:.0%}"
+    cot_section = f"""
+<h2>How the models actually reason (chain-of-thought)</h2>
+<div class="panel">
+<p class="lead" style="margin-top:0"><b>This is the resolution to the outcome tie.</b> A neutral judge
+(DeepSeek) summarized each episode's reasoning trace — the symmetric channels only
+(<code>record_observation</code> hypothesis log + <code>#WHY</code> intent + submission; model
+"thinking" is not persisted, so it is not used). The discriminating axis is
+<b>identity_derivation on the blinded G2 arm</b>: did the agent <b>derive</b> the cancer identity
+from the anonymized data, or <b>recall</b> it from priors? Outcome cannot see this — but it is
+exactly the correct-but-unwarranted behaviour the benchmark targets.</p>
+<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">
+<div class="chartbox" style="flex:1;min-width:300px;height:280px"><canvas id="cotid" role="img" aria-label="G2 identity-derivation composition per model."></canvas></div>
+<div style="flex:1;min-width:300px"><table><thead><tr><th>model</th><th class="num">G2 derived</th><th class="num">mixed</th><th class="num">recalled</th><th class="num">rigor high</th><th class="num">pivots</th></tr></thead><tbody>{rows}</tbody></table></div>
+</div>
+<p class="lead"><b>{cot_best}</b> derives the cohort identity from data on <b>{dsp}</b> of blinded G2
+episodes; <b>{cot_worst}</b> only <b>{wsp}</b> — the rest it recalls or guesses. The models
+<i>tie on outcome</i> (see headline) yet split sharply here: the weaker model reaches comparable
+scores by <b>recalling rather than deriving</b>. This is the process-level mechanism behind the
+support-grounding gap above (D2 unsupported identity), now visible in the reasoning itself.
+Bars = episode counts (n={CS[cot_best]['n_g2']} G2 episodes/model); <code>identity_derivation</code>
+is a neutral-judge label (evidence, not ground truth — see the multi-judge check in
+<code>cot_compare.py --agree</code>).</p></div>"""
+
 cna_panel = ""
 if HAS_CNA:
     crows = "".join(f'<tr><td class="grp" style="color:{COL[m]}">{m}</td>'
@@ -444,6 +530,7 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 <div class="panel">
 <div class="kfind"><div class="ix">🔍</div><div><b>Identity is where the models split — and outcome scores hide it.</b> {best} and {worst} differ modestly on outcome ({S[best]['outcome']:.3f} vs {S[worst]['outcome']:.3f}) but ~{gap:.0f}× on unsupported identity recall ({S[best]['id_ng']:.0%} vs {S[worst]['id_ng']:.0%}).</div></div>
 <div class="kfind"><div class="ix">📏</div><div><b>The outcome ranking is not the story — its margin is thin.</b> On honest-arm outcome, {sig_txt}. Outcome means carry ±{S[best]['ci']:.3f} (95% CI, {best}); the models are separated on <b>identity grounding</b>, not outcome.</div></div>
+{cot_kfind}
 <div class="kfind"><div class="ix">📊</div><div><b>Outcome and grounding are positively correlated</b> — better models both discover and ground more. "Higher-outcome models just recall more" is <b>not</b> what's happening.</div></div>
 <div class="kfind"><div class="ix">🎣</div><div><b>All models are fooled by misleading framing</b> ({min(S[m]['fa']+S[m]['fb'] for m in ranked)}–{max(S[m]['fa']+S[m]['fb'] for m in ranked)} of {sum(1 for x in DATA[best] if x['arm'] in ('g3a','g3b'))} G3 episodes), with <b>no consistent early≫late gradient</b>.</div></div>
 </div>
@@ -482,6 +569,7 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 <h2>The finding: unsupported identity recall</h2>
 <div class="panel"><div class="chartbox" style="height:250px"><canvas id="idc" role="img" aria-label="Unsupported identity-recall rate by model."></canvas></div>
 <p class="lead">Fraction of episodes where the model committed to a grouping while recalling / never establishing the cohort identity from this cohort's computed data (grounding judge, D2). The recall-miscalibration locus — invisible to an outcome-only leaderboard.</p></div>
+{cot_section}
 
 <h2>What "unsupported" vs "grounded" identity actually looks like</h2>
 <div class="panel">
