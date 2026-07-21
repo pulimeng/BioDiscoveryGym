@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Detailed 3-model report — outcome (v3) + support/grounding, with per-model cards,
 per-episode tables, and the judge's evidence quotes. Judge: DeepSeek-v4-pro (neutral)."""
-import argparse, glob, math, os, json, html as H, statistics as st
+import argparse, glob, math, os, json, re, sys, html as H, statistics as st
 from collections import Counter
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from extract_cot import extract_episode, DISEASE_PAT   # deterministic, no LLM — for the sample-count leak probe
 
 # PubMed hits for "<cancer> molecular subtypes" — proxy for prior-knowledge volume.
 # ONLY the first four are verified (snapshot 2026-07). LUSC/PRAD/UCEC are NOT filled in:
@@ -123,6 +125,47 @@ CS = {m: cot_stats(COT[m]) for m in ranked} if HAS_COT else {}
 # rank models by how much they DERIVE identity on G2 (the CoT thesis axis)
 cot_ranked = sorted(ranked, key=lambda m: -CS[m]['g2_derived']) if HAS_COT else ranked
 cot_best, cot_worst = (cot_ranked[0], cot_ranked[-1]) if HAS_COT else (best, worst)
+
+# ---- Benchmark-recognition probe: count-based pre-codebook cohort identity ----
+# Dataset SHAPE is the one property blinding can't remove. A memorized cohort size (BRCA=1095,
+# LUAD=518, …) lets a model name the cancer from the ROW COUNT before any biology — a benchmark
+# leak invisible to every score, visible only in the pre-reveal reasoning (WHY + observations).
+_COUNT_PAT = re.compile(r'\b(sample size|n\s*=\s*\d{3,4}|\d{3,4}\s+(?:samples|tumou?rs|patients|'
+                        r'cases)|typical of|number of samples|cohort of \d{3,4})\b', re.I)
+def _cohort_sizes():
+    sz = {}
+    for m in ranked:
+        for p in glob.glob(f"{ROOT[m]}/g2_*/grouping.json"):
+            coh = os.path.basename(os.path.dirname(p)).split('_')[1].upper()
+            try: sz[coh] = len(json.load(open(p)))
+            except Exception: pass
+    return sz
+SIZES = _cohort_sizes()
+def _count_leak(root):
+    """(n_count_based_identity, n_g2, best_verbatim_quote) over blinded G2 episodes."""
+    n = hits = 0; quote = None; quote_has_size = False
+    for p in glob.glob(f"{root}/g2_*/*.json"):
+        if os.path.basename(p)[:-5] != os.path.basename(os.path.dirname(p)):
+            continue
+        n += 1
+        try: rec = extract_episode(p)
+        except Exception: continue
+        coh, cbk = rec['cohort'], rec['codebook_at']
+        for c in rec['calls']:
+            if cbk and cbk > 0 and c['idx'] >= cbk:  # only PRE-reveal
+                continue
+            ch = (c['obs'].get('current_hypothesis') if c.get('obs') else "") or ""
+            t = (c.get('why', '') + ' ' + c.get('expects', '') + ' ' + ch)
+            if DISEASE_PAT.search(t) and (_COUNT_PAT.search(t) or str(SIZES.get(coh, '')) in t):
+                hits += 1
+                # prefer a quote that literally contains the cohort's size (most damning)
+                cand = ch.strip() or t.strip()
+                if quote is None or (str(SIZES.get(coh, '')) in cand and not quote_has_size):
+                    quote = cand; quote_has_size = str(SIZES.get(coh, '')) in cand
+                break
+    return hits, n, quote
+LEAK = {m: _count_leak(ROOT[m]) for m in ranked} if HAS_COT else {}
+LEAK_MODEL = max(LEAK, key=lambda m: LEAK[m][0]) if LEAK else None  # the model that does it most
 NEP = {m: len(DATA[m]) for m in DATA}                 # episodes per model (any arm)
 N_TOTAL = sum(NEP.values())
 N_TYP = Counter(NEP.values()).most_common(1)[0][0] if NEP else 0  # typical eps/model
@@ -485,6 +528,30 @@ if HAS_COT:
                  f'<td class="num">{cs["pivots"]:.2f}</td></tr>')
     dsp = f"{CS[cot_best]['g2_derived']:.0%}"
     wsp = f"{CS[cot_worst]['g2_derived']:.0%}"
+    # sample-count benchmark-recognition callout
+    leak_callout = ""
+    if LEAK and LEAK_MODEL and LEAK[LEAK_MODEL][0] > 0:
+        lh, ln, lq = LEAK[LEAK_MODEL]
+        others = "; ".join(f"{m} {LEAK[m][0]}/{LEAK[m][1]}" for m in ranked if m != LEAK_MODEL)
+        szs = ", ".join(f"{c}={SIZES[c]}" for c in sorted(SIZES))
+        quote_html = (f'<div class="ev bad" style="margin-top:8px"><div class="evq">“{esc(lq)}”</div>'
+                      f'<div class="evh" style="margin-top:4px">— {LEAK_MODEL}, pre-reveal observation</div></div>'
+                      if lq else "")
+        leak_callout = (
+            '<div class="warn" style="margin-top:12px"><b>⚠️ Benchmark recognition — the shape leak.</b> '
+            'Blinding hides gene symbols, sample barcodes and identity-bearing clinical fields, but it '
+            'cannot hide the dataset\'s <b>shape</b>. Each TCGA cohort has a fingerprint sample count '
+            f'({szs}). On the blinded G2 arm, <b>{LEAK_MODEL} named the correct cancer from the row '
+            f'count alone in {lh}/{ln} episodes — before any clustering, DE or mutation analysis</b> '
+            f'(others: {others}). This is recall in its most literal form: the benchmark identified from '
+            'a single integer, not the disease derived from its molecular profile — a shortcut invisible '
+            'to outcome and to the grounding score, surfacing only in the reasoning trace.'
+            f'{quote_html}'
+            '<div class="lead" style="margin-top:8px"><b>Two bounds:</b> the behaviour is confined to the '
+            'Flash-tier model, so a capability/tier confound cannot be excluded; and the evidence is the '
+            'agent\'s <i>stated</i> reasoning (WHY headers + observations), since raw chain-of-thought is '
+            'not retained. Ablation to prove it: subsample every cohort to a common n and the pre-reveal '
+            'recognition should collapse.</div></div>')
     cot_section = f"""
 <h2>How the models actually reason (chain-of-thought)</h2>
 <div class="panel">
@@ -506,7 +573,8 @@ scores by <b>recalling rather than deriving</b>. This is the process-level mecha
 support-grounding gap above (D2 unsupported identity), now visible in the reasoning itself.
 Bars = episode counts (n={CS[cot_best]['n_g2']} G2 episodes/model); <code>identity_derivation</code>
 is a neutral-judge label (evidence, not ground truth — see the multi-judge check in
-<code>cot_compare.py --agree</code>).</p></div>"""
+<code>cot_compare.py --agree</code>).</p>
+{leak_callout}</div>"""
 
 cna_panel = ""
 if HAS_CNA:
