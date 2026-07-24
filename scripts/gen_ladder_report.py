@@ -391,28 +391,43 @@ lit_note = (f' <b>Not shown</b> (no PubMed count on file): {", ".join(LIT_MISSIN
 # episode whose code references copy-number, read from the episode trace. It measures
 # engagement, NOT correctness. Fully guarded — any parse failure yields None (panel omitted),
 # and it reads ~0 for pre-CNA runs (e.g. the old 4-cohort ladder), which is correct.
-def _cna_engagement(root):
-    per_ep = []
+# Which data MODALITIES each model examined and how heavily. The benchmark pre-loads four
+# (expression always; mutation / CNA / methylation when available). Proxy = run_code calls whose
+# code references each modality's DataFrame, over honest episodes → (% episodes that invoked it,
+# mean calls/episode). Deterministic, no LLM. "How used" at the level of engagement intensity;
+# the analysis type (cluster/enrich/Cox) lives in the CoT layer.
+MOD_PAT = {
+    'expression':  re.compile(r'\bexpression\b', re.I),
+    'mutation':    re.compile(r'\bmutation\b|\bsomatic\b', re.I),
+    'CNA':         re.compile(r'\bcna\b|copy[\s_]?number|gistic', re.I),
+    'methylation': re.compile(r'\bmethylation\b|\bmethyl\b|\bcpg\b|\bcg\d{6,}\b', re.I),
+}
+def _modality_engagement(root):
+    per_ep_calls = {k: [] for k in MOD_PAT}   # calls/episode
+    used_eps = {k: 0 for k in MOD_PAT}; n_ep = 0
     for sp in glob.glob(f"{root}/**/*_supportscores.json", recursive=True):
         if os.path.basename(sp).split('_')[0] not in ('g0', 'g1', 'g2'):
             continue
         try:
             e = json.load(open(sp.replace('_supportscores.json', '.json')))
-            hits = 0
-            for msg in e.get('messages', []):
-                content = msg.get('content')
-                blocks = content if isinstance(content, list) else []
-                for b in blocks:
-                    if isinstance(b, dict) and b.get('type') == 'tool_use' and b.get('name') == 'run_code':
-                        code = (b.get('input') or {}).get('code', '') or ''
-                        if 'cna' in code.lower() or 'copy number' in code.lower() or 'copy_number' in code.lower():
-                            hits += 1
-            per_ep.append(hits)
         except Exception:
             continue
-    return round(st.mean(per_ep), 1) if per_ep else None
-CNA_ENG = {m: _cna_engagement(root) for m, root, *_ in MODELS}
-HAS_CNA = any(v for v in CNA_ENG.values())  # any model actually touched CNA → show the panel
+        n_ep += 1
+        hits = {k: 0 for k in MOD_PAT}
+        for msg in e.get('messages', []):
+            for b in (msg.get('content') if isinstance(msg.get('content'), list) else []):
+                if isinstance(b, dict) and b.get('type') == 'tool_use' and b.get('name') == 'run_code':
+                    code = (b.get('input') or {}).get('code', '') or ''
+                    for k, pat in MOD_PAT.items():
+                        if pat.search(code): hits[k] += 1
+        for k in MOD_PAT:
+            per_ep_calls[k].append(hits[k])
+            if hits[k]: used_eps[k] += 1
+    if not n_ep:
+        return None
+    return {k: {'pct': used_eps[k] / n_ep, 'calls': round(st.mean(per_ep_calls[k]), 1)} for k in MOD_PAT}
+MOD_ENG = {m: _modality_engagement(root) for m, root, *_ in MODELS}
+HAS_MOD = any(v for v in MOD_ENG.values())
 
 # ---- tiles + cards ----
 tiles = ""
@@ -576,16 +591,31 @@ is a neutral-judge label (evidence, not ground truth — see the multi-judge che
 <code>cot_compare.py --agree</code>).</p>
 {leak_callout}</div>"""
 
-cna_panel = ""
-if HAS_CNA:
-    crows = "".join(f'<tr><td class="grp" style="color:{COL[m]}">{m}</td>'
-                    f'<td class="num">{CNA_ENG[m] if CNA_ENG[m] is not None else "n/a"}</td></tr>' for m in ranked)
-    cna_panel = ('<h2>CNA modality engagement</h2><div class="panel">'
-        f'<div class="tblwrap"><table><thead><tr><th>model</th>'
-        f'<th class="num">CNA run_code calls / honest ep</th></tr></thead><tbody>{crows}</tbody></table></div>'
-        '<p class="lead">The benchmark carries three modalities (expression + mutation + <b>CNA</b>). '
-        '<b>Proxy</b> = mean run_code calls per honest episode whose code references copy-number — it measures '
-        '<b>engagement, not correctness</b>, and reads ~0 for pre-CNA runs.</p></div>')
+cna_panel = ""   # now a full multi-modality panel
+if HAS_MOD:
+    mods = list(MOD_PAT)
+    head = "".join(f'<th class="num">{k}</th>' for k in mods)
+    body = ""
+    for m in ranked:
+        me = MOD_ENG[m]
+        cells = ""
+        for k in mods:
+            if me is None:
+                cells += '<td class="num">n/a</td>'; continue
+            pv, calls = me[k]['pct'], me[k]['calls']
+            cls = ' class="num mis"' if pv < 0.5 else ' class="num"'
+            cells += f'<td{cls}>{pv:.0%}<span class="sub">{calls}/ep</span></td>'
+        body += f'<tr><td class="grp" style="color:{COL[m]}">{m}</td>{cells}</tr>'
+    cna_panel = ('<h2>Data modalities — what each model examined</h2><div class="panel">'
+        f'<div class="tblwrap"><table><thead><tr><th>model</th>{head}</tr></thead><tbody>{body}</tbody></table></div>'
+        '<p class="lead">The benchmark pre-loads up to four modalities: <b>expression</b> (always), '
+        '<b>mutation</b>, <b>CNA</b> (GISTIC copy-number), and <b>methylation</b> (absent for most TCGA cohorts). '
+        'Each cell = <b>% of honest episodes that invoked the modality</b> (a <code>run_code</code> call '
+        'referencing its DataFrame) with <b>mean calls/episode</b> below; amber = used in under half the episodes. '
+        'This is <b>engagement</b> (was the modality examined, and how heavily), a deterministic trace count — '
+        'not whether it was used <i>correctly</i> (the outcome components <code>genomic·drivers</code> and the '
+        'per-cohort difficulty table speak to that). Expression near-100% is expected; the differentiator is how '
+        'much each model reaches for the secondary omics (mutation / CNA) vs clustering on expression alone.</p></div>')
 
 html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TCGA Benchmark — {NM}-Model Detailed Report</title><style>{CSS}</style></head><body><div class="wrap">
