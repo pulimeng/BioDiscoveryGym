@@ -85,8 +85,10 @@ def main():
         if not os.environ.get(need):
             sys.exit(f"{need} not set for judge model {args.model} (or use --dry)")
 
+    # exclude ALL derived artifacts, incl. "summary" — a _cotsummary.json starts with the g0..
+    # label and otherwise matches the glob, so scoring it produced a _cotsummary_supportscores.json.
     files = sorted(f for f in glob.glob(f"{args.run_dir}/*/g[0-3]*_s*.json")
-                   if "scores" not in f and "trace" not in f)
+                   if not any(x in os.path.basename(f) for x in ("scores", "trace", "summary")))
     arms_filter = {a.strip() for a in args.arms.split(",") if a.strip()}
     if arms_filter:
         files = [f for f in files if arm_of(f) in arms_filter]
