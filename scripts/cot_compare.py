@@ -65,6 +65,69 @@ def agreement(runs, suffix_a, suffix_b):
                   + (f"; disagreements: {Counter(flips).most_common()}" if flips else ""))
 
 
+FIELDS = ["identity_derivation", "validation_rigor", "codebook_response"]
+
+def consensus(labels):
+    """Majority label over N passes. Returns (label, n_votes) or (None, top_count) on a tie.
+    With 3 replicates a tie means all three disagree — genuinely unresolved, not a coin flip."""
+    if not labels: return None, 0
+    c = Counter(labels).most_common()
+    if len(c) > 1 and c[0][1] == c[1][1]: return None, c[0][1]
+    return c[0][0], c[0][1]
+
+def panel(runs, suffixes, arms):
+    """N-replicate judge panel. Separates 'the label is noisy' from 'the effect is real':
+    unanimity/majority rates give the self-consistency ceiling, and every downstream rate is
+    reported as consensus + the spread across individual passes (the honest uncertainty band)."""
+    print("=" * 78)
+    print(f"  JUDGE PANEL — {len(suffixes)} passes   arms={','.join(sorted(arms)) or 'all'}")
+    print("  " + "  ".join(f"p{i+1}={s}" for i, s in enumerate(suffixes)))
+    if len(suffixes) % 2 == 0:
+        print(f"  NOTE: {len(suffixes)} passes is EVEN — every disagreement is a tie, so only")
+        print("  unanimous episodes reach consensus and the consensus rate reads LOW by")
+        print("  construction. Not comparable to an odd-N consensus; use 3 passes.")
+    print("=" * 78)
+
+    for r in runs:
+        loads = [load(r, s) for s in suffixes]
+        keys = sorted(set.intersection(*[set(d) for d in loads])) if loads else []
+        if arms: keys = [k for k in keys if arm_of(k) in arms]
+        cov = "  ".join(f"p{i+1}:{len([k for k in d if not arms or arm_of(k) in arms])}"
+                        for i, d in enumerate(loads))
+        if not keys:
+            print(f"\n  {os.path.basename(r):34} NO COMMON EPISODES  ({cov})"); continue
+        model = loads[0][keys[0]].get("model", os.path.basename(r))
+        # the same agent appears under both prompts, so the run dir must disambiguate
+        prompt = "lean" if os.sep + "lean" + os.sep in r + os.sep else "detailed"
+        complete = len({len([k for k in d if not arms or arm_of(k) in arms]) for d in loads}) == 1
+        print(f"\n  {model + ' / ' + prompt:28} n={len(keys)} co-judged   ({cov})"
+              + ("" if complete else "   << UNEVEN COVERAGE — panel is provisional"))
+
+        for f in FIELDS:
+            votes = {k: [d[k].get(f) for d in loads] for k in keys}
+            unan = sum(1 for v in votes.values() if len(set(v)) == 1)
+            tie = sum(1 for v in votes.values() if consensus(v)[0] is None)
+            # mean pairwise agreement — comparable to the 2-judge numbers
+            pw = tot = 0
+            for v in votes.values():
+                for i in range(len(v)):
+                    for j in range(i + 1, len(v)):
+                        tot += 1; pw += (v[i] == v[j])
+            print(f"    {f:20} unanimous {unan}/{len(keys)} ({unan/len(keys)*100:3.0f}%)   "
+                  f"pairwise {pw/tot*100:3.0f}%   no-majority {tie}")
+
+        # the load-bearing rate: G2 identity data-derived, consensus vs per-pass spread
+        g2 = [k for k in keys if arm_of(k) == "g2"]
+        if g2:
+            per = [sum(1 for k in g2 if d[k].get("identity_derivation") == "data-derived") / len(g2)
+                   for d in loads]
+            cons = [consensus([d[k].get("identity_derivation") for d in loads])[0] for k in g2]
+            cr = sum(1 for c in cons if c == "data-derived") / len(g2)
+            print(f"    → G2 data-derived: consensus {cr*100:.0f}%   "
+                  f"per-pass [{', '.join(f'{p*100:.0f}%' for p in per)}]   "
+                  f"spread {(max(per)-min(per))*100:.0f} pts")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -74,9 +137,18 @@ def main():
     ap.add_argument("--agree", default=None, metavar="SUFFIX_B",
                     help="also load a SECOND judge's output (this suffix) and report inter-judge "
                          "agreement instead of the distributions — the multi-judge robustness check")
+    ap.add_argument("--panel", default=None, metavar="SFX1,SFX2,...",
+                    help="N-replicate panel: comma list of judge suffixes. Reports unanimity, "
+                         "pairwise agreement and consensus-vs-per-pass spread instead of the "
+                         "distributions. Use for the 3-replicate self-consistency check.")
+    ap.add_argument("--arms", default="", help="restrict to these arms, e.g. g0,g1,g2")
     args = ap.parse_args()
     runs = args.run_dirs or DEFAULT
+    arms = {a.strip() for a in args.arms.split(",") if a.strip()}
 
+    if args.panel:
+        panel(runs, [s.strip() for s in args.panel.split(",") if s.strip()], arms)
+        return
     if args.agree:
         agreement(runs, args.suffix, args.agree)
         return
