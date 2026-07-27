@@ -4,7 +4,7 @@ per-episode tables, and the judge's evidence quotes. Judge: DeepSeek-v4-pro (neu
 import argparse, glob, math, os, json, re, sys, html as H, statistics as st
 from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from extract_cot import extract_episode, DISEASE_PAT   # deterministic, no LLM — for the sample-count leak probe
+from extract_cot import extract_episode, count_based_identity   # deterministic, no LLM — tightened sample-count leak probe
 
 # PubMed hits for "<cancer> molecular subtypes" — proxy for prior-knowledge volume.
 # ONLY the first four are verified (snapshot 2026-07). LUSC/PRAD/UCEC are NOT filled in:
@@ -130,8 +130,6 @@ cot_best, cot_worst = (cot_ranked[0], cot_ranked[-1]) if HAS_COT else (best, wor
 # Dataset SHAPE is the one property blinding can't remove. A memorized cohort size (BRCA=1095,
 # LUAD=518, …) lets a model name the cancer from the ROW COUNT before any biology — a benchmark
 # leak invisible to every score, visible only in the pre-reveal reasoning (WHY + observations).
-_COUNT_PAT = re.compile(r'\b(sample size|n\s*=\s*\d{3,4}|\d{3,4}\s+(?:samples|tumou?rs|patients|'
-                        r'cases)|typical of|number of samples|cohort of \d{3,4})\b', re.I)
 def _cohort_sizes():
     sz = {}
     for m in ranked:
@@ -142,7 +140,7 @@ def _cohort_sizes():
     return sz
 SIZES = _cohort_sizes()
 def _count_leak(root):
-    """(n_count_based_identity, n_g2, best_verbatim_quote) over blinded G2 episodes."""
+    """(n_count_based_identity, n_g2, best_verbatim_quote) — tightened shared probe."""
     n = hits = 0; quote = None; quote_has_size = False
     for p in glob.glob(f"{root}/g2_*/*.json"):
         if os.path.basename(p)[:-5] != os.path.basename(os.path.dirname(p)):
@@ -150,19 +148,12 @@ def _count_leak(root):
         n += 1
         try: rec = extract_episode(p)
         except Exception: continue
-        coh, cbk = rec['cohort'], rec['codebook_at']
-        for c in rec['calls']:
-            if cbk and cbk > 0 and c['idx'] >= cbk:  # only PRE-reveal
-                continue
-            ch = (c['obs'].get('current_hypothesis') if c.get('obs') else "") or ""
-            t = (c.get('why', '') + ' ' + c.get('expects', '') + ' ' + ch)
-            if DISEASE_PAT.search(t) and (_COUNT_PAT.search(t) or str(SIZES.get(coh, '')) in t):
-                hits += 1
-                # prefer a quote that literally contains the cohort's size (most damning)
-                cand = ch.strip() or t.strip()
-                if quote is None or (str(SIZES.get(coh, '')) in cand and not quote_has_size):
-                    quote = cand; quote_has_size = str(SIZES.get(coh, '')) in cand
-                break
+        snippet = count_based_identity(rec, SIZES)   # tightened: correct-cohort naming + adjacent size
+        if snippet:
+            hits += 1
+            has_size = str(SIZES.get(rec['cohort'], '')) in snippet
+            if quote is None or (has_size and not quote_has_size):
+                quote = snippet; quote_has_size = has_size
     return hits, n, quote
 LEAK = {m: _count_leak(ROOT[m]) for m in ranked} if HAS_COT else {}
 LEAK_MODEL = max(LEAK, key=lambda m: LEAK[m][0]) if LEAK else None  # the model that does it most

@@ -10,7 +10,7 @@ Usage: python scripts/gen_ablation_report.py     ->  results/tcga/ABLATION_REPOR
 import glob, json, os, re, sys, statistics as st
 from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from extract_cot import extract_episode, DISEASE_PAT
+from extract_cot import extract_episode, count_based_identity
 
 # (label, detailed_dir, lean_dir, color, tier)
 PAIRS = [
@@ -33,25 +33,16 @@ def _cohort_sizes():
                 try: sz[c] = len(json.load(open(p)))
                 except Exception: pass
     return sz
-_COUNT_PAT = re.compile(r'\b(sample size|n\s*=\s*\d{3,4}|\d{3,4}\s+(?:samples|tumou?rs|patients|'
-                        r'cases)|typical of|number of samples|cohort of \d{3,4})\b', re.I)
-
 def count_leak(D, SIZES):
-    """(#G2 episodes where the PRE-reveal reasoning names the cancer AND cites the sample count / exact n)."""
+    """(#G2 episodes with the sample-count benchmark-recognition shortcut, tightened probe)."""
     hits = n = 0
     for p in glob.glob(f"{D}/g2_*/*.json"):
         if os.path.basename(p)[:-5] != os.path.basename(os.path.dirname(p)):
             continue
         n += 1
-        try: rec = extract_episode(p)
+        try:
+            if count_based_identity(extract_episode(p), SIZES): hits += 1
         except Exception: continue
-        coh, cbk = rec['cohort'], rec['codebook_at']
-        for c in rec['calls']:
-            if cbk and cbk > 0 and c['idx'] >= cbk: continue
-            ch = (c['obs'].get('current_hypothesis') if c.get('obs') else '') or ''
-            t = c.get('why', '') + ' ' + c.get('expects', '') + ' ' + ch
-            if DISEASE_PAT.search(t) and (_COUNT_PAT.search(t) or str(SIZES.get(coh, '')) in t):
-                hits += 1; break
     return hits, n
 SIZES = _cohort_sizes()
 

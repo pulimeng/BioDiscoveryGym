@@ -85,6 +85,41 @@ DISEASE_PAT = re.compile(
     re.I,
 )
 
+# Per-cohort cancer vocabulary — for the TIGHTENED sample-count leak probe. Only a naming that
+# matches THIS cohort counts (analogy lists that mention other cancers don't).
+COHORT_DIS = {
+    'BRCA': r'breast\s+(?:cancer|carcinoma)|\bBRCA\b',
+    'LIHC': r'hepatocellular|liver\s+(?:cancer|carcinoma)|\bLIHC\b',
+    'LUAD': r'lung\s+adenocarcinoma|\bLUAD\b',
+    'LUSC': r'lung\s+squamous|squamous\s+cell\s+carcinoma|\bLUSC\b',
+    'OV':   r'ovarian|high[-\s]?grade\s+serous|\bHGSOC\b',
+    'PRAD': r'prostate|\bPRAD\b',
+    'UCEC': r'endometrial|uterine\s+corpus|\bUCEC\b',
+}
+
+def count_based_identity(rec, sizes, window=120):
+    """TIGHTENED sample-count benchmark-recognition probe. Returns the matching pre-reveal text
+    snippet (truthy) iff the model names THIS cohort's cancer AND the cohort's exact sample size
+    appears within `window` chars of that naming; else None. Rejects the two false-positive
+    classes the loose probe hit: (a) analogy lists naming other cancers, (b) biology-derived
+    identity with a number sitting incidentally elsewhere. Requires the count *adjacent* to the
+    (correct) naming — validated against a hand-read (Sonnet-lean 3, Gemini-detailed 4, else 0)."""
+    coh, cbk = rec.get('cohort'), rec.get('codebook_at')
+    dis = COHORT_DIS.get(coh); size = str(sizes.get(coh, '')) if sizes else ''
+    if not dis or not size:
+        return None
+    dpat = re.compile(dis, re.I)
+    for c in rec['calls']:
+        if cbk and cbk > 0 and c['idx'] >= cbk:      # only pre-reveal
+            continue
+        ch = (c['obs'].get('current_hypothesis') if c.get('obs') else '') or ''
+        t = c.get('why', '') + ' ' + c.get('expects', '') + ' ' + ch
+        for m in dpat.finditer(t):
+            if size in t[max(0, m.start() - window):m.end() + window]:
+                return (ch.strip() or t.strip())
+    return None
+
+
 # Pediatric/young-patient inference signatures — first call where clinical-metadata
 # narrowing has occurred (the leak channel identified in the run8 SGH-OS analysis).
 # LEGACY: this channel is meaningful only for the pediatric osteosarcoma cohort; TCGA
