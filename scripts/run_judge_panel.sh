@@ -32,7 +32,8 @@ JUDGE="${JUDGE:-deepseek-v4-pro}"
 ARMS="${ARMS:-g0,g1,g2,g3a,g3b}"
 # Pass 1 = _cotsummary.json (already complete; deliberately NOT regenerated — the committed
 # report, figures and every quoted number derive from it, so a re-run would silently move them).
-PASSES=("_cotsummary_j2.json" "_cotsummary_j3.json")
+# Override to run one pass at a time, e.g.  PASSES=_cotsummary_j2.json bash scripts/run_judge_panel.sh
+IFS=', ' read -r -a PASSES <<< "${PASSES:-_cotsummary_j2.json _cotsummary_j3.json}"
 RUNS=(
   results/tcga/ladder/sonnet5_20260713
   results/tcga/ladder/gpt55_20260707
