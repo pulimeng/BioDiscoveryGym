@@ -247,7 +247,11 @@ def main():
             v = call_judge(umsg, args.model)
         except Exception as e:
             print(f"  !! {label} judge failed: {e}", file=sys.stderr); fail += 1; continue
-        v = {"cohort": rec["cohort"], "arm": rec["mode"], "model": rec["model"], **v}
+        # "model" = the AGENT being judged; "judge_model" = who judged it. Both are needed:
+        # without judge_model a multi-judge robustness check is unauditable after the fact —
+        # the _j2 suffix records that a second pass happened, not which judge ran it.
+        v = {"cohort": rec["cohort"], "arm": rec["mode"], "model": rec["model"],
+             "judge_model": args.model, **v}
         print(f"{label:34} {rec['cohort']:5} {v['reasoning_strategy']:22} "
               f"id:{v['identity_derivation']:13} rigor:{v['validation_rigor']:6} "
               f"pivots:{v['num_pivots']}  {_trunc(v['overall_verdict'], 60)}")
