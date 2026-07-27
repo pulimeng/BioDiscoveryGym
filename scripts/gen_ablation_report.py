@@ -7,10 +7,10 @@ observation count). Reads v3 + support + cotsummary + the raw trace (record_obse
 
 Usage: python scripts/gen_ablation_report.py     ->  results/tcga/ABLATION_REPORT.html
 """
-import glob, json, os, sys, statistics as st
+import glob, json, os, re, sys, statistics as st
 from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from extract_cot import extract_episode
+from extract_cot import extract_episode, DISEASE_PAT
 
 # (label, detailed_dir, lean_dir, color, tier)
 PAIRS = [
@@ -21,6 +21,39 @@ PAIRS = [
 OUT = 'results/tcga/ABLATION_REPORT.html'
 
 def arm(lab): return lab.split('_')[0]
+def cohort_of(lab): return lab.split('_')[1].upper() if '_' in lab else '?'
+
+# cohort fingerprint sizes (for the shape-leak probe) + the count-basis pattern
+def _cohort_sizes():
+    sz = {}
+    for _, dd, ld, *_ in PAIRS:
+        for base in (dd, ld):
+            for p in glob.glob(f"{base}/g2_*/grouping.json"):
+                c = os.path.basename(os.path.dirname(p)).split('_')[1].upper()
+                try: sz[c] = len(json.load(open(p)))
+                except Exception: pass
+    return sz
+_COUNT_PAT = re.compile(r'\b(sample size|n\s*=\s*\d{3,4}|\d{3,4}\s+(?:samples|tumou?rs|patients|'
+                        r'cases)|typical of|number of samples|cohort of \d{3,4})\b', re.I)
+
+def count_leak(D, SIZES):
+    """(#G2 episodes where the PRE-reveal reasoning names the cancer AND cites the sample count / exact n)."""
+    hits = n = 0
+    for p in glob.glob(f"{D}/g2_*/*.json"):
+        if os.path.basename(p)[:-5] != os.path.basename(os.path.dirname(p)):
+            continue
+        n += 1
+        try: rec = extract_episode(p)
+        except Exception: continue
+        coh, cbk = rec['cohort'], rec['codebook_at']
+        for c in rec['calls']:
+            if cbk and cbk > 0 and c['idx'] >= cbk: continue
+            ch = (c['obs'].get('current_hypothesis') if c.get('obs') else '') or ''
+            t = c.get('why', '') + ' ' + c.get('expects', '') + ' ' + ch
+            if DISEASE_PAT.search(t) and (_COUNT_PAT.search(t) or str(SIZES.get(coh, '')) in t):
+                hits += 1; break
+    return hits, n
+SIZES = _cohort_sizes()
 
 def metrics(D):
     """All ablation metrics for one run dir."""
@@ -51,9 +84,16 @@ def metrics(D):
         try: rec = extract_episode(p)
         except Exception: continue
         ro.append(sum(1 for c in rec['calls'] if c['tool'] == 'record_observation'))
+    # per-cohort honest outcome (does a collapse hit specific cohorts?)
+    obc = {}
+    for c in sorted({cohort_of(l) for l in hon}):
+        xs = [v3[l]['normalized'] for l in hon if cohort_of(l) == c]
+        if xs: obc[c] = st.mean(xs)
+    lk, lkn = count_leak(D, SIZES)
     return dict(
         out_hon=st.mean([v3[l]['normalized'] for l in hon]) if hon else 0.0,
         out_g0=om('g0'), out_g1=om('g1'), out_g2=om('g2'),
+        out_by_cohort=obc, leak=lk, leak_n=lkn,
         support=st.mean([sup[l]['support_score'] for l in sup if arm(l) in ('g0','g1','g2')]) if sup else 0.0,
         d2_unsup=(d2.get('unsupported', 0) + d2.get('anchored', 0)) / nhon_sup,
         g2_derived=idc.get('data-derived', 0) / max(len(g2c), 1),
@@ -89,6 +129,36 @@ def delta_cell(key, det, lean, fmt, lower_better):
         cls = "good" if good else "bad"
     dtxt = fmt(abs(d)) if key not in ('fooled',) else f"{abs(int(d))}"
     return f'<td class="num">{fmt(det)}</td><td class="num">{fmt(lean)}</td><td class="num {cls}">{arrow}{dtxt}</td>'
+
+# ---- per-cohort outcome, detailed vs lean (is a collapse cohort-specific?) ----
+COHORTS = sorted({c for m in DATA for c in DATA[m]['detailed']['out_by_cohort']},
+                 key=lambda c: -(SIZES.get(c) or 0))
+cohort_rows = ""
+for lab in DATA:
+    det, lean = DATA[lab]['detailed']['out_by_cohort'], DATA[lab]['lean']['out_by_cohort']
+    cells = ""
+    for c in COHORTS:
+        dv, lv = det.get(c), lean.get(c)
+        if dv is None or lv is None:
+            cells += '<td class="num mut">—</td>'; continue
+        d = lv - dv
+        cls = 'good' if d > 0.02 else ('bad' if d < -0.02 else 'mut')
+        cells += f'<td class="num"><span class="{cls}">{lv:.2f}</span><span class="sub">{d:+.2f}</span></td>'
+    cohort_rows += (f'<tr><td class="grp" style="color:{DATA[lab]["color"]}">{lab}</td>{cells}</tr>')
+cohort_head = "".join(f'<th class="num">{c}<span class="sub">n={SIZES.get(c,"?")}</span></th>' for c in COHORTS)
+
+# ---- shape-leak (benchmark recognition from sample count), detailed vs lean ----
+leak_rows = ""
+for lab in DATA:
+    dl, dn = DATA[lab]['detailed']['leak'], DATA[lab]['detailed']['leak_n']
+    ll, ln = DATA[lab]['lean']['leak'], DATA[lab]['lean']['leak_n']
+    d = ll - dl
+    cls = 'bad' if d > 0 else ('good' if d < 0 else 'mut')
+    leak_rows += (f'<tr><td class="grp" style="color:{DATA[lab]["color"]}">{lab}</td>'
+                  f'<td class="num">{dl}/{dn}</td><td class="num">{ll}/{ln}</td>'
+                  f'<td class="num {cls}">{d:+d}</td></tr>')
+leak_total_det = sum(DATA[m]['detailed']['leak'] for m in DATA)
+leak_total_lean = sum(DATA[m]['lean']['leak'] for m in DATA)
 
 # per-model paired tables
 cards = ""
@@ -154,6 +224,8 @@ th{color:var(--mut);font-weight:600;font-size:12px}td.num,th.num{text-align:righ
 .warn{background:#2a2410;border:1px solid #5c4a12;border-radius:8px;padding:12px 16px;margin:12px 0;color:#e8d48a;font-size:13px}
 .foot{color:var(--mut);font-size:11.5px;margin-top:24px;border-top:1px solid var(--line);padding-top:12px}
 code{background:#0b1220;padding:1px 5px;border-radius:4px;font-size:12px}
+.sub{display:block;font-size:9px;color:var(--mut);font-weight:400}
+.tblwrap{overflow-x:auto}.grp{font-weight:700}
 """
 
 JS = """
@@ -195,6 +267,14 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 <h2>Per-model paired metrics</h2>
 <div class="cards">{cards}</div>
 <p class="lead">Δ colouring: <span class="good">green</span> = lean is better on that axis, <span class="bad">red</span> = lean is worse, grey = ~no change. "Better" accounts for direction (lower is better for unsupported/recalled/fooled).</p>
+
+<h2>Outcome by cohort — where the prompt matters</h2>
+<div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th>{cohort_head}</tr></thead><tbody>{cohort_rows}</tbody></table></div>
+<p class="lead">Each cell = <b>lean</b> honest-outcome for that cohort, with <b>Δ vs detailed</b> below (<span class="good">green</span> lean higher, <span class="bad">red</span> lean lower). Cohorts ordered by sample size. This localizes the flagship-vs-Flash split: if a model's lean drop is uniform across cohorts it's a global prompt effect; if it's concentrated, specific cohorts drive it.</p></div>
+
+<h2>Benchmark recognition (shape leak) — detailed vs lean</h2>
+<div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th><th class="num">detailed</th><th class="num">lean</th><th class="num">Δ</th></tr></thead><tbody>{leak_rows}</tbody></table></div>
+<p class="lead">Blinded G2 episodes where the model named the cancer from the <b>sample count</b> (a memorized TCGA cohort size, e.g. BRCA=1095) in its pre-reveal reasoning — before any biology. Totals: <b>{leak_total_det}</b> under detailed vs <b>{leak_total_lean}</b> under lean. Does removing the staged prompt change the shape-recognition shortcut? <span class="bad">Red Δ</span> = lean recognizes the benchmark <i>more</i>; the dataset's shape is the one property blinding can't hide, so this is a benchmark leak independent of prompt.</p></div>
 
 <h2>Open gates before publication</h2>
 <div class="warn">
