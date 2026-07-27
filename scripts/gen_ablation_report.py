@@ -97,6 +97,91 @@ def metrics(D):
 DATA = {lab: {'detailed': metrics(dd), 'lean': metrics(ld), 'color': col, 'tier': tier}
         for lab, dd, ld, col, tier in PAIRS}
 
+# ---- inter-judge robustness: judge A (DeepSeek, neutral) vs judge B (_cotsummary_j2) ----
+# The whole explore/exploit axis rides on ONE label (identity_derivation) from ONE judge. This
+# re-reads the same G2 traces under a second judge. Judge B may be mid-run, so every judge-A
+# comparison is ALSO computed on judge B's exact episode subset — otherwise a cohort-subset
+# effect (G2 files are written cohort-alphabetically) is indistinguishable from a judge effect.
+J2 = '_cotsummary_j2.json'
+JFIELDS = ['identity_derivation', 'validation_rigor', 'codebook_response']
+
+def _load_sfx(D, sfx):
+    out = {}
+    for p in glob.glob(f"{D}/g2_*/*{sfx}"):
+        l = os.path.basename(p).replace(sfx, '')
+        if os.path.basename(os.path.dirname(p)) == l: out[l] = json.load(open(p))
+    return out
+
+def _der(summaries):
+    """fraction 'data-derived' over a list of summaries (the explore/exploit proxy)."""
+    if not summaries: return None
+    return sum(1 for x in summaries if x.get('identity_derivation') == 'data-derived') / len(summaries)
+
+def judge_pair(D):
+    A, B = _load_sfx(D, '_cotsummary.json'), _load_sfx(D, J2)
+    both = sorted(set(A) & set(B))
+    agree = {f: (sum(1 for l in both if A[l].get(f) == B[l].get(f)), len(both)) for f in JFIELDS}
+    flips = Counter((A[l].get('identity_derivation'), B[l].get('identity_derivation'))
+                    for l in both if A[l].get('identity_derivation') != B[l].get('identity_derivation'))
+    return dict(n_a=len(A), n_both=len(both), agree=agree, flips=flips,
+                der_a_all=_der(list(A.values())),
+                der_a_match=_der([A[l] for l in both]),   # judge A on judge B's subset
+                der_b=_der([B[l] for l in both]),
+                complete=len(both) == len(A) and len(A) > 0)
+
+JP = {lab: {'detailed': judge_pair(dd), 'lean': judge_pair(ld)} for lab, dd, ld, _, _ in PAIRS}
+JP_ANY = any(JP[m][p]['n_both'] for m in JP for p in ('detailed', 'lean'))
+
+# agreement table
+j_rows = ""
+for lab in DATA:
+    for prompt in ('detailed', 'lean'):
+        j = JP[lab][prompt]
+        if not j['n_both']:
+            j_rows += (f'<tr><td class="grp" style="color:{DATA[lab]["color"]}">{lab}</td><td>{prompt}</td>'
+                       f'<td class="num mut" colspan="4">not yet judged by B</td></tr>'); continue
+        cov = f"{j['n_both']}/{j['n_a']}" + ('' if j['complete'] else ' <span class="part">partial</span>')
+        cells = ""
+        for f in JFIELDS:
+            a, n = j['agree'][f]
+            cls = 'good' if a / n >= 0.8 else ('bad' if a / n < 0.6 else 'mut')
+            cells += f'<td class="num {cls}">{a}/{n}<span class="sub">{a/n*100:.0f}%</span></td>'
+        j_rows += (f'<tr><td class="grp" style="color:{DATA[lab]["color"]}">{lab}</td><td>{prompt}</td>'
+                   f'<td class="num">{cov}</td>{cells}</tr>')
+
+# does the lean−detailed derivation delta SURVIVE the second judge?
+def _fmt_d(x): return '—' if x is None else f"{x*100:+.1f}"
+surv_rows = ""; surv_verdicts = []
+for lab in DATA:
+    d, l = JP[lab]['detailed'], JP[lab]['lean']
+    dA = (DATA[lab]['lean']['g2_derived'] - DATA[lab]['detailed']['g2_derived'])
+    dAm = (l['der_a_match'] - d['der_a_match']) if (l['der_a_match'] is not None and d['der_a_match'] is not None) else None
+    dB = (l['der_b'] - d['der_b']) if (l['der_b'] is not None and d['der_b'] is not None) else None
+    partial = not (d['complete'] and l['complete'])
+    if dB is None:
+        verdict, vcls = 'judge B incomplete', 'part'
+    elif partial:
+        verdict, vcls = f"partial coverage ({l['n_both']}/{l['n_a']} lean)", 'part'
+    else:
+        ref = dAm if dAm is not None else dA
+        if abs(ref) < 0.05 and abs(dB) < 0.05: verdict, vcls = 'no effect, both judges', 'mut'
+        elif (dB > 0) != (ref > 0): verdict, vcls = 'FLIPS under judge B', 'bad'
+        elif abs(dB) >= 0.5 * abs(ref): verdict, vcls = 'holds', 'good'
+        else: verdict, vcls = 'attenuated', 'part'
+        surv_verdicts.append(verdict)
+    surv_rows += (f'<tr><td class="grp" style="color:{DATA[lab]["color"]}">{lab}</td>'
+                  f'<td class="num">{_fmt_d(dA)}</td><td class="num">{_fmt_d(dAm)}</td>'
+                  f'<td class="num">{_fmt_d(dB)}</td><td class="{vcls}">{verdict}</td></tr>')
+
+# the most common cross-judge confusion, pooled (is disagreement adjacent or sign-flipping?)
+pool = Counter()
+for m in JP:
+    for p in ('detailed', 'lean'): pool.update(JP[m][p]['flips'])
+ADJ = {('mixed', 'data-derived'), ('data-derived', 'mixed'), ('mixed', 'recalled-prior'), ('recalled-prior', 'mixed')}
+n_flip = sum(pool.values()); n_adj = sum(v for k, v in pool.items() if k in ADJ)
+flip_txt = "  ·  ".join(f"{a}→{b} ×{n}" for (a, b), n in pool.most_common(5)) or "none"
+j_all_complete = all(JP[m][p]['complete'] for m in JP for p in ('detailed', 'lean'))
+
 # ---- metric rows: (key, label, fmt, lower_is_better) ----
 ROWS = [
     ('out_hon', 'Outcome (honest mean)', lambda v: f"{v:.3f}", None),
@@ -216,6 +301,7 @@ th{color:var(--mut);font-weight:600;font-size:12px}td.num,th.num{text-align:righ
 .foot{color:var(--mut);font-size:11.5px;margin-top:24px;border-top:1px solid var(--line);padding-top:12px}
 code{background:#0b1220;padding:1px 5px;border-radius:4px;font-size:12px}
 .sub{display:block;font-size:9px;color:var(--mut);font-weight:400}
+.part{color:#d29922;font-weight:700}
 .tblwrap{overflow-x:auto}.grp{font-weight:700}
 """
 
@@ -233,6 +319,48 @@ paired('c_der',CH.der_det,CH.der_lean,'G2 identity data-derived',true);
 paired('c_ro',CH.ro_det,CH.ro_lean,'record_observation / episode',false);
 """
 JS = JS.replace('__CH__', json.dumps(CH))
+
+interjudge_section = "" if not JP_ANY else f"""
+<h2>Inter-judge robustness — does the derivation finding survive a second judge?</h2>
+<div class="panel">
+<p class="lead">The explore↔exploit axis rests on a <b>single categorical label</b> (<code>identity_derivation</code>)
+from a <b>single judge</b>, on n=21 G2 episodes per arm — and the lean prompt's own "derive from structure alone"
+wording could plausibly nudge that label. So the same G2 traces were re-judged by a second model
+(<code>{J2}</code>). This panel is the foundation for every derivation claim above, not a footnote.</p>
+<div class="tblwrap"><table><thead><tr><th>model</th><th>prompt</th><th class="num">judged by both</th>
+<th class="num">identity_derivation</th><th class="num">validation_rigor</th><th class="num">codebook_response</th></tr></thead>
+<tbody>{j_rows}</tbody></table></div>
+<p class="lead">Per-episode agreement between the two judges. <code>codebook_response</code> is near-deterministic
+(an observable action); <code>identity_derivation</code> is the <b>interpretive</b> one and agrees least — which is
+exactly why the delta table below matters more than any single-judge percentage.</p>
+</div>
+
+<div class="panel">
+<h3>Does the lean−detailed derivation delta survive?</h3>
+<div class="tblwrap"><table><thead><tr><th>model</th>
+<th class="num">Δ judge A<span class="sub">all episodes</span></th>
+<th class="num">Δ judge A<span class="sub">matched subset</span></th>
+<th class="num">Δ judge B<span class="sub">same subset</span></th><th>verdict</th></tr></thead>
+<tbody>{surv_rows}</tbody></table></div>
+<p class="lead">Δ = (lean − detailed) percentage points of G2 episodes judged <b>data-derived</b>. The
+<b>matched-subset</b> column re-computes judge A on <i>exactly</i> the episodes judge B has scored — without it,
+partial judge-B coverage is confounded with a cohort effect, since G2 summaries are written cohort-alphabetically
+(so an incomplete run over-represents BRCA/LIHC/LUAD and omits OV, the difficulty floor). Compare
+<b>matched vs judge B</b>; the all-episodes column is context only. "Holds" = same sign and ≥50% of the magnitude.</p>
+</div>
+
+<div class="panel">
+<h3>Where the judges disagree</h3>
+<p class="lead">Pooled G2 <code>identity_derivation</code> disagreements ({n_flip} of
+{sum(JP[m][p]['n_both'] for m in JP for p in ('detailed','lean'))} co-judged episodes), judge A → judge B:</p>
+<p><code>{flip_txt}</code></p>
+<p class="lead"><b>{n_adj}/{n_flip}</b> disagreements are <b>adjacent</b> (mixed↔data-derived or mixed↔recalled-prior)
+rather than polar (data-derived↔recalled-prior). Adjacent disagreement means the judges agree on the
+<i>direction</i> of the evidence and differ on where to put the threshold — it degrades the precision of any
+single episode's label but largely preserves an aggregate delta. Polar flips would be far more damaging: they
+would mean the two judges read the same trace as opposite behaviours.
+{"" if j_all_complete else '<br><b class="part">Judge B coverage is still incomplete — every number in this panel is provisional until all arms are re-judged.</b>'}</p>
+</div>"""
 
 html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TCGA Benchmark — Instruction Ablation (Detailed vs Lean)</title><style>{CSS}</style></head><body><div class="wrap">
@@ -267,12 +395,14 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 <div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th><th class="num">detailed</th><th class="num">lean</th><th class="num">Δ</th></tr></thead><tbody>{leak_rows}</tbody></table></div>
 <p class="lead">Blinded G2 episodes where the model named the cancer from the <b>sample count</b> (a memorized TCGA cohort size, e.g. BRCA=1095) in its pre-reveal reasoning — before any biology. Totals: <b>{leak_total_det}</b> under detailed vs <b>{leak_total_lean}</b> under lean. Does removing the staged prompt change the shape-recognition shortcut? <span class="bad">Red Δ</span> = lean recognizes the benchmark <i>more</i>; the dataset's shape is the one property blinding can't hide, so this is a benchmark leak independent of prompt.</p></div>
 
+{interjudge_section}
+
 <h2>Open gates before publication</h2>
 <div class="warn">
 (1) <b>n = 21/arm</b> (12 for G3); single seed-triple. Deltas within a few points are noise.<br>
-(2) <b>Two judges, partly divergent</b> — CoT "derived" (behaviour) vs support "unsupported" (documented evidence) can move in opposite directions; that divergence is the finding, but neither is ground truth. Run the inter-judge check (<code>cot_compare.py --agree</code>).<br>
+(2) <b>Two scorers, partly divergent</b> — CoT "derived" (behaviour) vs support "unsupported" (documented evidence) can move in opposite directions; that divergence is the finding, but neither is ground truth.<br>
 (3) <b>Gemini is Flash tier</b> — a Gemini delta is confounded by tier; the clean ablation is the two flagships (GPT-5.5, Sonnet 5).<br>
-(4) <b>identity_derivation risk</b> — the lean prompt's own "derive from structure alone" wording may nudge the judge toward "data-derived"; spot-check traces before leaning on the derivation deltas.
+(4) <b>identity_derivation is one judge's categorical call</b> — the lean prompt's own "derive from structure alone" wording may nudge it toward "data-derived". {"Second-judge coverage is COMPLETE; read the survival verdicts above and quote only deltas marked <i>holds</i>." if j_all_complete else "<b class='part'>Second-judge coverage is still INCOMPLETE</b> — treat every derivation magnitude as directional-pending-robustness until it finishes."}
 </div>
 
 <div class="foot">Detailed dirs = <code>results/tcga/ladder/*</code>; lean = <code>results/tcga/lean/*</code>. Outcome from <code>*_v3scores.json</code>, grounding from <code>*_supportscores.json</code>, reasoning from <code>*_cotsummary.json</code> (neutral DeepSeek-v4-pro); record_observation counts from the raw trace. Generated by <code>scripts/gen_ablation_report.py</code>. Charts: Chart.js (cdnjs).</div>
