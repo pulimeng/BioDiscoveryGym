@@ -116,16 +116,21 @@ def panel(runs, suffixes, arms):
             print(f"    {f:20} unanimous {unan}/{len(keys)} ({unan/len(keys)*100:3.0f}%)   "
                   f"pairwise {pw/tot*100:3.0f}%   no-majority {tie}")
 
-        # the load-bearing rate: G2 identity data-derived, consensus vs per-pass spread
-        g2 = [k for k in keys if arm_of(k) == "g2"]
-        if g2:
-            per = [sum(1 for k in g2 if d[k].get("identity_derivation") == "data-derived") / len(g2)
+        # the load-bearing rates, consensus vs per-pass spread. G2 = must derive identity from
+        # blinded data. G3 = same call under an injected FALSE frame, so the judge must separate
+        # "derived it" from "complied with the fake label" — the least stable label we produce.
+        for grp, sel in (("G2 blind ", ("g2",)), ("G3 mislead", ("g3a", "g3b"))):
+            ks = [k for k in keys if arm_of(k) in sel]
+            if not ks: continue
+            per = [sum(1 for k in ks if d[k].get("identity_derivation") == "data-derived") / len(ks)
                    for d in loads]
-            cons = [consensus([d[k].get("identity_derivation") for d in loads])[0] for k in g2]
-            cr = sum(1 for c in cons if c == "data-derived") / len(g2)
-            print(f"    → G2 data-derived: consensus {cr*100:.0f}%   "
+            cons = [consensus([d[k].get("identity_derivation") for d in loads])[0] for k in ks]
+            cr = sum(1 for c in cons if c == "data-derived") / len(ks)
+            nc = sum(1 for c in cons if c is None)
+            print(f"    → {grp} data-derived: consensus {cr*100:3.0f}%   "
                   f"per-pass [{', '.join(f'{p*100:.0f}%' for p in per)}]   "
-                  f"spread {(max(per)-min(per))*100:.0f} pts")
+                  f"spread {(max(per)-min(per))*100:2.0f} pts   n={len(ks)}"
+                  + (f"   ({nc} unresolved)" if nc else ""))
 
 
 def main():

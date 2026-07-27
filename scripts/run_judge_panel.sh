@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Three-replicate CoT judge panel over the honest arms (G0/G1/G2).
+# Three-replicate CoT judge panel over every arm (G0/G1/G2 honest + G3a/G3b mislead).
 #
 # WHY replicates rather than three different families: identity_derivation is one categorical
 # call, and we do not know its run-to-run stability. Three independent passes of the SAME neutral
@@ -23,7 +23,13 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 JUDGE="${JUDGE:-deepseek-v4-pro}"
-ARMS="${ARMS:-g0,g1,g2}"
+# G3 (mislead) is included deliberately. The headline fooling number comes from the OUTCOME
+# scorer (v3scores.cohort_identity_verdict), not from here, so it needs no replicates — but the
+# CoT-based G3 claims do: "identity derivation under a false frame" and the relabel-a-real-finding
+# mechanism. G3 is also the hardest call the judge makes, since it must decide whether the agent
+# DERIVED identity or COMPLIED with an injected false label, so its labels are the least stable
+# and most in need of a majority vote. Set ARMS=g0,g1,g2 to skip it.
+ARMS="${ARMS:-g0,g1,g2,g3a,g3b}"
 # Pass 1 = _cotsummary.json (already complete; deliberately NOT regenerated — the committed
 # report, figures and every quoted number derive from it, so a re-run would silently move them).
 PASSES=("_cotsummary_j2.json" "_cotsummary_j3.json")
