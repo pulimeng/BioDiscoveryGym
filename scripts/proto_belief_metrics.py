@@ -7,7 +7,7 @@ the trail separates exploitation (G0/G1, recall-enabled) from exploration (G2, b
 BEFORE committing to a scoring rework. See docs/EXPLORE_EXPLOIT_SCORING.md.
 
 Usage:
-    python scripts/proto_belief_metrics.py results/tcga/run1+2   # merged run1+run2
+    python scripts/proto_belief_metrics.py results/tcga/_archive/run1+2   # merged run1+run2
 """
 import json, glob, os, difflib, statistics as st, sys
 from collections import defaultdict

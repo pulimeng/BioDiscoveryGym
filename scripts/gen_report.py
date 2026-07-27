@@ -10,7 +10,7 @@ exist in that run dir, and omitted otherwise (no hardcoded "outcome only" caveat
 
   python scripts/gen_report.py \
       --model "GPT-5.5:results/tcga/ladder/gpt55_20260707:#1D9E75" \
-      --model "Claude Sonnet:results/tcga/run1+2:#7F77DD" \
+      --model "Claude Sonnet:results/tcga/_archive/run1+2:#7F77DD" \
       --model "Gemini 2.5 Pro:results/tcga/ladder/gemini25_:#D29922" \
       --out results/tcga/ladder/MODEL_COMPARISON.html
 

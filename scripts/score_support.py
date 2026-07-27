@@ -17,9 +17,9 @@ ranked exploration above exploitation. Cohort per episode = ep["cohort"] (true c
 that is the real data, not the mislead label).
 
 Usage:
-    python scripts/score_support.py results/tcga/run1+2 --dry --limit 1
-    ANTHROPIC_API_KEY=sk-... python scripts/score_support.py results/tcga/run1+2 --save
-    python scripts/score_support.py results/tcga/run1+2 --arms g0,g1 --save   # money panel
+    python scripts/score_support.py results/tcga/_archive/run1+2 --dry --limit 1
+    ANTHROPIC_API_KEY=sk-... python scripts/score_support.py results/tcga/_archive/run1+2 --save
+    python scripts/score_support.py results/tcga/_archive/run1+2 --arms g0,g1 --save   # money panel
 """
 from __future__ import annotations
 import argparse, glob, json, os, sys

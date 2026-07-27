@@ -8,9 +8,9 @@
 #
 # RUN ONLY AFTER the live scorer has stopped (don't delete files out from under it).
 #
-#   bash scripts/resume_support.sh results/tcga/run1+2              # dry-run, cutoff 180 min
-#   bash scripts/resume_support.sh results/tcga/run1+2 240          # stale = older than 240 min
-#   bash scripts/resume_support.sh results/tcga/run1+2 180 --apply  # actually delete stale + resume
+#   bash scripts/resume_support.sh results/tcga/_archive/run1+2              # dry-run, cutoff 180 min
+#   bash scripts/resume_support.sh results/tcga/_archive/run1+2 240          # stale = older than 240 min
+#   bash scripts/resume_support.sh results/tcga/_archive/run1+2 180 --apply  # actually delete stale + resume
 set -uo pipefail
 
 DIR="${1:?usage: resume_support.sh <dir> [stale_minutes] [--apply]}"

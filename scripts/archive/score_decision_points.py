@@ -18,9 +18,9 @@ Design: docs/DECISION_POINT_RUBRIC.md.
 
 Usage:
     # inspect the judge input for one episode WITHOUT calling the API:
-    python scripts/score_decision_points.py results/tcga/run1+2 --dry --limit 1
+    python scripts/score_decision_points.py results/tcga/_archive/run1+2 --dry --limit 1
     # run the judge over the whole dir (needs ANTHROPIC_API_KEY; ~1 call/episode):
-    python scripts/score_decision_points.py results/tcga/run1+2 --save
+    python scripts/score_decision_points.py results/tcga/_archive/run1+2 --save
 """
 from __future__ import annotations
 import argparse, glob, json, os, sys
