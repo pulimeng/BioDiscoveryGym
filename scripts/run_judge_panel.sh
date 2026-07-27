@@ -88,9 +88,14 @@ for sfx in "${PASSES[@]}"; do
   for run in "${RUNS[@]}"; do
     tag="$(basename "$run")${sfx%.json}"
     echo ">>> $tag"
-    if ! python scripts/summarize_cot.py "$run" \
+    # python -u: without it Python block-buffers stdout when piped, so per-episode progress sits
+    # in an 8K buffer and the log stays EMPTY for ~40 min. Stream to both the log and the
+    # terminal (no `tail`, which only emits after the whole run dir finishes).
+    # PIPESTATUS, not $?, so a python failure is not masked by tee's exit code.
+    python -u scripts/summarize_cot.py "$run" \
         --arms "$ARMS" --model "$JUDGE" --out-suffix "$sfx" --save \
-        2>&1 | tee "$LOGDIR/${tag}.log" | tail -3; then
+        2>&1 | tee "$LOGDIR/${tag}.log"
+    if [[ "${PIPESTATUS[0]}" -ne 0 ]]; then
       echo "  !! FAILED: $tag (see $LOGDIR/${tag}.log)" >&2
       fail=$((fail + 1))
     fi
