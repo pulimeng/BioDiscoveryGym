@@ -147,9 +147,20 @@ publishable.
 
 ## Open items
 
-- **Stability of Finding 3** — self-capacity is being re-run across 3 topk × 3 seeds to confirm
-  the SGH null and TARGET signal are not one lucky split. Treat the exact HRs as provisional
-  until that lands; the direction is what matters.
+- ~~Stability of Finding 3~~ **RESOLVED — direction holds, but soften the wording.** Re-run across
+  topk × seed (5 matched configurations captured):
+
+  | | CV HR range | p range |
+  |---|---|---|
+  | TARGET-OS | 0.51 – 0.71 | 0.0004 – 0.078 |
+  | SGH-OS | 0.73 – 0.83 | 0.043 – 0.211 |
+
+  TARGET is stronger than SGH in **every matched configuration**, so the ordering is robust and the
+  headline stands. But SGH is **weak, not flatly null** — at topk=50/seed=42 it reaches p=0.043.
+  So the accurate claim is *"SGH-OS self-capacity is consistently weaker than TARGET's and mostly
+  non-significant"*, **not** "SGH cannot predict its own survival at all". The single-split figures
+  quoted above (SGH 0.83/p=0.211, TARGET 0.51/p=0.00037) are the seed=42/topk=25 cell, at the
+  favourable end for the contrast — quote the ranges instead.
 - **Confound in TARGET's self-capacity** — metastasis-at-diagnosis is a large effect in TARGET-OS
   and may be readable from expression. That is real prognostic signal, but closer to clinical
   stage than tumour biology. Worth checking before leaning on "TARGET is the better cohort".
