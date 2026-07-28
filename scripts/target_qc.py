@@ -114,6 +114,9 @@ def main() -> int:
     ap.add_argument("--pool", type=int, default=3000,
                     help="candidate genes screened (default 3000, most-variable)")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--json", type=Path, default=None,
+                    help="also write the numbers as JSON (so reports read them instead of "
+                         "hardcoding a transcribed figure that silently goes stale)")
     args = ap.parse_args()
     rng = np.random.default_rng(args.seed)
 
@@ -140,6 +143,15 @@ def main() -> int:
           f"[{tgt.values.min():.1f},{tgt.values.max():.1f}]")
     print(f"    median per-gene SD  SGH {sgh[ov].std().median():.3f}   TARGET {tgt[ov].std().median():.3f}")
 
+    out = {"structure": {
+        "sgh_n": int(len(sgh)), "sgh_events": int(sgh_surv["E"].sum()),
+        "sgh_median_fu": float(sgh_surv["T"].median()),
+        "target_n": int(len(tgt)), "target_events": int(tgt_surv["E"].sum()),
+        "target_median_fu": float(tgt_surv["T"].median()),
+        "gene_overlap": int(len(ov)),
+        "sgh_median_sd": float(sgh[ov].std().median()),
+        "target_median_sd": float(tgt[ov].std().median())}, "controls": {}}
+
     print("\n" + "=" * 74)
     print("  2. POSITIVE CONTROLS in TARGET-OS")
     print("=" * 74)
@@ -153,6 +165,8 @@ def main() -> int:
             print(f"    {name:16} fit failed"); continue
         ok = r["p"] < 0.05 and ((r["hr"] < 1) == (expect == "prot"))
         npass += ok
+        out["controls"][name] = {"hr": float(r["hr"]), "p": float(r["p"]),
+                                 "expect": expect, "passes": bool(ok)}
         print(f"    {name:16} HR={r['hr']:.2f}  p={r['p']:.3g}  expect={expect:4} "
               f"{'PASS' if ok else 'ns'}  ({len(have)}/{len(genes)} genes)")
     print(f"    -> {npass}/{len(POS_CONTROLS)} controls validate: "
@@ -201,6 +215,21 @@ def main() -> int:
             print("    This is a real scientific result, not a TARGET defect and not an agent bug.")
         else:
             print("    Transfer is asymmetric — inspect the direction that fails.")
+
+    out["n_controls_pass"] = int(npass)
+    out["n_controls"] = len(POS_CONTROLS)
+    out["self_capacity"] = {
+        "target": {"hr": float(cap_t["hr"]), "p": float(cap_t["p"])} if cap_t else None,
+        "sgh": {"hr": float(cap_s["hr"]), "p": float(cap_s["p"])} if cap_s else None}
+    out["symmetry"] = {
+        "sgh_to_target": {"hr": float(fwd["hr"]), "p": float(fwd["p"])} if fwd else None,
+        "target_to_sgh": {"hr": float(rev["hr"]), "p": float(rev["p"])} if rev else None}
+    out["params"] = {"topk": args.topk, "folds": args.folds, "pool": args.pool, "seed": args.seed}
+    if args.json:
+        import json as _json
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(_json.dumps(out, indent=2))
+        print(f"\n  wrote {args.json}")
     return 0
 
 
