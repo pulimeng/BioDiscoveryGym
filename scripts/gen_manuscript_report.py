@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""Manuscript report — every result, computed from artifacts, in one document.
+"""Manuscript report — every TCGA result, computed from artifacts, in one document.
 
 Supersedes nothing: gen_ablation_report.py stays the deep-dive on the prompt ablation. This is the
-umbrella that assembles BOTH benchmarks and the judge-robustness evidence into the shape a paper
+umbrella that assembles the TCGA benchmark and its judge-robustness evidence into the shape a paper
 needs, so no number has to be transcribed by hand into a draft (transcribed numbers go stale
 silently; these are recomputed on every run).
+
+SCOPE: TCGA only. The OS Task A diagnosis is deliberately NOT in this report — it is a separate
+result with its own narrative in docs/OS_PHASE3_DIAGNOSIS.md, and folding a "this benchmark is
+unwinnable" finding into the main ablation muddies both.
 
 Sources — all read, none hardcoded:
   outcome        results/tcga/{ladder,lean}/*/<ep>/<ep>_v3scores.json
   grounding      ..._supportscores.json
   CoT judge x3   ..._cotsummary.json | _cotsummary_j2.json | _cotsummary_j3.json
   raw traces     record_observation counts + the sample-count shape-leak probe (extract_cot)
-  OS diagnosis   analysis/internal_robustness/metrics.tsv, analysis/os_qc/target_qc.json
 
 Usage: python scripts/gen_manuscript_report.py   ->  results/MANUSCRIPT_REPORT.html
 """
@@ -28,8 +31,6 @@ PAIRS = [
 ]
 SUFFIXES = ['_cotsummary.json', '_cotsummary_j2.json', '_cotsummary_j3.json']
 OUT = 'results/MANUSCRIPT_REPORT.html'
-OS_METRICS = 'analysis/internal_robustness/metrics.tsv'
-OS_QC = 'analysis/os_qc/target_qc.json'
 
 
 def arm(l): return l.split('_')[0]
@@ -203,60 +204,6 @@ for lab in DATA:
                   f"<td class='num'>{l['leak']}/{l['leak_n']}</td>"
                   f"<td class='num mut'>{l['leak']-d['leak']:+d}</td></tr>")
 
-# ---------------- OS section ----------------
-os_html = "<p class='lead'>OS artifacts not found — run <code>scripts/internal_robustness.py</code> and <code>scripts/target_qc.py --json analysis/os_qc/target_qc.json</code>.</p>"
-if os.path.exists(OS_METRICS):
-    import csv
-    rows = list(csv.DictReader(open(OS_METRICS), delimiter='\t'))
-    def col(rs, c):
-        return [float(r[c]) for r in rs if r.get(c) not in (None, '', 'nan')]
-    agent = [r for r in rows if not r['episode'].startswith('BASELINE_')]
-    topc = [r for r in rows if r['episode'].startswith('BASELINE_topcox')]
-    rand = [r for r in rows if r['episode'].startswith('BASELINE_random')]
-    arm_rows = ""
-    for nm, rs in (('agent', agent), ('top-Cox pick', topc), ('random genes', rand)):
-        if not rs: continue
-        cells = ""
-        for c in ('boot_sign_stability', 'insample_hr', 'cv_hr', 'target_hr'):
-            v = col(rs, c)
-            cells += f"<td class='num'>{st.median(v):.3f}<span class='sub'>[{min(v):.2f},{max(v):.2f}]</span></td>" if v else "<td class='num mut'>—</td>"
-        arm_rows += f"<tr><td class='grp'>{nm}</td><td class='num'>{len(rs)}</td>{cells}</tr>"
-    qc = json.load(open(OS_QC)) if os.path.exists(OS_QC) else None
-    qc_html = ""
-    if qc:
-        sc, sy = qc.get('self_capacity', {}), qc.get('symmetry', {})
-        f = lambda d: f"HR={d['hr']:.2f}, p={d['p']:.3g}" if d else "—"
-        strong = sc.get('target') and sc['target']['p'] < 0.05
-        weak = sc.get('sgh') and sc['sgh']['p'] >= 0.05
-        qc_html = f"""
-<div class="panel"><h3>TARGET-OS is sound; SGH-OS is the limiting cohort</h3>
-<table><tbody>
-<tr><td>Positive controls validating in TARGET-OS</td><td class="num">{qc.get('n_controls_pass')}/{qc.get('n_controls')}</td></tr>
-<tr><td><b>Self-capacity — TARGET-OS predicts its OWN survival (CV, selection inside folds)</b></td>
-    <td class="num {'good' if strong else 'mut'}">{f(sc.get('target'))}</td></tr>
-<tr><td><b>Self-capacity — SGH-OS predicts its OWN survival</b></td>
-    <td class="num {'bad' if weak else 'mut'}">{f(sc.get('sgh'))}</td></tr>
-<tr><td>Transfer SGH &rarr; TARGET</td><td class="num">{f(sy.get('sgh_to_target'))}</td></tr>
-<tr><td>Transfer TARGET &rarr; SGH</td><td class="num">{f(sy.get('target_to_sgh'))}</td></tr>
-</tbody></table>
-<p class="lead">The discovery cohort contains no cross-validatable prognostic signal while the
-validation cohort does, and transfer fails in <b>both</b> directions. Phase&nbsp;3 is therefore
-unwinnable as specified — the in-sample HRs of 0.28&ndash;0.50 are selection artifact, not
-discovery. This is not an agent failure and not a TARGET defect.</p></div>"""
-    os_html = f"""
-<div class="panel"><h3>Internal robustness is a selection artifact</h3>
-<div class="tblwrap"><table><thead><tr><th>arm</th><th class="num">n</th>
-<th class="num">bootstrap sign stability</th><th class="num">in-sample HR</th>
-<th class="num">CV HR</th><th class="num">TARGET HR</th></tr></thead><tbody>{arm_rows}</tbody></table></div>
-<p class="lead">A naive top-N-by-univariate-Cox pick <b>matches the agent on bootstrap stability and
-beats it in-sample</b>, while all arms are equally null externally. Random genes mark the
-no-selection floor. &ldquo;Internally robust&rdquo; is what survival-selection on n=91 produces for
-<i>any</i> gene set &mdash; so an internal-robustness loop would reward the agent for behaving more
-like the naive picker. <b>Caveat:</b> CV&nbsp;HR is not honest for the agent/top-Cox arms (gene
-selection used all 91 patients and sits outside the folds); the random arm&rsquo;s collapse
-confirms the machinery is sound, and the self-capacity test below does selection inside folds.</p></div>
-{qc_html}"""
-
 CSS = """
 :root{--bg:#0d1117;--panel:#161b22;--line:#283041;--ink:#e6edf3;--mut:#9aa7b4;--acc:#58a6ff;--good:#3fb950;--bad:#f85149}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:30px}
@@ -280,7 +227,7 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>BioDiscoveryGym — Manuscript Report</title><style>{CSS}</style></head><body><div class="wrap">
 <h1>BioDiscoveryGym — Manuscript Report</h1>
 <div class="meta">All figures recomputed from artifacts on generation &middot; TCGA instruction ablation
-(3 models &times; 2 prompts &times; 75 episodes) + OS Task&nbsp;A diagnosis &middot; CoT judged by
+(3 models &times; 2 prompts &times; 75 episodes) &middot; CoT judged by
 neutral DeepSeek-v4-pro, <b>3 independent passes</b> over all 450 episodes</div>
 
 <h2>Headline findings</h2>
@@ -293,9 +240,6 @@ by the injected false frame &mdash; fooled-more-under-detailed in <b>{fool_up}/{
 <i>score</i> through documentation, not reasoning</b> &mdash; more <code>record_observation</code>s in
 <b>{ro_up}/{len(DATA)}</b> models and higher support in <b>{sup_up}/{len(DATA)}</b>, while identity is
 <i>derived</i> more often under lean.</div></div>
-<div class="kfind"><div class="ix">&#129514;</div><div><b>The OS benchmark&rsquo;s Phase&nbsp;3 is
-unwinnable as specified</b> &mdash; the discovery cohort contains no cross-validatable prognostic
-signal, so no agent can pass it.</div></div>
 </div>
 
 <h2>1 &middot; Prompt ablation &mdash; outcome, grounding, documentation, fooling</h2>
@@ -329,9 +273,6 @@ label as fact.</b></p></div>
 (a memorised TCGA cohort size) before doing any biology. Dataset shape is the one property
 blinding cannot hide, so this is a benchmark leak that exists independently of the prompt.</p></div>
 
-<h2>5 &middot; OS Task A &mdash; why Phase 3 never scores</h2>
-{os_html}
-
 <h2>Limitations</h2>
 <div class="warn">
 (1) <b>n = 21 per honest arm</b> (12 for G3), single seed-triple. Deltas of a few points are noise.<br>
@@ -340,19 +281,15 @@ cross-family bias. A different-family judge has not been run.<br>
 (3) <b>identity_derivation is one categorical call</b>; the lean prompt&rsquo;s own wording may nudge
 it. Mitigated by 3-pass consensus and the separation test, not eliminated.<br>
 (4) <b>Gemini is Flash tier</b> &mdash; its deltas are confounded with model tier; the clean ablation
-is the two flagships.<br>
-(5) <b>OS conclusions rest on n=91 / n=85</b> with 37 / 29 events; TARGET&rsquo;s self-capacity may
-partly reflect metastasis-at-diagnosis readable from expression.
+is the two flagships.
 </div>
 
-<div class="foot">Generated by <code>scripts/gen_manuscript_report.py</code>. Deep-dive on the prompt
-ablation: <code>scripts/gen_ablation_report.py</code> &rarr; <code>results/tcga/ABLATION_REPORT.html</code>.
-OS narrative: <code>docs/OS_PHASE3_DIAGNOSIS.md</code>.</div>
+<div class="foot">Generated by <code>scripts/gen_manuscript_report.py</code> &mdash; TCGA benchmark only.
+Deep-dive on the prompt ablation: <code>scripts/gen_ablation_report.py</code> &rarr;
+<code>results/tcga/ABLATION_REPORT.html</code>.</div>
 </div></body></html>"""
 
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 open(OUT, 'w').write(html)
 print(f"wrote {OUT}  ({len(html)} bytes)")
-print(f"  models={len(DATA)}  judge passes={len(SUFFIXES)}  "
-      f"OS metrics={'yes' if os.path.exists(OS_METRICS) else 'MISSING'}  "
-      f"OS qc={'yes' if os.path.exists(OS_QC) else 'PENDING'}")
+print(f"  TCGA only: {len(DATA)} models x 2 prompts, {len(SUFFIXES)} judge passes")
