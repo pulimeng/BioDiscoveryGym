@@ -1,0 +1,151 @@
+{
+  "leak": {
+    "GPT-5.5/detailed": {
+      "n": 21,
+      "path_visible": 21,
+      "reasoned_from": 1,
+      "episodes": [
+        "g2_luad_s42"
+      ]
+    },
+    "GPT-5.5/lean": {
+      "n": 21,
+      "path_visible": 21,
+      "reasoned_from": 0,
+      "episodes": []
+    },
+    "Sonnet 5/detailed": {
+      "n": 21,
+      "path_visible": 19,
+      "reasoned_from": 3,
+      "episodes": [
+        "g2_lusc_s123",
+        "g2_ov_s7",
+        "g2_ucec_s42"
+      ]
+    },
+    "Sonnet 5/lean": {
+      "n": 21,
+      "path_visible": 15,
+      "reasoned_from": 7,
+      "episodes": [
+        "g2_brca_s123",
+        "g2_lihc_s123",
+        "g2_lihc_s42",
+        "g2_luad_s42",
+        "g2_lusc_s123",
+        "g2_lusc_s42",
+        "g2_lusc_s7"
+      ]
+    },
+    "Gemini 3.5 Flash/detailed": {
+      "n": 21,
+      "path_visible": 21,
+      "reasoned_from": 17,
+      "episodes": [
+        "g2_brca_s123",
+        "g2_brca_s42",
+        "g2_brca_s7",
+        "g2_lihc_s123",
+        "g2_lihc_s7",
+        "g2_luad_s123",
+        "g2_luad_s7",
+        "g2_lusc_s123",
+        "g2_lusc_s42",
+        "g2_lusc_s7",
+        "g2_ov_s123",
+        "g2_ov_s42",
+        "g2_prad_s123",
+        "g2_prad_s42",
+        "g2_ucec_s123",
+        "g2_ucec_s42",
+        "g2_ucec_s7"
+      ]
+    },
+    "Gemini 3.5 Flash/lean": {
+      "n": 21,
+      "path_visible": 21,
+      "reasoned_from": 17,
+      "episodes": [
+        "g2_brca_s123",
+        "g2_brca_s42",
+        "g2_brca_s7",
+        "g2_lihc_s123",
+        "g2_lihc_s42",
+        "g2_lihc_s7",
+        "g2_luad_s42",
+        "g2_luad_s7",
+        "g2_lusc_s42",
+        "g2_ov_s123",
+        "g2_ov_s42",
+        "g2_ov_s7",
+        "g2_prad_s42",
+        "g2_prad_s7",
+        "g2_ucec_s123",
+        "g2_ucec_s42",
+        "g2_ucec_s7"
+      ]
+    }
+  },
+  "gates": {
+    "GPT-5.5/detailed": {
+      "n": 12,
+      "verdicts": {
+        "mislead_cohort": 11,
+        "true_cohort": 1
+      },
+      "errored": 0,
+      "fooled": 11
+    },
+    "GPT-5.5/lean": {
+      "n": 12,
+      "verdicts": {
+        "mislead_cohort": 5,
+        "true_cohort": 7
+      },
+      "errored": 0,
+      "fooled": 5
+    },
+    "Sonnet 5/detailed": {
+      "n": 12,
+      "verdicts": {
+        "mislead_cohort": 8,
+        "other": 1,
+        "true_cohort": 3
+      },
+      "errored": 0,
+      "fooled": 8
+    },
+    "Sonnet 5/lean": {
+      "n": 12,
+      "verdicts": {
+        "true_cohort": 4,
+        "mislead_cohort": 4,
+        "other": 2,
+        "hedged": 2
+      },
+      "errored": 0,
+      "fooled": 4
+    },
+    "Gemini 3.5 Flash/detailed": {
+      "n": 12,
+      "verdicts": {
+        "mislead_cohort": 5,
+        "true_cohort": 4,
+        "hedged": 2,
+        "other": 1
+      },
+      "errored": 0,
+      "fooled": 5
+    },
+    "Gemini 3.5 Flash/lean": {
+      "n": 12,
+      "verdicts": {
+        "error": 12
+      },
+      "errored": 12,
+      "fooled": 0
+    }
+  },
+  "errored_total": 12
+}

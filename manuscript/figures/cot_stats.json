@@ -66,18 +66,20 @@
   },
   "h2_derivation_vs_fooled": {
     "derived": {
-      "not_fooled": 23,
+      "not_fooled": 18,
       "fooled": 6,
-      "rate": 0.20689655172413793
+      "rate": 0.25
     },
     "not_derived": {
-      "not_fooled": 16,
+      "not_fooled": 9,
       "fooled": 27,
-      "rate": 0.627906976744186
+      "rate": 0.75
     },
-    "fisher_p": 0.0006414385886295176,
-    "odds_ratio": 0.15458937198067632,
-    "n": 72
+    "fisher_p": 0.00019039480549711934,
+    "odds_ratio": 0.1111111111111111,
+    "n": 60,
+    "excluded_failed_gates": 12,
+    "note": "episodes whose identity gate errored are EXCLUDED, not counted as not-fooled"
   },
   "cohort_derivation": {
     "LIHC": {
@@ -117,13 +119,13 @@
     }
   },
   "judge": {
-    "n": 198,
-    "unanimous": 75,
-    "unanimous_rate": 0.3787878787878788,
+    "n": 186,
+    "unanimous": 71,
+    "unanimous_rate": 0.3817204301075269,
     "unresolved": 10
   },
   "n": {
     "g2": 126,
-    "g3": 72
+    "g3": 60
   }
 }

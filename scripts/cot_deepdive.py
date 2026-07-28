@@ -61,6 +61,7 @@ def collect(arm_prefix):
                 cohort=lab.split('_')[1].upper(),
                 deriv=consensus(votes), votes=votes,
                 outcome=v3.get('normalized'),
+                verdict=v3.get('cohort_identity_verdict'),
                 fooled=v3.get('cohort_identity_verdict') == 'mislead_cohort'))
     return rows
 
@@ -114,6 +115,16 @@ def main():
     print("\n" + "=" * 78)
     print("  H2 — does DERIVING identity protect against the mislead?   (G3)")
     print("=" * 78)
+    # An identity gate that ERRORED has no verdict. Counting it as "not fooled" — which every
+    # naive `verdict == "mislead_cohort"` test does — fabricates robustness out of a failed API
+    # call. A whole run arm failed this way and produced an apparent "0/12 fooled" that was read
+    # as a finding. Drop them, and say loudly how many were dropped.
+    errored = [x for x in g3 if x['verdict'] == 'error']
+    if errored:
+        by = Counter(f"{x['model']}/{x['prompt']}" for x in errored)
+        print(f"  !! EXCLUDING {len(errored)} episodes whose identity gate FAILED "
+              f"(no verdict — NOT a zero): {dict(by)}\n")
+    g3 = [x for x in g3 if x['verdict'] != 'error']
     tab = defaultdict(lambda: [0, 0])         # [not fooled, fooled]
     for x in g3:
         k = 'derived' if x['deriv'] == 'data-derived' else 'not-derived'
@@ -128,7 +139,9 @@ def main():
     stats['h2_derivation_vs_fooled'] = dict(
         derived=dict(not_fooled=a[0], fooled=a[1], rate=a[1] / max(sum(a), 1)),
         not_derived=dict(not_fooled=b[0], fooled=b[1], rate=b[1] / max(sum(b), 1)),
-        fisher_p=float(fpv), odds_ratio=float(odds), n=len(g3))
+        fisher_p=float(fpv), odds_ratio=float(odds), n=len(g3),
+        excluded_failed_gates=len(errored),
+        note='episodes whose identity gate errored are EXCLUDED, not counted as not-fooled')
 
     # ---------------- supporting: cohort, judge stability ----------------
     coh = defaultdict(lambda: [0, 0])

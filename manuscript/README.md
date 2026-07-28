@@ -29,7 +29,7 @@ python scripts/gen_cost_report.py       # -> results/tcga/COST_REPORT.html
 | | |
 |---|---|
 | **Outcome cannot see grounding** | derived 0.470 vs recalled 0.462, Mann-Whitney **p=0.73**; ordinal ρ=+0.057, p=0.53 |
-| **Grounding predicts robustness** | fooled by the injected false cohort: **21% (derived) vs 63% (not derived)**, Fisher **p=0.0006**, OR=0.15 |
+| **Grounding predicts robustness** | fooled by the injected false cohort: **25% (derived) vs 75% (not derived)**, Fisher **p=0.0002**, OR=0.11 (12 failed gates excluded) |
 
 A correctness score gives the same number whether the agent worked the answer out or remembered it.
 But whether it worked it out is exactly what determines if it survives misleading data. **The
@@ -44,9 +44,17 @@ That pairing is the paper. Everything else is instrument-building and robustness
 - 3-pass judge consensus over all 450 (1350 outputs, 0 corrupt), with a per-pass separation test
 - H1 and H2 above, both holding within-arm
 - Prompt ablation: outcome prompt-invariant for flagships; Flash collapses under lean
-- Staged prompt → MORE fooled in 3/3 models
+- Staged prompt → MORE fooled in 2/3 models verified (3rd unscored — see defect B)
 - Sample-count shape leak: 8 episodes recognise the benchmark by cohort size
 - Cost: $1,273 measured; grading an episode costs 0.3% of generating one
+
+**DATA-INTEGRITY DEFECTS — read `docs/DATA_INTEGRITY_AUDIT.md` before touching any number:**
+- **A. Blinding leak.** `output_dir` contains the cohort name and is exposed to the agent; 45/126
+  blinded episodes reason from the path. Deltas survive, absolute rates do not. **Fix upstream
+  before any new run**, or the defect is inherited.
+- **B. Failed identity gates.** 12 Gemini-lean mislead episodes never scored; a naive
+  `verdict == "mislead_cohort"` counts them as *not fooled*. H2 corrected (and strengthened).
+  Kills the "3/3 more fooled" claim -> 2/3 verified. Re-score is ~$1.
 
 **Blocking or weak:**
 1. **Cross-family judge bias untested.** All three judge passes are DeepSeek, so they bound

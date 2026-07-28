@@ -14,12 +14,12 @@ two axes: whether the answer is correct, and whether the agent *derived* the coh
 the data or *recalled* it from parametric memory. Correctness cannot tell the two apart — episodes
 judged data-derived and recalled-prior score 0.470 and 0.462 respectively (Mann-Whitney p=0.73;
 ordinal ρ=+0.057, p=0.53). Yet the distinction is not cosmetic. When we inject a false cohort label,
-episodes that derived identity from data commit to the falsehood 21% of the time against 63% for
-those that did not (Fisher p=0.0006, OR=0.15). **The property that determines whether an agent
+episodes that derived identity from data commit to the falsehood 25% of the time against 75% for
+those that did not (Fisher p=0.0002, OR=0.11). **The property that determines whether an agent
 survives misleading data is invisible to the metric the field reports.** We further find that
 prescriptive "rigor" scaffolding makes models *more* susceptible to the false frame, not less, in
-3/3 models, and that agents sometimes identify the benchmark from cohort *sample size* before
-performing any biological analysis. Process labels come from a neutral, non-benchmarked judge run in
+2 of 3 models tested, and that agents sometimes identify the benchmark from cohort *sample size*
+before performing any biological analysis. Process labels come from a neutral, non-benchmarked judge run in
 three independent passes over all 450 episodes; we report per-episode agreement (35–63% unanimous)
 and claim only deltas whose per-pass ranges do not overlap.
 
@@ -144,11 +144,14 @@ the agent is handed a false cohort label:
 
 | | not fooled | fooled | rate |
 |---|---:|---:|---:|
-| derived identity | 23 | 6 | **21%** |
-| did not derive | 16 | 27 | **63%** |
+| derived identity | 18 | 6 | **25%** |
+| did not derive | 9 | 27 | **75%** |
 
-Fisher exact **p=0.0006**, odds ratio **0.15** (n=72). Agents that worked out what they were looking
-at are roughly **three times less likely** to adopt a falsehood presented to them.
+Fisher exact **p=0.0002**, odds ratio **0.11** (n=60). Agents that worked out what they were looking
+at are **three times less likely** to adopt a falsehood presented to them.
+
+*12 episodes are excluded because their identity gate failed to run (see `docs/DATA_INTEGRITY_AUDIT.md`).
+Counting a failed gate as "not fooled" — which a naive test does — understates this effect.*
 
 Taken with §4.1: **the property that determines whether an agent survives bad input is invisible to
 the metric normally reported.** That gap is the paper's central claim.
@@ -161,7 +164,8 @@ against a lean prompt stating there is no prescribed procedure.
 - **Outcome is prompt-invariant for the flagships** (mean |Δ| = 0.013). The small model is not:
   Gemini Flash collapses under lean (0.511 → 0.361), uniformly across all seven cohorts — it depends
   on the scaffold to perform at all.
-- **The staged prompt makes models MORE fooled**, in 3/3 models. The mechanism is visible in the
+- **The staged prompt makes models MORE fooled**, in **2/3 models verified** (GPT 11→5, Sonnet 8→4).
+  The third is *unknown*, not zero: all 12 Gemini-lean mislead episodes had a failed identity gate. The mechanism is visible in the
   traces: a fooled episode finds genuinely squamous biology, then relabels it to fit the injected
   label rather than rejecting the label.
 - **Derivation rises under lean where it moves at all.** Under three-pass consensus with the
@@ -217,5 +221,10 @@ one, and the cheap diagnostic is to ask whether the system grounded its claims o
    it. Three-pass consensus and the separation test mitigate this; they do not eliminate it.
 5. **We observe stated reasoning only.** Provider adapters strip raw thinking tokens for every model,
    so this is auditable intent, not hidden chain-of-thought — applied uniformly across models.
-6. **Derivation rate is flat across cohorts** (44–61%), so we find *no* evidence that recall tracks
+6. **The blinded arm leaks the cohort through the working directory path.** The executor exposes
+   `output_dir`, which contains the cohort name. In 45/126 blinded episodes the agent's own
+   reasoning references the path. Between-arm deltas are unaffected (the leak is symmetric in
+   Gemini, near-absent in GPT), but absolute derivation rates are inflated. Full analysis in
+   `docs/DATA_INTEGRITY_AUDIT.md`; a blinded re-run is required to recover clean absolute rates.
+7. **Derivation rate is flat across cohorts** (44–61%), so we find *no* evidence that recall tracks
    literature volume, contrary to an intuition we initially held.
