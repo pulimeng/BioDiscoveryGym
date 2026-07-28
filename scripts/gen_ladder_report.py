@@ -21,7 +21,7 @@ MODELS = [
     ('GPT-5.5', 'results/tcga/ladder/gpt55_20260707', '#1D9E75', 'flagship'),
     ('Gemini 3.5 Flash', 'results/tcga/ladder/gemini35flash_20260716', '#EF9F27', 'flash'),
 ]
-OUT_PATH = 'results/tcga/ladder/LADDER_3MODEL.html'
+OUT_PATH = 'results/tcga/LADDER_3MODEL.html'
 
 _ap = argparse.ArgumentParser(description=__doc__)
 _ap.add_argument('--model', action='append', metavar='LABEL:DIR:#COLOR:TIER',
