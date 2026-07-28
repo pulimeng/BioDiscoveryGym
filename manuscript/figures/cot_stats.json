@@ -1,0 +1,129 @@
+{
+  "h1_outcome_vs_derivation": {
+    "groups": {
+      "data-derived": {
+        "n": 65,
+        "mean": 0.4701984649431971,
+        "median": 0.4964342436793969,
+        "sd": 0.09724938027510477
+      },
+      "mixed": {
+        "n": 43,
+        "mean": 0.4556396579222726,
+        "median": 0.4581609127918518,
+        "sd": 0.10793017881294166
+      },
+      "recalled-prior": {
+        "n": 14,
+        "mean": 0.4623015604683001,
+        "median": 0.46620661955951376,
+        "sd": 0.10399961175071615
+      }
+    },
+    "mann_whitney_p": 0.7336843881949444,
+    "delta": 0.007896904474896993,
+    "spearman_rho": 0.0574968017411818,
+    "spearman_p": 0.5293124805118389,
+    "n": 122,
+    "within_arm": {
+      "GPT-5.5/detailed": {
+        "derived": 0.4921939329112151,
+        "n_derived": 11,
+        "not_derived": 0.4844596147697227,
+        "n_not": 10,
+        "delta": 0.007734318141492391
+      },
+      "Sonnet 5/detailed": {
+        "derived": 0.48157766649400574,
+        "n_derived": 15,
+        "not_derived": 0.4529554269900628,
+        "n_not": 5,
+        "delta": 0.028622239503942937
+      },
+      "Sonnet 5/lean": {
+        "derived": 0.4852444221004115,
+        "n_derived": 11,
+        "not_derived": 0.46798782498424424,
+        "n_not": 10,
+        "delta": 0.017256597116167283
+      },
+      "Gemini 3.5 Flash/detailed": {
+        "derived": 0.46317782732910556,
+        "n_derived": 3,
+        "not_derived": 0.506874891696444,
+        "n_not": 17,
+        "delta": -0.04369706436733839
+      },
+      "Gemini 3.5 Flash/lean": {
+        "derived": 0.3120350668919872,
+        "n_derived": 6,
+        "not_derived": 0.3801258559868549,
+        "n_not": 13,
+        "delta": -0.06809078909486771
+      }
+    },
+    "verdict": "outcome does NOT separate derived from recalled"
+  },
+  "h2_derivation_vs_fooled": {
+    "derived": {
+      "not_fooled": 23,
+      "fooled": 6,
+      "rate": 0.20689655172413793
+    },
+    "not_derived": {
+      "not_fooled": 16,
+      "fooled": 27,
+      "rate": 0.627906976744186
+    },
+    "fisher_p": 0.0006414385886295176,
+    "odds_ratio": 0.15458937198067632,
+    "n": 72
+  },
+  "cohort_derivation": {
+    "LIHC": {
+      "derived": 10,
+      "n": 18,
+      "rate": 0.5555555555555556
+    },
+    "BRCA": {
+      "derived": 9,
+      "n": 18,
+      "rate": 0.5
+    },
+    "UCEC": {
+      "derived": 9,
+      "n": 18,
+      "rate": 0.5
+    },
+    "OV": {
+      "derived": 8,
+      "n": 18,
+      "rate": 0.4444444444444444
+    },
+    "LUSC": {
+      "derived": 11,
+      "n": 18,
+      "rate": 0.6111111111111112
+    },
+    "PRAD": {
+      "derived": 10,
+      "n": 18,
+      "rate": 0.5555555555555556
+    },
+    "LUAD": {
+      "derived": 8,
+      "n": 18,
+      "rate": 0.4444444444444444
+    }
+  },
+  "judge": {
+    "n": 198,
+    "unanimous": 75,
+    "unanimous_rate": 0.3787878787878788,
+    "unresolved": 10
+  },
+  "n": {
+    "g2": 126,
+    "g3": 72
+  }
+}
