@@ -1,0 +1,6 @@
+{
+  "Sonnet 5":        {"in": 2.00,  "out": 10.00},
+  "Gemini Flash":    {"in": 1.50,  "out": 9.00},
+  "GPT-5.5":         {"in": 5.00,  "out": 30.00},
+  "deepseek-v4-pro": {"in": 0.435, "out": 0.87}
+}

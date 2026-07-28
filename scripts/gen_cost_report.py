@@ -2,9 +2,12 @@
 """Cost report — what the benchmark actually consumed, and the unit economics.
 
 TOKEN COUNTS ARE MEASURED, NOT ESTIMATED: every episode records per-turn input/output in
-run_log.usage_log, with 75/75 coverage on all six runs. Judge-side input is recomputed exactly by
-re-running summarize_cot's build_input over the same traces; only judge OUTPUT is approximated
-(from the stored summary size), and it is a rounding error against a 44:1 input-heavy workload.
+run_log.usage_log, with 75/75 coverage on all six runs.
+
+THE JUDGE LINE IS DIFFERENT. summarize_cot did not record usage for the runs already on disk, so
+those judge tokens are ESTIMATED from text length (chars//4 plus the per-call system+tool
+overhead), which is a lower bound because dense content tokenizes below 4 chars/token. Judge runs
+made from now on record provider-reported usage and are used automatically when present.
 
 PRICES ARE NOT MEASURED. They live in the editable table below with the date they were entered.
 Provider pricing changes and this file will not notice, so VERIFY before quoting any dollar figure
@@ -24,25 +27,24 @@ from collections import defaultdict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # ---------------------------------------------------------------------------------------------
-# PLACEHOLDER PRICE TABLE — USD per 1M tokens. THESE ARE NOT SOURCED.
+# PRICE TABLE — USD per 1M tokens. Supplied by the project owner 2026-07-28.
 #
-# They were entered from recollection of typical provider pricing and have NOT been checked against
-# any pricing page or invoice. At least one is likely wrong: docs/BENCHMARK_PLAN.md records
-# GPT-5.4 at $2.50/M in and $15/M out, i.e. double the input price assumed here.
+# These REPLACED an earlier set entered from recollection, which was wrong by 3-5x on GPT-5.5 and
+# Gemini Flash and inverted the model cost ranking entirely. Keep the provenance note: a price
+# table that looks plausible is not a sourced one.
 #
-# Supply real numbers with --prices <json> ({"model": {"in": x, "out": y}}) — ideally from the
-# provider invoices, which are ground truth and also capture discounts and cached-input rates that
-# no list price reflects. Until then every dollar figure in this report is a placeholder; the token
-# counts beside them are measured and unaffected.
+# Override per-run with --prices <json> ({"model": {"in": x, "out": y}}). Invoice-derived rates are
+# still preferable where available, since they capture discounts and cached-input pricing that no
+# list price reflects.
 # ---------------------------------------------------------------------------------------------
 PRICES = {
-    'GPT-5.5':        {'in': 1.25, 'out': 10.00},
-    'Sonnet 5':       {'in': 3.00, 'out': 15.00},
-    'Gemini Flash':   {'in': 0.30, 'out': 2.50},
-    'deepseek-v4-pro': {'in': 0.28, 'out': 0.42},
+    'GPT-5.5':        {'in': 5.00,  'out': 30.00},
+    'Sonnet 5':       {'in': 2.00,  'out': 10.00},
+    'Gemini Flash':   {'in': 1.50,  'out': 9.00},
+    'deepseek-v4-pro': {'in': 0.435, 'out': 0.87},
 }
-PRICES_VERIFIED = False          # flip to True only when --prices came from invoices/pricing pages
-PRICES_DATE = '2026-07-28'
+PRICES_VERIFIED = True           # supplied by the project owner 2026-07-28
+PRICES_DATE = '2026-07-28 (supplied by project owner)'
 
 RUNS = [
     ('GPT-5.5', 'detailed', 'results/tcga/ladder/gpt55_20260707', '#1D9E75'),
@@ -90,7 +92,17 @@ def agent_usage():
 
 
 def judge_usage():
-    """Judge input recomputed exactly; output approximated from stored summary size."""
+    """Judge tokens. Uses provider-reported `judge_usage` when the summary has it (runs made after
+    summarize_cot started recording usage); otherwise falls back to a text-length ESTIMATE.
+
+    The estimate is not equivalent to a measurement and was wrong in two ways before this fix:
+      * it omitted COT_SYSTEM + the tool schema (~688 tok) which are re-sent on EVERY call, so it
+        undercounted input by ~16% across 1350 calls;
+      * it took output from the stored file size, which is indented JSON and ~3% larger than the
+        compact payload the model actually emitted.
+    Both are corrected below, but chars//4 still under-counts dense content (code, GENE_ ids,
+    numerals tokenize at well under 4 chars/token), so the estimate remains a LOWER BOUND on input.
+    """
     try:
         from extract_cot import extract_episode
         import importlib.util
@@ -104,11 +116,13 @@ def judge_usage():
     except Exception as e:
         print(f"  (!) judge input not computable ({e})", file=sys.stderr)
         return None
-    tin = tout = calls = 0
+    # fixed per-call overhead the old estimate missed: system prompt + tool schema, billed every call
+    overhead = (len(sc.COT_SYSTEM) + len(json.dumps(sc._COT_TOOL))) // 4
+    tin = tout = calls = measured = 0
     for _, _, run, _ in RUNS:
         for p in episode_paths(run):
             try:
-                per_call_in = len(sc.build_input(extract_episode(p))) // 4
+                per_call_in = len(sc.build_input(extract_episode(p))) // 4 + overhead
             except Exception:
                 continue
             for sfx in JUDGE_SUFFIXES:
@@ -116,9 +130,19 @@ def judge_usage():
                 if not os.path.exists(jp):
                     continue
                 calls += 1
-                tin += per_call_in
-                tout += os.path.getsize(jp) // 4          # stored summary as an output proxy
-    return dict(input=tin, output=tout, calls=calls)
+                try:
+                    rec = json.load(open(jp))
+                except Exception:
+                    rec = {}
+                u = rec.get("judge_usage") or {}
+                if u.get("input_tokens") and u.get("output_tokens"):
+                    tin += u["input_tokens"]; tout += u["output_tokens"]; measured += 1
+                else:
+                    tin += per_call_in
+                    # compact payload, not the indented file on disk
+                    tout += len(json.dumps(rec, separators=(",", ":"))) // 4
+    return dict(input=tin, output=tout, calls=calls, measured=measured,
+                overhead_per_call=overhead)
 
 
 def cost(model, tin, tout, prices):
@@ -182,8 +206,14 @@ def main():
         print("\n" + "=" * 90)
         print("  JUDGE (3 passes x 450 episodes, neutral DeepSeek-v4-pro)")
         print("=" * 90)
-        print(f"  calls {J['calls']:,}   input {J['input']:,}   output ~{J['output']:,}   "
+        src = ("provider-reported" if J.get('measured') == J['calls']
+               else f"ESTIMATED ({J['calls']-J.get('measured',0)}/{J['calls']} calls)")
+        print(f"  calls {J['calls']:,}   input {J['input']:,}   output {J['output']:,}   "
               f"total {jt/1e6:.1f}M   ${jc:.2f}   (${jc/jt*1e7:.2f} per 10M)")
+        print(f"  token source: {src}"
+              + ("" if J.get('measured') == J['calls'] else
+                 f"  — chars//4 + {J['overhead_per_call']} tok/call system+tool overhead;"
+                 f" a LOWER BOUND on input"))
         print(f"  judge is {jc/max(tot_cost,1e-9)*100:.1f}% of agent spend — the evaluation layer is")
         print(f"  far cheaper than generating the episodes it grades.")
 

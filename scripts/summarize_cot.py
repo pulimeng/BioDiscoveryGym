@@ -133,7 +133,17 @@ def build_input(rec: dict) -> str:
 # ---------------------------------------------------------------------------
 # Neutral-judge call (mirrors support_judge._judge_openai_compatible)
 # ---------------------------------------------------------------------------
+# Provider-reported usage from the most recent call_judge(). Captured module-level rather than
+# returned, so the single caller can record it without changing call_judge's contract for anyone
+# who imports it later. Without this the judge's token cost can only be ESTIMATED from text
+# length, which systematically undercounts (it misses the system prompt and tool schema that are
+# re-sent on every call).
+LAST_USAGE: dict | None = None
+
+
 def call_judge(user_msg: str, model: str = "deepseek-v4-pro") -> dict:
+    global LAST_USAGE          # declared once: Python rejects a second `global` after assignment
+    LAST_USAGE = None
     ml = model.lower()
     if ml.startswith("claude") or "claude" in ml:
         import anthropic
@@ -141,6 +151,9 @@ def call_judge(user_msg: str, model: str = "deepseek-v4-pro") -> dict:
             model=model, max_tokens=2500, system=COT_SYSTEM,
             tools=[_COT_TOOL], tool_choice={"type": "tool", "name": "record_cot_summary"},
             messages=[{"role": "user", "content": user_msg}])
+        _u = getattr(r, "usage", None)
+        LAST_USAGE = ({"input_tokens": getattr(_u, "input_tokens", None),
+                       "output_tokens": getattr(_u, "output_tokens", None)} if _u else None)
         for b in r.content:
             if getattr(b, "type", None) == "tool_use" and b.name == "record_cot_summary":
                 return b.input
@@ -181,6 +194,9 @@ def call_judge(user_msg: str, model: str = "deepseek-v4-pro") -> dict:
         except Exception:
             v = None
         if isinstance(v, dict) and all(k in v for k in _REQUIRED):
+            _u = getattr(r, "usage", None)
+            LAST_USAGE = ({"input_tokens": getattr(_u, "prompt_tokens", None),
+                           "output_tokens": getattr(_u, "completion_tokens", None)} if _u else None)
             return v
         last = v
     raise ValueError(f"{model} returned an incomplete summary after 3 attempts; "
@@ -251,7 +267,7 @@ def main():
         # without judge_model a multi-judge robustness check is unauditable after the fact —
         # the _j2 suffix records that a second pass happened, not which judge ran it.
         v = {"cohort": rec["cohort"], "arm": rec["mode"], "model": rec["model"],
-             "judge_model": args.model, **v}
+             "judge_model": args.model, "judge_usage": LAST_USAGE, **v}
         print(f"{label:34} {rec['cohort']:5} {v['reasoning_strategy']:22} "
               f"id:{v['identity_derivation']:13} rigor:{v['validation_rigor']:6} "
               f"pivots:{v['num_pivots']}  {_trunc(v['overall_verdict'], 60)}")
