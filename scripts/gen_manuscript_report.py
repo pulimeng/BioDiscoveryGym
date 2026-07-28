@@ -16,7 +16,7 @@ Sources — all read, none hardcoded:
   CoT judge x3   ..._cotsummary.json | _cotsummary_j2.json | _cotsummary_j3.json
   raw traces     record_observation counts + the sample-count shape-leak probe (extract_cot)
 
-Usage: python scripts/gen_manuscript_report.py   ->  results/MANUSCRIPT_REPORT.html
+Usage: python scripts/gen_manuscript_report.py   ->  results/tcga/MANUSCRIPT_REPORT.html
 """
 import glob, html as H, json, os, statistics as st, sys
 from collections import Counter
@@ -30,7 +30,7 @@ PAIRS = [
     ('Gemini 3.5 Flash', 'results/tcga/ladder/gemini35flash_20260716', 'results/tcga/lean/gemini35flash_20260722', '#EF9F27', 'flash'),
 ]
 SUFFIXES = ['_cotsummary.json', '_cotsummary_j2.json', '_cotsummary_j3.json']
-OUT = 'results/MANUSCRIPT_REPORT.html'
+OUT = 'results/tcga/MANUSCRIPT_REPORT.html'
 
 
 def arm(l): return l.split('_')[0]

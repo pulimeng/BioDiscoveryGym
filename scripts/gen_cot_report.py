@@ -20,7 +20,7 @@ SECTIONS
 All labels are the 3-pass CONSENSUS unless a section says otherwise; ties are shown as unresolved
 rather than silently broken.
 
-Usage: python scripts/gen_cot_report.py   ->  results/COT_REPORT.html
+Usage: python scripts/gen_cot_report.py   ->  results/tcga/COT_REPORT.html
 """
 import glob, html as H, json, os, re, sys
 from collections import Counter
@@ -37,7 +37,7 @@ RUNS = [
     ('Gemini 3.5 Flash', 'lean', 'results/tcga/lean/gemini35flash_20260722', '#EF9F27'),
 ]
 SUFFIXES = ['_cotsummary.json', '_cotsummary_j2.json', '_cotsummary_j3.json']
-OUT = 'results/COT_REPORT.html'
+OUT = 'results/tcga/COT_REPORT.html'
 
 ID_ORDER = ['data-derived', 'mixed', 'recalled-prior', 'not-established']
 RIG_ORDER = ['high', 'medium', 'low']
