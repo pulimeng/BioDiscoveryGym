@@ -10,6 +10,9 @@ output_dir/
 # Analysis outputs — figures, scratch scripts, intermediate files
 analysis/
 
+# Talk/slide drafts — working documents, not repo content
+talk/
+
 # PDFs — copyright
 *.pdf
 
