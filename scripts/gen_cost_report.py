@@ -69,7 +69,7 @@ def agent_usage():
     out = {}
     for model, prompt, run, col in RUNS:
         I = O = turns = n = 0
-        per_ep, first_in = [], []
+        per_ep, first_in, eps = [], [], []
         for p in episode_paths(run):
             try:
                 u = json.load(open(p))['run_log']['usage_log']
@@ -84,9 +84,13 @@ def agent_usage():
             I += ei; O += eo
             per_ep.append(ei + eo)
             first_in.append(u[0].get('input_tokens', 0))
+            lab = os.path.basename(p)[:-5]
+            a = lab.split('_')[0]
+            eps.append({'label': lab, 'arm': 'g3' if a.startswith('g3') else a,
+                        'in': ei, 'out': eo, 'turns': len(u)})
         out[(model, prompt)] = dict(
             n=n, input=I, output=O, turns=turns, color=col,
-            turns_per_ep=turns / max(n, 1), per_ep=per_ep,
+            turns_per_ep=turns / max(n, 1), per_ep=per_ep, eps=eps,
             first_in=st.mean(first_in) if first_in else 0)
     return out
 
@@ -325,6 +329,31 @@ def main():
                     f"<td class='num'>${ja:.2f}</td><td class='num'>${je:.2f}</td>"
                     f"<td class='num good'>&times;{je/ja:.1f}</td></tr>")
 
+    # ---- per-episode cost: distribution, not just the mean ----
+    ep_rows = ""
+    for (m, pr), d in A.items():
+        cs = sorted(cost(m, e['in'], e['out'], prices) or 0 for e in d['eps'])
+        if not cs:
+            continue
+        lo, hi = cs[0], cs[-1]
+        ep_rows += (f"<tr><td class='grp' style='color:{d['color']}'>{m}</td><td>{pr}</td>"
+                    f"<td class='num'>{len(cs)}</td>"
+                    f"<td class='num'>${st.mean(cs):.2f}</td>"
+                    f"<td class='num'>${st.median(cs):.2f}</td>"
+                    f"<td class='num'>${lo:.2f}</td><td class='num'>${hi:.2f}</td>"
+                    f"<td class='num'>&times;{hi/max(lo,1e-9):.1f}</td></tr>")
+    # ---- per-episode cost by arm: which arms are expensive ----
+    ARMS = ['g0', 'g1', 'g2', 'g3']
+    arm_rows = ""
+    for (m, pr), d in A.items():
+        cells = ""
+        for a in ARMS:
+            cs = [cost(m, e['in'], e['out'], prices) or 0 for e in d['eps'] if e['arm'] == a]
+            cells += (f"<td class='num'>${st.mean(cs):.2f}<span class='sub'>n={len(cs)}</span></td>"
+                      if cs else "<td class='num mut'>&mdash;</td>")
+        cells += f"<td class='num'><b>${sum(cost(m, e['in'], e['out'], prices) or 0 for e in d['eps']):,.2f}</b></td>"
+        arm_rows += (f"<tr><td class='grp' style='color:{d['color']}'>{m}</td><td>{pr}</td>{cells}</tr>")
+
     banner = ("" if verified else
         '<div class="warn"><b style="font-size:15px">&#9888; Every dollar figure on this page is a '
         'PLACEHOLDER.</b><br>The price table was entered from recollection and is <b>not sourced</b>. '
@@ -378,6 +407,27 @@ entire conversation, so spend scales with the <b>square</b> of turn count, not w
 The models that cost most are the ones that take most turns &mdash; not the ones with the highest
 sticker price. A prompt cache over the stable prefix attacks exactly this term, and is the single
 largest available saving.</p></div>
+
+<h2>Cost per episode</h2>
+<div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th><th>prompt</th>
+<th class="num">episodes</th><th class="num">mean</th><th class="num">median</th>
+<th class="num">cheapest</th><th class="num">dearest</th><th class="num">spread</th>
+</tr></thead><tbody>{ep_rows}</tbody></table></div>
+<p class="lead">One episode = one cohort &times; one seed &times; one arm, priced on its own measured
+tokens. <b>Read the spread, not just the mean.</b> Episodes differ in how many turns the agent
+chooses to take, and since each turn re-sends the whole conversation the dearest episode in a run
+can cost several times the cheapest &mdash; so a single &ldquo;cost per episode&rdquo; figure is a
+planning average, not a quotable unit price.</p></div>
+
+<div class="panel"><h3>By arm &mdash; what each rung of the ladder costs</h3>
+<div class="tblwrap"><table><thead><tr><th>model</th><th>prompt</th>
+<th class="num">G0 <span class="sub">told</span></th><th class="num">G1 <span class="sub">genes-only</span></th>
+<th class="num">G2 <span class="sub">blind</span></th><th class="num">G3 <span class="sub">mislead</span></th>
+<th class="num">run total</th></tr></thead><tbody>{arm_rows}</tbody></table></div>
+<p class="lead">Mean cost of one episode on each arm. This is the number to use when costing a
+change to the design &mdash; adding a cohort or a seed multiplies the relevant arm, and the blinded
+and mislead arms are not necessarily priced like the easy ones, because withholding information
+changes how long the agent works before it commits.</p></div>
 
 <h2>Token mix &mdash; what &ldquo;99% input&rdquo; means</h2>
 <div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th><th>prompt</th>
