@@ -231,6 +231,31 @@ def main():
         f"<tr><td>{k}</td><td class='num'>${v['in']:.2f}</td><td class='num'>${v['out']:.2f}</td></tr>"
         for k, v in prices.items())
 
+    # ---- token mix: what "% input" means, and why it decides the effective rate ----
+    mix_rows = ""
+    for (m, pr), d in A.items():
+        t = d['input'] + d['output']
+        fi, fo = d['input'] / t, d['output'] / t
+        p = prices[m]
+        blend = fi * p['in'] + fo * p['out']
+        mix_rows += (f"<tr><td class='grp' style='color:{d['color']}'>{m}</td><td>{pr}</td>"
+                     f"<td class='num'>{fi*100:.1f}%</td><td class='num'>{fo*100:.1f}%</td>"
+                     f"<td class='num'>${p['in']:.2f}</td><td class='num'>${p['out']:.2f}</td>"
+                     f"<td class='num'>{fi:.3f}&times;{p['in']:.2f} + {fo:.3f}&times;{p['out']:.2f}</td>"
+                     f"<td class='num'><b>${blend*10:.2f}</b></td></tr>")
+    # counterfactual: same prices, an even mix — shows how much the mix (not the model) is doing
+    cf_rows = ""
+    for m in dict.fromkeys(x[0] for x in A):
+        d = A.get((m, 'detailed')) or A.get((m, 'lean'))
+        t = d['input'] + d['output']
+        fi, fo = d['input'] / t, d['output'] / t
+        p = prices[m]
+        actual = (fi * p['in'] + fo * p['out']) * 10
+        even = (0.5 * p['in'] + 0.5 * p['out']) * 10
+        cf_rows += (f"<tr><td class='grp' style='color:{d['color']}'>{m}</td>"
+                    f"<td class='num'>${actual:.2f}</td><td class='num'>${even:.2f}</td>"
+                    f"<td class='num bad'>&times;{even/actual:.1f}</td></tr>")
+
     CSS = """
 :root{--bg:#0d1117;--panel:#161b22;--line:#283041;--ink:#e6edf3;--mut:#9aa7b4;--acc:#58a6ff;--good:#3fb950;--bad:#f85149}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:30px}
@@ -276,6 +301,30 @@ entire conversation, so spend scales with the <b>square</b> of turn count, not w
 The models that cost most are the ones that take most turns &mdash; not the ones with the highest
 sticker price. A prompt cache over the stable prefix attacks exactly this term, and is the single
 largest available saving.</p></div>
+
+<h2>Token mix &mdash; what &ldquo;99% input&rdquo; means</h2>
+<div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th><th>prompt</th>
+<th class="num">% input</th><th class="num">% output</th><th class="num">$/1M in</th>
+<th class="num">$/1M out</th><th class="num">blend arithmetic</th><th class="num">$/10M</th>
+</tr></thead><tbody>{mix_rows}</tbody></table></div>
+<p class="lead"><b>&ldquo;% input&rdquo; is the share of billed tokens that were input, not a rate.</b>
+Input and output are priced differently, so this mix decides the effective rate you actually pay.
+Worked example for Gemini Flash: output costs 8&times; input ($2.50 vs $0.30 per 1M), but it applies
+to only ~1% of tokens, so <code>0.99&times;0.30 + 0.01&times;2.50 = $0.32/1M</code> &mdash; the
+blended rate is essentially the <i>input</i> rate.<br>
+<b>Consequence:</b> on this workload the output price is nearly irrelevant. A model with cheap input
+and expensive output does fine; a model with expensive input is punished however terse its answers
+are.</p></div>
+
+<div class="panel"><h3>How much of that is the mix rather than the model?</h3>
+<div class="tblwrap"><table><thead><tr><th>model</th><th class="num">$/10M at the actual mix</th>
+<th class="num">$/10M if the mix were 50/50</th><th class="num">inflation</th></tr></thead>
+<tbody>{cf_rows}</tbody></table></div>
+<p class="lead">Same prices, same models &mdash; only the input/output balance changes. An even mix
+would cost several times more per token across the board, which is another view of the 44:1
+structure: each turn re-sends the whole conversation as input while the model writes only a few
+hundred output tokens. <b>&ldquo;99% input&rdquo; and &ldquo;cost scales with turns&sup2;&rdquo; are
+the same fact from two angles.</b></p></div>
 
 <h2>Lean vs detailed &mdash; the prompt is a cost lever</h2>
 <div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th>
