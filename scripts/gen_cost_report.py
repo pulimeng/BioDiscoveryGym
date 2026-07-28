@@ -123,12 +123,14 @@ def judge_usage():
     # fixed per-call overhead the old estimate missed: system prompt + tool schema, billed every call
     overhead = (len(sc.COT_SYSTEM) + len(json.dumps(sc._COT_TOOL))) // 4
     tin = tout = calls = measured = 0
+    eps = []                       # one record per EPISODE (all judge passes summed)
     for _, _, run, _ in RUNS:
         for p in episode_paths(run):
             try:
                 per_call_in = len(sc.build_input(extract_episode(p))) // 4 + overhead
             except Exception:
                 continue
+            ei = eo = 0
             for sfx in JUDGE_SUFFIXES:
                 jp = p[:-5] + sfx
                 if not os.path.exists(jp):
@@ -140,13 +142,19 @@ def judge_usage():
                     rec = {}
                 u = rec.get("judge_usage") or {}
                 if u.get("input_tokens") and u.get("output_tokens"):
-                    tin += u["input_tokens"]; tout += u["output_tokens"]; measured += 1
+                    ei += u["input_tokens"]; eo += u["output_tokens"]; measured += 1
                 else:
-                    tin += per_call_in
+                    ei += per_call_in
                     # compact payload, not the indented file on disk
-                    tout += len(json.dumps(rec, separators=(",", ":"))) // 4
+                    eo += len(json.dumps(rec, separators=(",", ":"))) // 4
+            if ei or eo:
+                tin += ei; tout += eo
+                lab = os.path.basename(p)[:-5]
+                a = lab.split('_')[0]
+                eps.append({'label': lab, 'arm': 'g3' if a.startswith('g3') else a,
+                            'in': ei, 'out': eo})
     return dict(input=tin, output=tout, calls=calls, measured=measured,
-                overhead_per_call=overhead)
+                overhead_per_call=overhead, eps=eps)
 
 
 def cost(model, tin, tout, prices):
@@ -342,6 +350,13 @@ def main():
                     f"<td class='num'>${st.median(cs):.2f}</td>"
                     f"<td class='num'>${lo:.2f}</td><td class='num'>${hi:.2f}</td>"
                     f"<td class='num'>&times;{hi/max(lo,1e-9):.1f}</td></tr>")
+    if J and J.get('eps'):
+        jcs = sorted(cost('deepseek-v4-pro', e['in'], e['out'], prices) or 0 for e in J['eps'])
+        ep_rows += (f"<tr><td class='grp'>deepseek-v4-pro</td><td>judge &times;3</td>"
+                    f"<td class='num'>{len(jcs)}</td><td class='num'>${st.mean(jcs):.4f}</td>"
+                    f"<td class='num'>${st.median(jcs):.4f}</td><td class='num'>${jcs[0]:.4f}</td>"
+                    f"<td class='num'>${jcs[-1]:.4f}</td>"
+                    f"<td class='num'>&times;{jcs[-1]/max(jcs[0],1e-9):.1f}</td></tr>")
     # ---- per-episode cost by arm: which arms are expensive ----
     ARMS = ['g0', 'g1', 'g2', 'g3']
     arm_rows = ""
@@ -353,6 +368,17 @@ def main():
                       if cs else "<td class='num mut'>&mdash;</td>")
         cells += f"<td class='num'><b>${sum(cost(m, e['in'], e['out'], prices) or 0 for e in d['eps']):,.2f}</b></td>"
         arm_rows += (f"<tr><td class='grp' style='color:{d['color']}'>{m}</td><td>{pr}</td>{cells}</tr>")
+    if J and J.get('eps'):
+        cells = ""
+        for a in ARMS:
+            cs = [cost('deepseek-v4-pro', e['in'], e['out'], prices) or 0
+                  for e in J['eps'] if e['arm'] == a]
+            cells += (f"<td class='num'>${st.mean(cs):.4f}<span class='sub'>n={len(cs)}</span></td>"
+                      if cs else "<td class='num mut'>&mdash;</td>")
+        cells += (f"<td class='num'><b>$"
+                  f"{sum(cost('deepseek-v4-pro', e['in'], e['out'], prices) or 0 for e in J['eps']):,.2f}"
+                  f"</b></td>")
+        arm_rows += f"<tr><td class='grp'>deepseek-v4-pro</td><td>judge &times;3</td>{cells}</tr>"
 
     banner = ("" if verified else
         '<div class="warn"><b style="font-size:15px">&#9888; Every dollar figure on this page is a '
