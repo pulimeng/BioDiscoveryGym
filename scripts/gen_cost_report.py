@@ -24,8 +24,16 @@ from collections import defaultdict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # ---------------------------------------------------------------------------------------------
-# EDITABLE PRICE TABLE — USD per 1M tokens. Entered 2026-07-28, NOT verified against live pricing.
-# Override with --prices <json> holding {"model": {"in": x, "out": y}}.
+# PLACEHOLDER PRICE TABLE — USD per 1M tokens. THESE ARE NOT SOURCED.
+#
+# They were entered from recollection of typical provider pricing and have NOT been checked against
+# any pricing page or invoice. At least one is likely wrong: docs/BENCHMARK_PLAN.md records
+# GPT-5.4 at $2.50/M in and $15/M out, i.e. double the input price assumed here.
+#
+# Supply real numbers with --prices <json> ({"model": {"in": x, "out": y}}) — ideally from the
+# provider invoices, which are ground truth and also capture discounts and cached-input rates that
+# no list price reflects. Until then every dollar figure in this report is a placeholder; the token
+# counts beside them are measured and unaffected.
 # ---------------------------------------------------------------------------------------------
 PRICES = {
     'GPT-5.5':        {'in': 1.25, 'out': 10.00},
@@ -33,7 +41,8 @@ PRICES = {
     'Gemini Flash':   {'in': 0.30, 'out': 2.50},
     'deepseek-v4-pro': {'in': 0.28, 'out': 0.42},
 }
-PRICES_DATE = '2026-07-28 (unverified — check before quoting)'
+PRICES_VERIFIED = False          # flip to True only when --prices came from invoices/pricing pages
+PRICES_DATE = '2026-07-28'
 
 RUNS = [
     ('GPT-5.5', 'detailed', 'results/tcga/ladder/gpt55_20260707', '#1D9E75'),
@@ -125,8 +134,16 @@ def main():
     ap.add_argument('--prices', type=str, default=None, help='JSON price override')
     args = ap.parse_args()
     prices = dict(PRICES)
+    verified = PRICES_VERIFIED
     if args.prices:
         prices.update(json.load(open(args.prices)))
+        verified = True
+    if not verified:
+        print("!" * 90)
+        print("  DOLLAR FIGURES BELOW ARE PLACEHOLDERS — the price table is not sourced.")
+        print("  Token counts are measured; costs are arithmetic on unverified prices.")
+        print("  Supply real rates with --prices <json> (invoices are ground truth).")
+        print("!" * 90)
 
     A = agent_usage()
     J = judge_usage()
@@ -278,6 +295,17 @@ def main():
                     f"<td class='num'>${ja:.2f}</td><td class='num'>${je:.2f}</td>"
                     f"<td class='num good'>&times;{je/ja:.1f}</td></tr>")
 
+    banner = ("" if verified else
+        '<div class="warn"><b style="font-size:15px">&#9888; Every dollar figure on this page is a '
+        'PLACEHOLDER.</b><br>The price table was entered from recollection and is <b>not sourced</b>. '
+        'At least one entry is likely wrong: <code>docs/BENCHMARK_PLAN.md</code> records GPT-5.4 at '
+        '$2.50/M in &middot; $15/M out, double the input price assumed here. '
+        'Re-run with <code>--prices file.json</code> using rates from your invoices &mdash; those are '
+        'ground truth and also capture discounts and cached-input rates that no list price reflects.'
+        '<br><b>The token counts on this page are measured and unaffected</b> '
+        '(<code>run_log.usage_log</code>, 75/75 episodes): the structural findings &mdash; 44:1 input '
+        'dominance, cost scaling with turns&sup2;, lean using 23&ndash;52% fewer tokens &mdash; hold '
+        'regardless of price.</div>')
     CSS = """
 :root{--bg:#0d1117;--panel:#161b22;--line:#283041;--ink:#e6edf3;--mut:#9aa7b4;--acc:#58a6ff;--good:#3fb950;--bad:#f85149}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:30px}
@@ -300,10 +328,7 @@ code{background:#0b1220;padding:1px 5px;border-radius:4px;font-size:12px}
 <div class="meta">Token counts <b>measured</b> from <code>run_log.usage_log</code> (75/75 episodes on
 every run) &middot; dollars derived from the editable price table below</div>
 
-<div class="warn"><b>Prices are not measured.</b> The table below was entered
-{PRICES_DATE}. Provider pricing changes and this report will not notice &mdash; verify before
-quoting any dollar figure. The token accounting is authoritative; the dollars are arithmetic on top
-of it.</div>
+{banner}
 
 <h2>Agent spend</h2>
 <div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th><th>prompt</th>
