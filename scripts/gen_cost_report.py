@@ -243,6 +243,20 @@ def main():
                      f"<td class='num'>${p['in']:.2f}</td><td class='num'>${p['out']:.2f}</td>"
                      f"<td class='num'>{fi:.3f}&times;{p['in']:.2f} + {fo:.3f}&times;{p['out']:.2f}</td>"
                      f"<td class='num'><b>${blend*10:.2f}</b></td></tr>")
+    # The judge is a SINGLE-SHOT call — no conversation to re-send — so its mix is nothing like
+    # the agent's. Including it makes the point that the 99%-input figure is a property of the
+    # multi-turn loop, not of LLM workloads generally.
+    if J:
+        jt = J['input'] + J['output']
+        jfi, jfo = J['input'] / jt, J['output'] / jt
+        jp = prices['deepseek-v4-pro']
+        jb = jfi * jp['in'] + jfo * jp['out']
+        mix_rows += (f"<tr><td class='grp'>deepseek-v4-pro</td><td>judge &times;3</td>"
+                     f"<td class='num'>{jfi*100:.1f}%</td>"
+                     f"<td class='num'>{jfo*100:.1f}%<span class='sub'>approx</span></td>"
+                     f"<td class='num'>${jp['in']:.2f}</td><td class='num'>${jp['out']:.2f}</td>"
+                     f"<td class='num'>{jfi:.3f}&times;{jp['in']:.2f} + {jfo:.3f}&times;{jp['out']:.2f}</td>"
+                     f"<td class='num'><b>${jb*10:.2f}</b></td></tr>")
     # counterfactual: same prices, an even mix — shows how much the mix (not the model) is doing
     cf_rows = ""
     for m in dict.fromkeys(x[0] for x in A):
@@ -255,6 +269,14 @@ def main():
         cf_rows += (f"<tr><td class='grp' style='color:{d['color']}'>{m}</td>"
                     f"<td class='num'>${actual:.2f}</td><td class='num'>${even:.2f}</td>"
                     f"<td class='num bad'>&times;{even/actual:.1f}</td></tr>")
+    if J:
+        jt = J['input'] + J['output']
+        jp = prices['deepseek-v4-pro']
+        ja = (J['input'] / jt * jp['in'] + J['output'] / jt * jp['out']) * 10
+        je = (0.5 * jp['in'] + 0.5 * jp['out']) * 10
+        cf_rows += (f"<tr><td class='grp'>deepseek-v4-pro <span class='mut'>(judge)</span></td>"
+                    f"<td class='num'>${ja:.2f}</td><td class='num'>${je:.2f}</td>"
+                    f"<td class='num good'>&times;{je/ja:.1f}</td></tr>")
 
     CSS = """
 :root{--bg:#0d1117;--panel:#161b22;--line:#283041;--ink:#e6edf3;--mut:#9aa7b4;--acc:#58a6ff;--good:#3fb950;--bad:#f85149}
@@ -314,7 +336,15 @@ to only ~1% of tokens, so <code>0.99&times;0.30 + 0.01&times;2.50 = $0.32/1M</co
 blended rate is essentially the <i>input</i> rate.<br>
 <b>Consequence:</b> on this workload the output price is nearly irrelevant. A model with cheap input
 and expensive output does fine; a model with expensive input is punished however terse its answers
-are.</p></div>
+are.<br>
+<b>The judge row is the control.</b> It is a <i>single-shot</i> call &mdash; one trace in, one
+structured summary out, with no conversation to re-send &mdash; and its mix is nothing like the
+agent's. That shows the 99%-input figure is a property of the <b>multi-turn loop</b>, not of LLM
+workloads in general, and it is why output pricing still matters for the evaluation layer even
+though it barely registers for the agents. <b>Caveat:</b> judge output tokens are approximated from
+stored summary size (indented JSON, so it likely <i>over</i>-states them) &mdash; immaterial for the
+agents at 1&ndash;7% output, but it does move the judge's own blended rate, so treat that row as
+approximate.</p></div>
 
 <div class="panel"><h3>How much of that is the mix rather than the model?</h3>
 <div class="tblwrap"><table><thead><tr><th>model</th><th class="num">$/10M at the actual mix</th>
