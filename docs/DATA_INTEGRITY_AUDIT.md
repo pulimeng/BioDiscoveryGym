@@ -15,6 +15,12 @@ wrong — recorded here so the audit's own provenance is honest.
 
 ## Defect 1 — the "blinded" arm leaks the cohort through `output_dir`
 
+> **STATUS: DEFERRED BY DECISION 2026-07-29.** Not being worked on. Documented, quantified, and
+> accepted as a known limitation for the current results. It does **not** invalidate the
+> between-arm deltas (see below); it does mean **absolute** G2 derivation rates are inflated and a
+> blinded re-run is the only clean fix. Anyone starting a new blinded run must fix this first, or
+> the new data inherits the defect.
+
 ### Mechanism (structural, not incidental)
 
 - [`biodiscoverygym/executor.py:258`](../biodiscoverygym/executor.py#L258) injects `output_dir` into
@@ -148,9 +154,19 @@ relationship in either direction"** — not "derived scores higher", which the p
 1. ~~Re-score~~ **DONE** — 78 episodes re-scored 2026-07-29; all 450 gates now scored
    (`true_cohort` 397, `mislead_cohort` 35, `hedged` 11, `other` 7, **error 0**).
 2. **Guard applied:** `cot_deepdive.py` excludes errored gates and prints the count.
-3. **STILL OPEN:** make the scorer refuse to emit a scored episode when any LLM component fails.
-   `mechanism_grounding = 0.000` is indistinguishable from a genuine zero, which is how this
-   survived to become a published-looking finding. **This is the highest-value remaining fix.**
+3. **DONE 2026-07-29 — the class of bug is closed.** Both `score_tcga_episode.py` and
+   `score_sghos_episode.py` now scan `report.diagnostics` for an `error` key after scoring and, if
+   any component failed, **refuse to write a score file and exit non-zero**.
+
+   The discriminator was already in the data and simply unread: a legitimate zero carries
+   `{"reason": ...}` (e.g. *"no hypothesis submitted"*), a failure carries `{"error": ...}`. Only
+   the latter now blocks the save, so genuine zeros still score normally.
+
+   `score_all_tcga.sh` already collected failures and instructed the user to re-run — **that safety
+   net existed the whole time and was bypassed only because scoring exited 0 with a fabricated
+   number.** The guard lets it work. Verified against the preserved pre-repair scores: it fires on
+   both `mechanism_grounding` and `cohort_identity` for the 402, so all 78 episodes would have been
+   marked FAILED and fixed by one re-run instead of producing a retracted finding.
 
 ---
 

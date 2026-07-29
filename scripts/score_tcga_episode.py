@@ -188,6 +188,32 @@ def main():
     print(f"\n{trace_report.pretty_print()}")
     print(f"\n  Scoring wall time: {score_report.wall_time_s:.1f}s")
 
+    # ---- refuse to persist a partially-measured episode --------------------------------------
+    # Every LLM judge returns `0.0, {"error": ...}` on failure, so a failed judge is
+    # indistinguishable from a dimension the agent genuinely scored zero on. That is how a
+    # DeepSeek 402 once wrote mechanism_grounding=0.000 across 75 episodes and produced a
+    # plausible-looking "the small model collapses" finding (docs/DATA_INTEGRITY_AUDIT.md).
+    #
+    # The distinction already exists in the data: legitimate zeros carry {"reason": ...},
+    # failures carry {"error": ...}. Nothing read it. So: if ANY component failed, do not write a
+    # score file and exit non-zero. score_all_tcga.sh already collects failures and tells the user
+    # to re-run — that safety net existed the whole time and was bypassed only because scoring
+    # reported success. This lets it work.
+    failed = []
+    for comp, diag in (score_report.diagnostics or {}).items():
+        if isinstance(diag, dict) and diag.get("error"):
+            failed.append((comp, str(diag["error"])[:120]))
+    if failed:
+        print("\n  !! SCORING INCOMPLETE — not saving. Failed component(s):", file=sys.stderr)
+        for comp, err in failed:
+            print(f"       {comp}: {err}", file=sys.stderr)
+        print("  A failed judge returns 0.0, which is indistinguishable from a real zero, so this",
+              file=sys.stderr)
+        print("  episode is left UNSCORED rather than saved with a fabricated number.", file=sys.stderr)
+        print("  Re-run once the cause is resolved (batch runner retries unscored episodes).",
+              file=sys.stderr)
+        sys.exit(1)
+
     if args.save:
         stem = episode_path.stem
         scores_path = episode_path.parent / f"{stem}_v3scores.json"

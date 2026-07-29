@@ -175,6 +175,23 @@ def main():
     print(f"\n{trace_report.pretty_print()}")
     print(f"\n  Scoring wall time: {score_report.wall_time_s:.1f}s")
 
+    # ---- refuse to persist a partially-measured episode --------------------------------------
+    # Same guard as score_tcga_episode.py, for the same reason: judge_os returns 0.0 with an
+    # {"error": ...} diagnostic on failure, which is indistinguishable from a genuine zero. On the
+    # TCGA track that pattern silently produced a retracted finding — see
+    # docs/DATA_INTEGRITY_AUDIT.md. Legitimate zeros carry {"reason": ...} and are unaffected.
+    failed = []
+    for comp, diag in (score_report.diagnostics or {}).items():
+        if isinstance(diag, dict) and diag.get("error"):
+            failed.append((comp, str(diag["error"])[:120]))
+    if failed:
+        print("\n  !! SCORING INCOMPLETE — not saving. Failed component(s):", file=sys.stderr)
+        for comp, err in failed:
+            print(f"       {comp}: {err}", file=sys.stderr)
+        print("  Left UNSCORED rather than saved with a fabricated 0.0. Re-run once resolved.",
+              file=sys.stderr)
+        sys.exit(1)
+
     if args.save:
         stem = episode_path.stem
         scores_path = episode_path.parent / f"{stem}_v3scores.json"
