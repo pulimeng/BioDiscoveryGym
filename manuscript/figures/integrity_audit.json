@@ -141,11 +141,13 @@
     "Gemini 3.5 Flash/lean": {
       "n": 12,
       "verdicts": {
-        "error": 12
+        "true_cohort": 9,
+        "mislead_cohort": 2,
+        "hedged": 1
       },
-      "errored": 12,
-      "fooled": 0
+      "errored": 0,
+      "fooled": 2
     }
   },
-  "errored_total": 12
+  "errored_total": 0
 }

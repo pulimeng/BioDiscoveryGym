@@ -72,12 +72,27 @@ affected, concentrated in Gemini.
 
 ---
 
-## Defect 2 — identity gates that failed were silently counted as "not fooled"
+## Defect 2 — a failed scoring run, silently rendered as legitimate scores
+
+**RESOLVED 2026-07-29** by re-scoring 78 episodes. Pre-repair scores preserved in
+`results/tcga/_rescore_backup_20260728/`.
+
+**This defect was initially UNDER-REPORTED as 12 episodes / G3-only.** The first audit scanned only
+`g3*`. Scanning all arms found **78 episodes**, including the *entire* 75-episode Gemini-lean run.
+The under-count is recorded rather than quietly corrected, because the lesson is the same one the
+defect teaches: scoping an audit to where you expect the problem is how you miss its real extent.
 
 ### Mechanism
 
-`cohort_identity_verdict` is an LLM call. On failure it records `verdict: "error"` — here, a
-DeepSeek `402 Insufficient Balance`. Every consumer computes:
+A DeepSeek `402 Insufficient Balance` failed the LLM-judged parts of a scoring run. **Two
+components broke, not one:**
+
+1. `cohort_identity_verdict` recorded `verdict: "error"`.
+2. **`mechanism_grounding` scored `0.000`** — on all 75 Gemini-lean episodes. After re-scoring:
+   **0.968**.
+
+Neither failure raised. Both rendered as values a consumer would accept. For the gate, every
+consumer computes:
 
 ```python
 fooled = (verdict == "mislead_cohort")
@@ -86,43 +101,56 @@ fooled = (verdict == "mislead_cohort")
 An errored gate is therefore **indistinguishable from a model that resisted the mislead**. Failure
 is scored as success.
 
-### Extent
-
-All **12** G3 episodes in `lean/gemini35flash_20260722` errored — the entire arm:
+### Extent — 78 episodes, all arms
 
 ```
-arm                          n   fooled   ERRORED
-GPT-5.5/detailed            12       11         0
-GPT-5.5/lean                12        5         0
-Sonnet 5/detailed           12        8         0
-Sonnet 5/lean               12        4         0
-Gemini 3.5 Flash/detailed   12        5         0
-Gemini 3.5 Flash/lean       12        0        12   <-- UNSCORED
+run                              errored    of
+ladder/gemini35flash_20260716          0    75
+ladder/gpt55_20260707                  0    75
+ladder/sonnet5_20260713                1    75
+lean/gemini35flash_20260722           75    75   <-- ENTIRE RUN
+lean/gpt55_20260721                    0    75
+lean/sonnet5_20260722                  2    75
+TOTAL                                 78   450
 ```
 
-### Consequences
+The gate only zeroes narrative dimensions when `fooled` is set ([evaluator_v2.py:289](../biodiscoverygym/scoring/evaluator_v2.py#L289)).
+On error `fooled` is never set, so **no gating occurred** — Gemini-lean was scored under a *more
+lenient* regime than every other arm, while simultaneously losing `mechanism_grounding` entirely.
 
-**(a) H2 was computed on contaminated input.** Corrected, the result gets *stronger*:
+### Consequences after repair
 
-| | derived | not derived | p | OR |
-|---|---|---|---|---|
-| errors counted as not-fooled (wrong) | 6/29 = 21% | 27/43 = 63% | 0.0006 | 0.15 |
-| **errors excluded (correct)** | **6/24 = 25%** | **27/36 = 75%** | **0.0002** | **0.11** |
+**(a) A HEADLINE FINDING IS RETRACTED.** *"Gemini Flash collapses under lean (0.511→0.361), the small
+model depends on the staged scaffold"* was **an artifact of the failed API call** — the 0.361 came
+from `mechanism_grounding = 0.000`. Repaired:
 
-**(b) A recorded finding is invalid.** "Gemini 5→0 fooled under lean" is **not a real zero** — it is
-12 unscored episodes. The claim *"the staged prompt makes models more fooled, 3/3 models"* is
-therefore **2/3 verified, 1 unknown**. This had already propagated into project memory and the talk
-material.
+| model | detailed | lean | Δ |
+|---|---:|---:|---:|
+| GPT-5.5 | 0.495 | 0.492 | −0.003 |
+| Sonnet 5 | 0.506 | 0.482 | −0.024 |
+| Gemini Flash | 0.511 | **0.500** | −0.011 |
+
+**Outcome is prompt-invariant across all three models**, mean |Δ| = 0.013. The replacement finding
+is simpler and stronger, but the "small models need scaffolding" story is gone. **Do not reinstate
+it.**
+
+**(b) "Staged prompt → more fooled" is RESTORED to 3/3**: GPT 11→5, Sonnet 8→4, Gemini **5→2**.
+
+**(c) H2 is stronger and needs no exclusions** — complete n=72: **21% vs 67%**, Fisher **p=0.0001**,
+OR=0.13 (was 21%/63% with errors miscounted as not-fooled).
+
+**(d) H1 flipped sign, conclusion unchanged**: derived 0.483 vs recalled **0.524**, p=0.19; ordinal
+ρ=−0.067, p=0.46. The point estimate now mildly favours *recall*. Claim **"no detectable
+relationship in either direction"** — not "derived scores higher", which the pre-repair draft said.
 
 ### Required actions
 
-1. **Re-score the 12 gates** (~$1; the balance failure is resolved). This is the cheapest fix and
-   restores the third model.
-2. **Guard applied:** `cot_deepdive.py` now excludes errored gates and prints how many it dropped,
-   rather than absorbing them. Any other consumer of `cohort_identity_verdict` needs the same
-   treatment — *the bug is the pattern, not the arm*.
-3. Make the scorer refuse to emit a scored episode when the gate errors, so this cannot pass
-   silently again.
+1. ~~Re-score~~ **DONE** — 78 episodes re-scored 2026-07-29; all 450 gates now scored
+   (`true_cohort` 397, `mislead_cohort` 35, `hedged` 11, `other` 7, **error 0**).
+2. **Guard applied:** `cot_deepdive.py` excludes errored gates and prints the count.
+3. **STILL OPEN:** make the scorer refuse to emit a scored episode when any LLM component fails.
+   `mechanism_grounding = 0.000` is indistinguishable from a genuine zero, which is how this
+   survived to become a published-looking finding. **This is the highest-value remaining fix.**
 
 ---
 

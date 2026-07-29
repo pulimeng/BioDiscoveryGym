@@ -3,27 +3,27 @@
     "groups": {
       "data-derived": {
         "n": 65,
-        "mean": 0.4701984649431971,
-        "median": 0.4964342436793969,
-        "sd": 0.09724938027510477
+        "mean": 0.4829731902179224,
+        "median": 0.5065060022761558,
+        "sd": 0.08395063608131675
       },
       "mixed": {
         "n": 43,
-        "mean": 0.4556396579222726,
-        "median": 0.4581609127918518,
-        "sd": 0.10793017881294166
+        "mean": 0.47827254828772114,
+        "median": 0.47314508047284926,
+        "sd": 0.10277052332780018
       },
       "recalled-prior": {
         "n": 14,
-        "mean": 0.4623015604683001,
-        "median": 0.46620661955951376,
-        "sd": 0.10399961175071615
+        "mean": 0.5235260502642185,
+        "median": 0.5383165404501334,
+        "sd": 0.08510772911810886
       }
     },
-    "mann_whitney_p": 0.7336843881949444,
-    "delta": 0.007896904474896993,
-    "spearman_rho": 0.0574968017411818,
-    "spearman_p": 0.5293124805118389,
+    "mann_whitney_p": 0.19252707220972287,
+    "delta": -0.0405528600462961,
+    "spearman_rho": -0.06739478934617461,
+    "spearman_p": 0.4607723248414834,
     "n": 122,
     "within_arm": {
       "GPT-5.5/detailed": {
@@ -55,30 +55,30 @@
         "delta": -0.04369706436733839
       },
       "Gemini 3.5 Flash/lean": {
-        "derived": 0.3120350668919872,
+        "derived": 0.45042792403484433,
         "n_derived": 6,
-        "not_derived": 0.3801258559868549,
+        "not_derived": 0.5209225592835582,
         "n_not": 13,
-        "delta": -0.06809078909486771
+        "delta": -0.07049463524871391
       }
     },
     "verdict": "outcome does NOT separate derived from recalled"
   },
   "h2_derivation_vs_fooled": {
     "derived": {
-      "not_fooled": 18,
+      "not_fooled": 23,
       "fooled": 6,
-      "rate": 0.25
+      "rate": 0.20689655172413793
     },
     "not_derived": {
-      "not_fooled": 9,
-      "fooled": 27,
-      "rate": 0.75
+      "not_fooled": 14,
+      "fooled": 29,
+      "rate": 0.6744186046511628
     },
-    "fisher_p": 0.00019039480549711934,
-    "odds_ratio": 0.1111111111111111,
-    "n": 60,
-    "excluded_failed_gates": 12,
+    "fisher_p": 0.00011607938221874056,
+    "odds_ratio": 0.12593703148425786,
+    "n": 72,
+    "excluded_failed_gates": 0,
     "note": "episodes whose identity gate errored are EXCLUDED, not counted as not-fooled"
   },
   "cohort_derivation": {
@@ -119,13 +119,13 @@
     }
   },
   "judge": {
-    "n": 186,
-    "unanimous": 71,
-    "unanimous_rate": 0.3817204301075269,
+    "n": 198,
+    "unanimous": 75,
+    "unanimous_rate": 0.3787878787878788,
     "unresolved": 10
   },
   "n": {
     "g2": 126,
-    "g3": 60
+    "g3": 72
   }
 }

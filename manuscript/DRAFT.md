@@ -12,13 +12,13 @@ your data, and it will find the biology. We show this claim is not merely unprov
 measured, **unfalsifiable**. On a blinded cancer-genomics benchmark we score 450 agent episodes on
 two axes: whether the answer is correct, and whether the agent *derived* the cohort's identity from
 the data or *recalled* it from parametric memory. Correctness cannot tell the two apart — episodes
-judged data-derived and recalled-prior score 0.470 and 0.462 respectively (Mann-Whitney p=0.73;
-ordinal ρ=+0.057, p=0.53). Yet the distinction is not cosmetic. When we inject a false cohort label,
-episodes that derived identity from data commit to the falsehood 25% of the time against 75% for
-those that did not (Fisher p=0.0002, OR=0.11). **The property that determines whether an agent
+judged data-derived and recalled-prior score 0.483 and 0.524 respectively — no detectable
+difference in either direction (Mann-Whitney p=0.19; ordinal ρ=−0.067, p=0.46). Yet the distinction is not cosmetic. When we inject a false cohort label,
+episodes that derived identity from data commit to the falsehood 21% of the time against 67% for
+those that did not (Fisher p=0.0001, OR=0.13). **The property that determines whether an agent
 survives misleading data is invisible to the metric the field reports.** We further find that
 prescriptive "rigor" scaffolding makes models *more* susceptible to the false frame, not less, in
-2 of 3 models tested, and that agents sometimes identify the benchmark from cohort *sample size*
+3 of 3 models tested, and that agents sometimes identify the benchmark from cohort *sample size*
 before performing any biological analysis. Process labels come from a neutral, non-benchmarked judge run in
 three independent passes over all 450 episodes; we report per-episode agreement (35–63% unanimous)
 and claim only deltas whose per-pass ranges do not overlap.
@@ -122,16 +122,16 @@ On the blinded arm, grouping episodes by consensus derivation label:
 
 | label | n | mean outcome | median |
 |---|---:|---:|---:|
-| data-derived | 65 | 0.470 | 0.496 |
-| mixed | 43 | 0.456 | 0.458 |
-| recalled-prior | 14 | 0.462 | 0.466 |
+| data-derived | 65 | 0.483 | 0.507 |
+| mixed | 43 | 0.478 | 0.473 |
+| recalled-prior | 14 | 0.524 | 0.538 |
 
-Derived versus recalled differ by **+0.008** (Mann-Whitney **p=0.73**). Treating the label as
-ordinal gives Spearman **ρ=+0.057, p=0.53** (n=122). The effect is absent, not merely small.
+Derived versus recalled differ by **−0.041** (Mann-Whitney **p=0.19**). Treating the label as
+ordinal gives Spearman **ρ=−0.067, p=0.46** (n=122). The effect is absent, not merely small.
 
-This is not an artifact of pooling. Within each of the six model×prompt arms the difference stays
-negligible and **changes sign** across models — Sonnet's derived episodes score marginally higher
-(+0.029 detailed, +0.017 lean), Gemini's score *lower* (−0.044, −0.068).
+Note the direction: the point estimate mildly *favours recall*, though not significantly. We claim
+**no detectable relationship in either direction** — not that recall helps, and not that derivation
+helps. That is the whole point: the metric is uninformative about how the answer was reached.
 
 **A correctness score is therefore blind to how the answer was reached.** An outcome-only
 leaderboard cannot distinguish an agent that discovers from one that recalls, which is precisely the
@@ -144,14 +144,12 @@ the agent is handed a false cohort label:
 
 | | not fooled | fooled | rate |
 |---|---:|---:|---:|
-| derived identity | 18 | 6 | **25%** |
-| did not derive | 9 | 27 | **75%** |
+| derived identity | 23 | 6 | **21%** |
+| did not derive | 14 | 29 | **67%** |
 
-Fisher exact **p=0.0002**, odds ratio **0.11** (n=60). Agents that worked out what they were looking
-at are **three times less likely** to adopt a falsehood presented to them.
-
-*12 episodes are excluded because their identity gate failed to run (see `docs/DATA_INTEGRITY_AUDIT.md`).
-Counting a failed gate as "not fooled" — which a naive test does — understates this effect.*
+Fisher exact **p=0.0001**, odds ratio **0.13** (n=72, complete — no exclusions). Agents that worked
+out what they were looking at are **three times less likely** to adopt a falsehood presented to
+them.
 
 Taken with §4.1: **the property that determines whether an agent survives bad input is invisible to
 the metric normally reported.** That gap is the paper's central claim.
@@ -161,11 +159,11 @@ the metric normally reported.** That gap is the paper's central claim.
 We ablate the prompt: a prescribed six-stage procedure that structurally forces derive-before-annotate,
 against a lean prompt stating there is no prescribed procedure.
 
-- **Outcome is prompt-invariant for the flagships** (mean |Δ| = 0.013). The small model is not:
-  Gemini Flash collapses under lean (0.511 → 0.361), uniformly across all seven cohorts — it depends
-  on the scaffold to perform at all.
-- **The staged prompt makes models MORE fooled**, in **2/3 models verified** (GPT 11→5, Sonnet 8→4).
-  The third is *unknown*, not zero: all 12 Gemini-lean mislead episodes had a failed identity gate. The mechanism is visible in the
+- **Outcome is prompt-invariant across all three models** — mean |Δ| = 0.013 (GPT −0.003,
+  Sonnet −0.024, Gemini Flash −0.011). Removing the prescribed procedure does not change *what*
+  is found, at either capability tier.
+- **The staged prompt makes models MORE fooled**, in **3/3 models** (GPT 11→5, Sonnet 8→4,
+  Gemini 5→2, of 12). The mechanism is visible in the
   traces: a fooled episode finds genuinely squamous biology, then relabels it to fit the injected
   label rather than rejecting the label.
 - **Derivation rises under lean where it moves at all.** Under three-pass consensus with the

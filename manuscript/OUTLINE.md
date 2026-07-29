@@ -14,11 +14,12 @@ genuine scientific invention") and BiomniBench-DA as evidence the field already 
 
 **Claim:** A recalled-but-correct answer is indistinguishable from a discovered one under any
 correctness metric.
-→ *Support:* **H1, measured** — derived 0.470 vs recalled 0.462, p=0.73. This is not a rhetorical
-point; it is a result. Lead with it.
+→ *Support:* **H1, measured** — derived 0.483 vs recalled 0.524, p=0.19; ordinal ρ=−0.067, p=0.46.
+Claim "no detectable relationship in either direction" — the point estimate mildly favours recall
+but is not significant. This is not a rhetorical point; it is a result. Lead with it.
 
 **Claim:** Grounding is not merely aesthetic — it predicts whether the agent survives bad data.
-→ *Support:* **H2, measured** — 25% vs 75% fooled, p=0.0002, OR=0.11 (failed gates excluded).
+→ *Support:* **H2, measured** — 21% vs 67% fooled, p=0.0001, OR=0.13, n=72 complete.
 
 **Contribution list:**
 1. A benchmark that holds data constant and varies *what the agent is allowed to know* (G0→G3).
@@ -72,10 +73,12 @@ point; it is a result. Lead with it.
 **R1 — Outcome cannot see grounding.** [H1] Pooled p=0.73; ordinal ρ=+0.057 (p=0.53); holds within
 every arm, sign flips across models. *This is the load-bearing result — give it the first figure.*
 
-**R2 — Grounding predicts robustness.** [H2] 25% vs 75% fooled, p=0.0002, OR=0.11, n=60.
+**R2 — Grounding predicts robustness.** [H2] 21% vs 67% fooled, p=0.0001, OR=0.13, n=72.
 
-**R3 — Instruction ablation.** Outcome prompt-invariant for flagships (mean |Δ|=0.013); Flash
-collapses under lean (0.511→0.361). Staged prompt → more fooled in **2/3 verified**; Gemini-lean unscored (defect B).
+**R3 — Instruction ablation.** Outcome prompt-invariant for **all three models**, mean |Δ|=0.013.
+Staged prompt → more fooled **3/3** (11→5, 8→4, 5→2).
+**[RETRACTED]** the earlier "Flash collapses under lean 0.511→0.361" was an artifact — a failed API
+call scored mechanism_grounding as 0.000 across all 75 Gemini-lean episodes. Do not reinstate it.
 
 **R4 — Derivation deltas under 3-pass consensus.** G2: GPT +38, Sonnet −19, Gemini +14 — all
 *separated*. G3: GPT +50 separated; Sonnet +17 and Gemini +8 **overlap → not claimed**.
