@@ -174,6 +174,62 @@ against a lean prompt stating there is no prescribed procedure.
 The scaffold produces more recorded observations and higher documented-support scores while identity
 is derived *less* often. It is buying paperwork, not reasoning.
 
+### 4.3.1 The rigor paradox
+
+The natural objection is that "documentation" is a slur — that the staged prompt buys real
+methodological work. It does. And that makes the result worse, not better.
+
+Mining the judge's per-episode critiques across all 1,350 summaries (three passes × 450 episodes):
+
+| | detailed | lean |
+|---|---:|---:|
+| `validation_rigor` = high | **85%** | 71% |
+| weaknesses citing **failed execution** | **10%** | 6% |
+| weaknesses citing **omission** | 48% | 51% |
+| episodes fooled by the false label | **24/36** | 11/36 |
+
+Two things to read here. First, the staged arm does more real statistical work — higher validation
+rigor (though this is 2/3 models; Sonnet sits at 95% under both prompts). Its distinctive failures
+are *attempted-and-broken* rather than *never-attempted*: `SNF multimodal clustering collapsed
+degenerately (555/1/1)`, `multimodal clustering failed due to a CNA dtype issue`. The lean arm's
+distinctive weaknesses are the absence of the same techniques — `no cross-validation, bootstrapping,
+or independent test of cluster stability`. Notably, **omission rates are indistinguishable** (48% vs
+51%): the scaffold does not reduce what gets skipped, it changes what gets attempted.
+
+Second, and this is the point: **the arm with more statistical rigor is the arm that gets fooled
+more.** Bootstrapping, consensus clustering and silhouette validation are all orthogonal to whether
+the agent accepts a false premise. Rigor applied to the *statistics* provides no protection against
+a *semantic* trap.
+
+### 4.3.2 How a rigorous episode talks itself into the wrong answer
+
+The traces suggest a mechanism, though we are careful about its strength. When the planted label
+conflicts with the data, the agent frequently **registers the contradiction and files it as an
+anomaly rather than treating it as evidence against the label.** Three independent textual markers
+in the judge's critiques point this way:
+
+| marker | fooled | resisted | Fisher p |
+|---|---:|---:|---:|
+| describes a data-vs-expectation "paradox" | 29% | 7% | 0.051 |
+| contradiction "noted but not resolved" | 51% | 29% | 0.078 |
+| explicit deference to the revealed label | 11% | 4% | 0.37 |
+
+**No single marker reaches p < 0.05.** With n=63 co-scored mislead episodes we report this as
+*converging weak evidence*, not an established mechanism — three markers agreeing in direction is
+more than none, and less than a result. The qualitative signature is nonetheless consistent, and one
+episode states it plainly: the agent
+
+> *"chose to interpret this as 'squamous-like transdifferentiated LUAD' rather than challenging the
+> cohort label — a consequential deference to priors over data."*
+
+Here the agent had already recovered genuinely squamous biology (KRT5, KRT6A, TP63, SOX2) and then
+relabelled its own correct finding to fit the injected frame. The contradiction that should have
+falsified the label was absorbed as an interesting subtype instead.
+
+This is what makes the staged prompt actively harmful rather than merely wasteful. It trains the
+agent to *document* tensions faithfully — and documenting a contradiction is not the same as acting
+on one. The result is a well-catalogued wrong answer, which is harder to catch than a sloppy one.
+
 ### 4.4 Agents recognise the benchmark by its shape
 
 In 8 episodes the model named the cohort's cancer type from its **sample count**, before any

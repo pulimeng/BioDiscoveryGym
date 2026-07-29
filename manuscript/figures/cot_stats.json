@@ -127,5 +127,37 @@
   "n": {
     "g2": 126,
     "g3": 72
+  },
+  "mechanism": {
+    "paradox": {
+      "fooled": 10,
+      "n_fooled": 35,
+      "resisted": 2,
+      "n_resisted": 28,
+      "fisher_p": 0.050856121440715704
+    },
+    "unresolved_contradiction": {
+      "fooled_rate": 0.51,
+      "resisted_rate": 0.29,
+      "fisher_p": 0.078,
+      "note": "suggestive only, not significant"
+    },
+    "weakness_type_g2": {
+      "detailed": {
+        "omission": 0.48,
+        "failure": 0.1,
+        "n": 879
+      },
+      "lean": {
+        "omission": 0.51,
+        "failure": 0.06,
+        "n": 873
+      }
+    },
+    "validation_rigor_high": {
+      "detailed": 0.85,
+      "lean": 0.71,
+      "note": "2/3 models; Sonnet flat at 95%"
+    }
   }
 }

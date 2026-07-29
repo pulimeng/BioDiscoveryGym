@@ -82,6 +82,18 @@ Staged prompt → more fooled **3/3** (11→5, 8→4, 5→2).
 **[RETRACTED]** the earlier "Flash collapses under lean 0.511→0.361" was an artifact — a failed API
 call scored mechanism_grounding as 0.000 across all 75 Gemini-lean episodes. Do not reinstate it.
 
+**R3.1 — The rigor paradox.** [measured] detailed has HIGHER validation_rigor (85% vs 71%, 2/3
+models) and MORE failed-execution weaknesses (10% vs 6%), yet is fooled MORE (24/36 vs 11/36).
+Omission rates are **indistinguishable** (48% vs 51%) — the scaffold changes what is *attempted*,
+not what is skipped. Rigor on statistics ≠ protection against a semantic trap.
+
+**R3.2 — Mechanism: contradiction filed, not acted on.** [CONVERGING WEAK EVIDENCE — say so]
+paradox 29% vs 7% (p=0.051) · noted-but-unresolved 51% vs 29% (p=0.078) · explicit deference 11% vs
+4% (p=0.37). **No marker reaches p<0.05 at n=63.** Report as three markers agreeing in direction,
+not as an established mechanism. Canonical quote: *"chose to interpret this as 'squamous-like
+transdifferentiated LUAD' rather than challenging the cohort label — a consequential deference to
+priors over data"* (agent had already found KRT5/KRT6A/TP63/SOX2).
+
 **R4 — Derivation deltas under 3-pass consensus.** G2: GPT +38, Sonnet −19, Gemini +14 — all
 *separated*. G3: GPT +50 separated; Sonnet +17 and Gemini +8 **overlap → not claimed**.
 
