@@ -70,8 +70,10 @@ but is not significant. This is not a rhetorical point; it is a result. Lead wit
 
 ## 5. Results
 
-**R1 — Outcome cannot see grounding.** [H1] Pooled p=0.73; ordinal ρ=+0.057 (p=0.53); holds within
-every arm, sign flips across models. *This is the load-bearing result — give it the first figure.*
+**R1 — Outcome cannot see grounding.** [H1] derived 0.483 vs recalled 0.524; Mann-Whitney p=0.19;
+ordinal ρ=−0.067 (p=0.46), n=122. Point estimate mildly favours *recall* — claim **no detectable
+relationship in either direction**, never "derivation scores better".
+*This is the load-bearing result — give it the first figure.*
 
 **R2 — Grounding predicts robustness.** [H2] 21% vs 67% fooled, p=0.0001, OR=0.13, n=72.
 
