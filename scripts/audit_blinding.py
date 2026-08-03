@@ -139,6 +139,7 @@ def main():
         ap.error('give a run dir or --all')
 
     grand = 0
+    total_eps = 0
     for run in runs:
         eps, bad = 0, 0
         kinds = defaultdict(int)
@@ -156,7 +157,9 @@ def main():
                     if len(examples) < 6:
                         examples.append((label, k, ctx))
         grand += bad
-        status = 'CLEAN' if not bad else f'{bad}/{eps} LEAKING'
+        total_eps += eps
+        status = ('NO EPISODES' if eps == 0 else
+                  'CLEAN' if not bad else f'{bad}/{eps} LEAKING')
         print(f"  {run:52} {eps:>4} eps   {status}")
         if kinds:
             print(f"       channels: {dict(kinds)}")
@@ -165,11 +168,21 @@ def main():
                 print(f"       [{lab}] {k}: …{ctx[:150]}…")
 
     print()
+    # An audit that passes because there was nothing to audit is the same failure shape as a
+    # judge returning 0.0 on an API error: absence rendering as success. A crashed run leaves
+    # episode DIRECTORIES but no episode JSONs, so without this check the gate reports PASS on a
+    # run that never happened. Observed for real: the first smoke attempt died on an SSL error and
+    # this function returned 0.
+    if total_eps == 0:
+        print("  FAIL — no episodes found. Nothing was audited.")
+        print("  This is not a pass: a crashed run leaves directories but no episode JSONs.")
+        print("  Check the run actually completed before reading any gate result.")
+        return 1
     if grand:
         print(f"  FAIL — {grand} episode(s) leak identity to the agent.")
         print("  A run in this state cannot support a blinding claim. Fix and re-run.")
         return 1
-    print("  PASS — no identity-bearing content reached the agent in any episode.")
+    print(f"  PASS — {total_eps} episodes audited, no identity-bearing content reached the agent.")
     print("  NOTE: absence of these channels is necessary, not sufficient. Dataset SHAPE")
     print("  (cohort size, mutation-frequency fingerprint) remains recognisable by design.")
     return 0
