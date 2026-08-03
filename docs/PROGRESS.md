@@ -1,8 +1,68 @@
 # BioDiscoveryGym — Status
 
-**Last updated:** 2026-07-14 · scoring map: **`docs/README.md`** · model ladder: **`docs/MODEL_LADDER.md`**
+**Last updated:** 2026-08-03 · plan: **`manuscript/PLAN.md`** · scripts: **`scripts/README.md`**
+· defects: **`docs/DATA_INTEGRITY_AUDIT.md`**
 
 ---
+
+## ⚠️ CURRENT STATE — read this before anything below
+
+**Everything below the "Session 2026-07-13/14" heading is a historical log and contains numbers that
+have since been RETRACTED or REPAIRED.** Do not cite from it.
+
+### Where the project is
+
+| | |
+|---|---|
+| **Pilot campaign** | 450 episodes, 3 models × 2 prompts × 75. Fully scored, judged 3× |
+| **Status of pilot G1/G2/G3 numbers** | **PROVISIONAL** — the campaign was path-contaminated |
+| **Harness** | **FIXED** `48d1db0` — agent now works in an opaque dir |
+| **Next** | preregister, then a clean rerun. See `manuscript/PLAN.md` |
+| **Target** | ICLR 2027, abstract ~18 Sep 2026 (dates unconfirmed) |
+
+### The two defects that reshaped the project (2026-07-28 → 08-03)
+
+1. **Blinding leak.** `executor.py` injected the episode's own working path into the agent's code
+   namespace, and that path encoded arm, cohort and seed — on the mislead arm also the *planted*
+   cohort and the word `mislead`. Agents read it: 45/126 blinded episodes reasoned from it.
+   **Fixed in code; pilot data stays contaminated.** Gate for any new run:
+   `scripts/audit_blinding.py` must exit 0.
+2. **Silent scorer failure.** A DeepSeek 402 made every LLM judge return `0.0` with an `error`
+   diagnostic, which no consumer read. It scored `mechanism_grounding`=0.000 across 75 episodes and
+   produced a clean-looking finding that reached memory, a talk outline and a draft before anyone
+   read an episode. **78 episodes re-scored; both scorers now refuse to save on judge failure.**
+
+**Standing lesson:** both defects rendered as *benign values* — a path that looks like a save
+location, an API error that looks like a model resisting a trick. Neither was visible at any level
+of aggregation. Audit at the episode level before a number becomes a claim.
+
+### What is retracted / unsupported
+
+- **[RETRACTED]** "Gemini Flash collapses under lean (0.511→0.361)" — the `mechanism_grounding`
+  artifact. True value 0.500; **all three models are prompt-invariant**, mean |Δ|=0.013.
+- **[NOT SUPPORTED]** "blinded agents recognise rather than derive" — 52% data-derived, 94%
+  grounded, and shortcut-taking ranges 0% (GPT-lean) to 81% (Gemini).
+- **[NULL]** recall does not track literature volume — flat 44–61% across cohorts.
+
+### What holds, and is leak-independent
+
+- **G0 calibration** — 109/126 consensus recalled-prior. The instrument recognises the known recall
+  pole; G0 discloses identity anyway, so the leak is moot there.
+- **Two-axis instrument** — *strategy* (derive/mix/recall, scored neutrally) vs *support*
+  (grounded/unsupported/anchored, the axis that carries the failure). Support is the better
+  predictor of false-label adoption (OR 14.9 vs 8.0).
+- **Cost** — $1,273 for 450 episodes; grading an episode is 0.3% of generating it.
+- **The conceptual claim** — correctness cannot certify provenance. Does not depend on our data.
+
+### OS track — PARKED
+
+Phase 3 is unwinnable as specified: SGH-OS cannot predict its own survival under honest CV while
+TARGET can. Not being worked on. `docs/OS_PHASE3_DIAGNOSIS.md`.
+
+---
+
+# Historical log (pre-2026-07-28 — superseded, numbers unreliable)
+
 
 ## Session 2026-07-13/14 — TCGA ladder EXECUTED + judge upgraded
 

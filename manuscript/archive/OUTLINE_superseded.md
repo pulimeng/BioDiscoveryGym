@@ -1,3 +1,7 @@
+> **SUPERSEDED 2026-08-03 by `manuscript/RECOMMENDED_OUTLINE.md`.**
+> Kept only for its per-claim evidence tags, which the replacement expresses through its
+> "Claims discipline" section instead. Numbers here may be pre-repair — do not cite from this file.
+
 # Outline — section by section, with the evidence each claim rests on
 
 Every claim below is tagged with what supports it. Claims marked **[UNSUPPORTED]** are ones the

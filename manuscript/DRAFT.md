@@ -3,6 +3,12 @@
 *Draft for ICLR 2027. All statistics from `figures/cot_stats.json`; regenerate with
 `python scripts/cot_deepdive.py`.*
 
+> **⚠️ PILOT-BASED — every G1/G2/G3 number below is provisional.** The campaign these come from was
+> path-contaminated: the agent could read the cohort from its own working directory. The harness is
+> fixed (`48d1db0`) but the data is not retroactively clean. Unaffected: G0 calibration, the
+> conceptual claim, cost, and the scorer-failure audit. See `docs/DATA_INTEGRITY_AUDIT.md` and
+> `PLAN.md`.
+
 ---
 
 ## Abstract
