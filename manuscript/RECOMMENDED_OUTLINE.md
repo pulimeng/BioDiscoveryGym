@@ -130,7 +130,9 @@ Keep the list short:
 
 1. A controlled information-disclosure framework for identifying dependence on contextual prior
    information.
-2. A process measure of identity derivation calibrated at a known recall condition.
+2. A two-axis process instrument separating identity strategy (derive versus recall) from evidential
+   support (grounded versus unwarranted), with the strategy axis calibrated at a known recall
+   condition.
 3. Subject to clean replication, evidence that conventional outcome scores are insensitive to a
    large process change associated with robustness under misleading context.
 4. Subject to clean replication, an ablation testing whether procedural rigor and epistemic
@@ -233,6 +235,10 @@ the reasoning that produced the answer.
 
 ## 3.5 Process measure
 
+The instrument has two related but distinct axes.
+
+### Strategy: how identity was reached
+
 Define `identity_derivation`:
 
 - data-derived;
@@ -240,7 +246,23 @@ Define `identity_derivation`:
 - recalled-prior;
 - not-established.
 
-The judge reads the symmetric auditable trace channels rather than hidden chain-of-thought.
+### Support: whether the committed identity was warranted
+
+Define `d2_identity.support`:
+
+- **grounded:** the final identity is positively supported by cohort-specific evidence computed in
+  the episode;
+- **unsupported:** the identity is asserted without cohort-specific support;
+- **anchored:** the identity is maintained despite contradictory cohort-specific evidence.
+
+For analysis, `unsupported` and `anchored` may be grouped as **unwarranted**, while retaining the
+three-way breakdown in tables. This axis operationalizes the paper's key qualification: recall is
+not inherently bad. Recalled knowledge that is subsequently verified can be grounded; the target
+failure is unwarranted commitment, not recall itself.
+
+Strategy and support must not be collapsed. Strategy asks whether the agent derived or recalled;
+support asks whether its final commitment was warranted by this cohort. The judge reads symmetric
+auditable trace channels rather than hidden chain-of-thought.
 
 ## 3.6 Calibration at the known extreme
 
@@ -251,8 +273,10 @@ G0 explicitly supplies the cohort identity and therefore anchors the recall pole
 - 2/126 data-derived;
 - 3/126 unresolved.
 
-This is an important positive control. It shows that the instrument recognizes the known recall
-condition. Do not overstate it as complete validation across G2 and G3.
+This is clean construct-validity evidence and should be presented prominently: the instrument
+recognizes the known recall condition. It is unaffected by the path leak because G0 discloses
+identity by design. It validates the recall pole, not the instrument's classifications across every
+other condition.
 
 ## 3.7 Reliability and separation of judges
 
@@ -280,6 +304,9 @@ Before submission, use paired or hierarchical models accounting for repeated coh
 
 Predefine a smallest meaningful outcome difference and conduct an equivalence analysis. A
 nonsignificant difference is not evidence of invariance.
+
+Current omnibus and pairwise tests are consistent with a small outcome difference but do not prove
+equivalence: Kruskal-Wallis G0/G1/G2 H=2.13, p=0.34; G0 versus G2 p=0.31; G1 versus G2 p=0.16.
 
 ## 4.2 Main measurement gap: process changes while outcome does not (provisional)
 
@@ -324,6 +351,10 @@ After establishing the experimental G0-G2 result, show the observational result 
 
 Describe this as no detectable association, not proof that the groups are equivalent.
 
+The current support axis is also highly concentrated in G2: 119/126 identities are rated grounded.
+Because the path may itself provide apparent identity support, treat this absolute rate as
+contaminated and provisional rather than evidence that cleanly blinded agents are well grounded.
+
 ## 4.3 Behavioral validation: why the hidden gap matters (provisional)
 
 G3 supplies false contextual information:
@@ -332,11 +363,21 @@ G3 supplies false contextual information:
 - other episodes: 29/43 fooled, 67%;
 - Fisher p=0.00012, odds ratio 0.13, n=72.
 
-This is the intended criterion-validity result, but the current magnitude is not trustworthy. G3
+The support axis produces an even sharper provisional separation:
+
+- unwarranted identity support: 81% fooled;
+- grounded identity support: 22% fooled;
+- odds ratio 14.9, p<0.0001.
+
+For comparison, the strategy-axis association has odds ratio 8.0, p=0.0002 under the corresponding
+analysis. This distinction matters conceptually: the operational risk is not recall itself but an
+identity commitment that remains unsupported or anchored against the data.
+
+Both are intended criterion-validity results, but their current magnitudes are not trustworthy. G3
 paths expose strings such as `g3a_lusc_mislead_luad`, simultaneously revealing the true cohort, the
 planted cohort, and that the condition is a mislead experiment. Agent exploitation of that path can
-act as a common cause of both variables: it can produce an apparently data-derived trace and enable
-resistance to the planted label.
+act as a common cause of the variables: it can produce an apparently data-derived or grounded trace
+and enable resistance to the planted label.
 
 Only a path-scrubbed G3 rerun removes this channel. The primary clean display should include model-,
 prompt-, cohort-pair-, and reveal-time-stratified estimates, not only a pooled table. Blinded and
@@ -363,7 +404,10 @@ Detailed versus lean:
 - omission: 48% versus 51%;
 - attempted-but-failed analysis: 10% versus 6%.
 
-The validation-rigor contrast is supported by the current traces. The false-label-adoption contrast
+The validation-rigor contrast is supported across all three models on the pooled honest arms (GPT
+70% versus 52%, Sonnet 84% versus 72%, Gemini 84% versus 48%). On G2 alone, however, Sonnet is flat
+at 95% versus 95%; state the scope whenever quoting the pooled 85% versus 71% aggregate. The
+false-label-adoption contrast
 is provisional because G3 paths are contaminated, and prompt conditions may differ in whether the
 agent notices or exploits those paths. If the fooling difference survives clean replication, the
 reveal is not that the detailed prompt is useless: it produces more real statistical work, but that
@@ -535,8 +579,14 @@ This is the hero figure.
 
 ## Figure 3: Why the hidden distinction matters
 
-False-label adoption for data-derived versus other episodes, with stratified estimates by model and
-prompt.
+False-label adoption under both process axes:
+
+- strategy: data-derived versus other;
+- support: grounded versus unwarranted (`unsupported` + `anchored`).
+
+Include stratified estimates by model and prompt. If both results replicate cleanly, lead with the
+support axis because it captures warranted versus unwarranted commitment and is conceptually closer
+to deployment risk; retain strategy to connect the result to the information ladder.
 
 Provisional caption takeaway: **A distinction invisible to correctness is associated with response
 to false context in path-contaminated pilot runs.** This cannot become a hero claim without clean
@@ -586,7 +636,8 @@ methods box.
 ## Supported now
 
 - G0 calibrates the judge's recall pole: 109/126 episodes are consensus recalled-prior.
-- Detailed scaffolding increases documented validation rigor in the current traces.
+- Detailed scaffolding increases documented validation rigor across all three models on the pooled
+  honest arms; on G2 alone Sonnet is flat at 95% versus 95%.
 - Public-dataset blinding leaks through multiple channels, including sample count and agent-visible
   paths.
 - The scoring-failure audit demonstrates that judge/API failures can silently render as legitimate
@@ -599,6 +650,9 @@ methods box.
 - Outcome remains approximately or formally invariant across a valid G0-G2 manipulation.
 - Outcome is independent of derivation class under clean blinding.
 - Data-derived reasoning predicts resistance to false context after removing agent-visible labels.
+- Grounded identity support predicts resistance to false context after removing agent-visible labels.
+- Cleanly blinded G2 identities are predominantly grounded; the current 119/126 estimate is path-
+  contaminated.
 - Detailed scaffolding increases false-label adoption in clean G3 episodes.
 - Outcomes are formally equivalent across G0-G2.
 - Agents remain primarily in a recall regime under clean blinding.

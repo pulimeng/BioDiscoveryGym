@@ -15,11 +15,23 @@ wrong — recorded here so the audit's own provenance is honest.
 
 ## Defect 1 — the "blinded" arm leaks the cohort through `output_dir`
 
-> **STATUS: DEFERRED BY DECISION 2026-07-29.** Not being worked on. Documented, quantified, and
-> accepted as a known limitation for the current results. It does **not** invalidate the
-> between-arm deltas (see below); it does mean **absolute** G2 derivation rates are inflated and a
-> blinded re-run is the only clean fix. Anyone starting a new blinded run must fix this first, or
-> the new data inherits the defect.
+> **STATUS: FIXED IN CODE 2026-08-03 (commit 48d1db0). PILOT DATA REMAINS CONTAMINATED.**
+>
+> Two separate facts, and conflating them would be a serious error:
+> - **The harness is fixed.** Future runs are clean. `episode.py` now runs the agent in an opaque
+>   working directory (`base/_work/<uuid12>`) and relocates artifacts into the real episode
+>   directory afterwards, in a `finally` block so a crashed episode still keeps its output. `base`
+>   is deliberately left intact — model, date and prompt arm are not hidden from the agent anyway;
+>   only the episode label was identity-bearing.
+> - **The existing 450 episodes are still leaked.** No code change can retroactively unsee what the
+>   agent read. Every G2/G3 number from the pilot campaign stays provisional until the clean rerun.
+>   That rerun is the whole point of `manuscript/PLAN.md`.
+>
+> **Gate for any future run:** `python scripts/audit_blinding.py <run_dir>` must exit 0. It asserts
+> that nothing the *harness* showed the agent reveals identity, and is arm-aware — G0 discloses the
+> true cohort and G3 a false one by design, so cohort checks are suppressed where disclosure is
+> definitional while plumbing checks (episode label, results path, arm token, arm+seed, the word
+> `mislead`) apply to every arm. Validated against known-bad data: **422/450 pilot episodes fail**.
 
 ### Mechanism (structural, not incidental)
 
