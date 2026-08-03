@@ -54,9 +54,41 @@ margin without reference to that number.
 **1.3 Freeze construct definitions.** `strategy` (data-derived/mixed/recalled) and `support`
 (grounded/unsupported/anchored) defined before looking at clean results.
 
+**1.4 Pre-commit BOTH directions on every fragile test.** The study must be publishable across
+plausible outcomes, which is the point of preregistering:
+
+- **A small G0→G2 process shift is a FINDING, not a null.** The leak inflates the current shift, so
+  shrinkage is the *expected* direction. If clean G2 shows agents cannot derive identity and fall
+  back to recall, that is **"agents remain in the recall regime even under genuine blinding"** — a
+  more alarming paper than "process shifts a lot". Write that framing now.
+- **If clean G2 outcome DROPS below G0, that is also a finding:** the outcome metric is
+  recall-biased. Component-level prediction to preregister: the drop should appear in
+  `reference_concordance` and not elsewhere. Measured on pilot data, that is the *only* component
+  with a significant G0 advantage (+0.073, p=0.011); `marker_evidence` is marginally *higher* blind.
+- **Scaffold→fooling** may only ever be directional. Decide now that this is acceptable.
+
+**1.5 Multiplicity control** across the five primary tests and any stratified analyses. Specify the
+method in the prereg; a prereg reviewer will look for it.
+
 ## Phase 2 — Clean rerun (days 5–8)
 
-**2.1 Full 450 episodes**, 6 parallel lanes, ~1–2 days, ~$1,273.
+**2.1 Full 450 episodes + EXTRA G3 SEEDS**, 6 parallel lanes, ~1–2 days, ~$1,470.
+
+**Raise G3 from 3 to 8 seeds.** G3 is only 12 of 75 episodes per run, so this costs ~+16% (~$200)
+and it protects the two results that most need protecting. At the current design a modest
+attenuation kills the headline reversal outright:
+
+```
+                     moderate attenuation (56% vs 39%)
+G3 seeds  eps/arm     p
+   3         36     0.238      <- current design, dead on any attenuation
+   6         72     0.066
+   8         96     0.021  SIG
+```
+
+This is the best marginal dollar in the plan. Under *strong* attenuation even 12 seeds gives
+p=0.076 — so also pre-commit to reporting "directional across 3/3 models" if it lands there,
+rather than choosing that framing after seeing the p-value.
 Rerun G0 too — it is only ~$350 of the total and having all arms from one clean codebase removes
 "the arms aren't comparable" as a reviewer question. Do not economise here.
 
@@ -97,13 +129,14 @@ classifying provenance. Identity correctness scored separately. *(This is a real
 - **G3 only** → narrower robustness paper, still viable.
 - **None** → the honest contribution is the benchmark-integrity audit → workshop/eval venue.
 
-## Phase 5 — Blind-then-challenge (days 17–24, ~$450) **[conditional on the gate]**
+## Phase 5 — Blind-then-challenge **[STRETCH GOAL — decided 2026-08-03, not a gate]**
 
 Third prompt arm from `TO_BE_TESTED.md`. G3 primary, G2 as honest control: 33 episodes × 3 models ×
 ~2 seeds. Diagnosis + remedy is materially stronger than diagnosis alone.
 
-**Run only if Phase 4 reproduces the phenomenon.** A noisy remedy is publishable; a remedy built on
-a contaminated foundation is not.
+**Cut from the critical path.** A clean diagnosis is a complete ICLR submission; diagnosis+remedy is
+stronger only if the remedy is real, and a rushed remedy is worse than none. Fast-follow for
+camera-ready or the next cycle. Revisit only if Phases 0–4 finish early.
 
 ## Phase 6 — Figures and manuscript (days 24–38)
 
@@ -124,14 +157,23 @@ per-cohort results.
 | | who |
 |---|---|
 | Path fix, leak audit, prereg draft, analysis, figures, manuscript | me |
-| Every API-spending run (smoke, rerun, judging, remedy) | you |
+| Every API-spending run (smoke, rerun, judging) | you |
+| Human adjudication of a stratified label sample | you |
 
-## Decisions needed now
+## Settled 2026-08-03
+
+- Blind-then-challenge → **stretch goal**, off the critical path.
+- G3 seeds → **3 to 8** (+~$200).
+- Human adjudication → owned by PI, outside this plan's critical path.
+- **Claim discipline: motivate broadly, claim narrowly.** Lead with the general measurement problem;
+  claim only what seven TCGA cohorts of one task family support. Generality across task families is
+  future work — do not let the framing write checks the evidence cannot cash.
+
+## Still open
 
 1. **Full 450 or G1–G3 only?** — recommend full (+$350 buys arm comparability).
 2. **Keep Gemini?** — tier-confounded, but it is the shortcut-heavy case (81%) that makes the
    process-variance argument vivid. Recommend keep, disclose the confound.
-3. **Blind-then-challenge budget reserved?** — decide now whether ~$450 is available at the gate.
 
 ## Standing risk
 

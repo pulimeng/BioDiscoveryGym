@@ -163,20 +163,41 @@ class Episode:
         output_dir = base / (subdir or self.episode_id)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # ---- BLINDING: the agent must never see a cohort-bearing path ------------------------
+        # The episode label encodes the arm, cohort and seed — and on the mislead arm it also
+        # encodes the PLANTED cohort and the word "mislead" (g3a_lusc_mislead_luad_s42). The
+        # executor injects its output_dir into the agent's code namespace and the submit tool
+        # instructs the agent to write there, so handing it the real episode directory hands it
+        # the answer. Agents demonstrably read it: see docs/DATA_INTEGRITY_AUDIT.md.
+        #
+        # So the agent works in an OPAQUE directory and the harness relocates the artifacts
+        # afterwards. `base` is safe to keep (model/date/prompt-arm, none of which is hidden from
+        # the agent); only the episode label is identity-bearing.
+        work_dir = base / "_work" / uuid.uuid4().hex[:12]
+        work_dir.mkdir(parents=True, exist_ok=True)
+
         if self._gene_map:
-            (output_dir / "gene_map.json").write_text(json.dumps(self._gene_map, indent=2))
+            (work_dir / "gene_map.json").write_text(json.dumps(self._gene_map, indent=2))
 
         clinical_codebook = self.dataset.get("clinical_codebook", {})
         if clinical_codebook:
-            (output_dir / "clinical_codebook.json").write_text(
+            (work_dir / "clinical_codebook.json").write_text(
                 json.dumps(clinical_codebook, indent=2)
             )
 
         sandbox.enable()
         try:
-            discovery_raw, messages, run_log = agent.run(self.episode_id, output_dir=output_dir)
+            discovery_raw, messages, run_log = agent.run(self.episode_id, output_dir=work_dir)
         finally:
             sandbox.disable()
+            # Relocate whatever the agent produced into the real episode directory, then drop the
+            # opaque dir. Done in `finally` so a crashed episode still leaves its artifacts behind.
+            for item in work_dir.iterdir():
+                dest = output_dir / item.name
+                if dest.exists():
+                    shutil.rmtree(dest) if dest.is_dir() else dest.unlink()
+                shutil.move(str(item), str(dest))
+            work_dir.rmdir()
 
         self._cleanup_episode_data()
 
