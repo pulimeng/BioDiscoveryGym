@@ -100,6 +100,36 @@ its own correct finding to fit the frame.
 → *The scaffold trains the agent to document tensions faithfully. Documenting a contradiction is
 not acting on one. The output is a well-catalogued wrong answer — harder to catch than a sloppy one.*
 
+### Act 4b — Process varies hugely; the outcome score cannot see it **[SOLID — the sharpest demo]**
+
+*Source: `scripts/shortcut_analysis.py` → `figures/shortcut_stats.json`*
+
+Two surface shortcuts bypass biological derivation on the blinded arm: naming the cancer from the
+cohort's **sample count**, and reading the cohort name out of the agent's own **working path**.
+
+```
+arm                       n   derived  grounded   count  path   ANY   G2 outcome
+GPT-5.5/detailed         21      11       21        0      1    5%      0.489
+GPT-5.5/lean             21      19       21        0      0    0%      0.478
+Sonnet 5/detailed        21      15       21        0      3   14%      0.482
+Sonnet 5/lean            21      11       21        3      7   43%      0.477
+Gemini 3.5 Flash/det     21       3       16        4     17   81%      0.503   <- highest
+Gemini 3.5 Flash/lean    21       6       19        1     17   81%      0.487
+TOTAL                   126      65      119        8     45   37%
+```
+
+**Shortcut-taking spans 0% → 81%. Outcome spans 0.477 → 0.503.** Process varies across eighty
+points; the answer varies across three. **The arm that shortcuts most often scores at the top and is
+not penalised at all.**
+
+→ *This is the thesis demonstrated. It does not require agents to behave alike — it requires them to
+behave differently while scoring the same, which is what happened.*
+
+**GUARD — do not overstate this.** "Blinded agents recognise rather than derive" is **not supported**:
+52% of blinded episodes are data-derived and 94% carry a grounded identity claim. GPT-lean shortcuts
+in **0/21**. The finding is the *variance* and the outcome score's blindness to it, not a universal
+behaviour. Stated the strong way, one look at the data refutes it.
+
 ### Act 5 — Blinding is harder than it looks **[SOLID + a self-implicating case]**
 
 - **Sample-count recognition [SOLID]** — 8 episodes name the cancer from cohort *size* before any
