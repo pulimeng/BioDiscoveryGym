@@ -27,10 +27,22 @@ it resolves to `.../g3a_lusc_mislead_luad_s42`. Give the agent a **neutral per-e
 directory** (`<run>/_work/<opaque-id>`), and relocate artifacts into the real episode directory
 after the episode ends. The harness keeps the mapping; the agent never sees it.
 
-**0.2 Sweep for every other identity channel.** The path is the one we found, not necessarily the
-only one. Audit what reaches the agent: `episode_id`, filenames written by the harness, tool-result
-text, error messages, codebook payload, any `cwd`. **G3 is the severe case — its label carries the
-true cohort, the planted cohort, *and* the word `mislead`.**
+**0.2 Sweep for every other identity channel — DONE 2026-08-03. No further leaks found.**
+
+| channel | status |
+|---|---|
+| `output_dir` in the code namespace | **was the leak** — fixed, opaque `_work/<uuid12>` |
+| submit-tool description | safe — now names the opaque dir |
+| `episode_id` → `agent.run()` | safe — reaches `_log` only, never the agent's context |
+| executor tracebacks (`format_exc`) | safe — the paths they can carry are now opaque or fixed |
+| episode data dir | safe — fixed constant `data/episode`, no arm/cohort/seed |
+
+Construction-tested: work dir opaque, agent receives it, artifacts relocated afterwards, relocation
+in a `finally` so a crashed episode still keeps its output.
+
+**Caveat that cannot be swept away:** dataset SHAPE stays recognisable by design — cohort size and
+mutation-frequency fingerprints. That is an agent-generated channel, not a plumbing defect, and it
+is a finding rather than a bug.
 
 **0.3 Build the pre-flight leak audit.** A script that scans a completed run and asserts **zero**
 identity-bearing strings in anything agent-visible. Extend `audit_integrity.py`. This must exist
