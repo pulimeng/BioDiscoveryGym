@@ -87,7 +87,7 @@ Plus file-based: MSigDB, STRING PPI, OncoKB, COSMIC.
 **Key design decision — mutation-stratified indications:** Real precision oncology targets are often mutation-stratified (e.g., "AML with FLT3-ITD"). Passing a mutation name in the indication string breaks gene anonymization. v1 uses lineage-only indications; mutation stratification is deferred to v2.
 
 **Status:**
-- v1 implemented (`agents/claude_agent_target.py`, `scripts/run_target_discovery.py`), not yet run systematically
+- v1 implemented (`agents/claude_agent_target.py`, `scripts/archive/run_target_discovery.py`), not yet run systematically
 - LLM judge scorer not yet written
 - v2 (mutation stratification, novelty control, Stage A pre-commitment) deferred
 
