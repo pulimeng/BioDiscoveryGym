@@ -100,7 +100,7 @@ its own correct finding to fit the frame.
 → *The scaffold trains the agent to document tensions faithfully. Documenting a contradiction is
 not acting on one. The output is a well-catalogued wrong answer — harder to catch than a sloppy one.*
 
-### Act 4b — Process varies hugely; the outcome score cannot see it **[SOLID — the sharpest demo]**
+### Act 4b — Process varies hugely; the outcome score cannot see it **[CONDITION-A ONLY — see caveat]**
 
 *Source: `scripts/shortcut_analysis.py` → `figures/shortcut_stats.json`*
 
@@ -122,8 +122,14 @@ TOTAL                   126      65      119        8     45   37%
 points; the answer varies across three. **The arm that shortcuts most often scores at the top and is
 not penalised at all.**
 
-→ *This is the thesis demonstrated. It does not require agents to behave alike — it requires them to
-behave differently while scoring the same, which is what happened.*
+→ *In the shortcut-available condition, agents differed enormously in process while scoring the
+same. That is the thesis illustrated — but read the caveat before quoting it.*
+
+**⚠️ 83% OF THIS IS OUR OWN DEFECT.** Of the 47 shortcut episodes, **45 are path-citing** (our
+plumbing) and only **8 are count-based** (agent-generated); overlap 6. On current evidence the
+fix leaves **8/126 = 6%**, not 37%. So this is a **condition-A result** — a measurement of what
+agents do when a shortcut is handed to them — **not a standing claim about agents in general**, and
+it will largely evaporate in the clean rerun *by design*. Do not build the paper on it.
 
 **GUARD — do not overstate this.** "Blinded agents recognise rather than derive" is **not supported**:
 52% of blinded episodes are data-derived and 94% carry a grounded identity claim. GPT-lean shortcuts
@@ -135,12 +141,43 @@ behaviour. Stated the strong way, one look at the data refutes it.
 - **Sample-count recognition [SOLID]** — 8 episodes name the cancer from cohort *size* before any
   biology: *"1095 samples strongly resembles TCGA-BRCA cohort size (famous PanCancer BRCA
   n=1097/1095)."* Dataset shape is the one property blinding cannot hide.
-- **Our own leak [SOLID, deferred]** — the executor exposed a working path containing the cohort
-  name; in 45/126 blinded episodes the agent reasoned from it. Deltas survive (symmetric in Gemini,
-  near-absent in GPT), absolute rates do not.
+- **Our own leak [SOLID, fixed 48d1db0]** — the executor exposed a working path containing the
+  cohort name; in 45/126 blinded episodes the agent reasoned from it. **One channel among several,
+  not the headline.** Its value is (a) evidence that agents take whatever route is available, (b) the
+  shortcut-available condition of the two-condition design, and (c) the case for episode-level
+  auditing. Deltas survive (symmetric in Gemini, near-absent in GPT); absolute rates do not.
 
 → *A benchmark on public data leaks through shape and through plumbing. We found both, and one was
 ours.*
+
+---
+
+## What carries the argument WITHOUT the leak
+
+The leak is **one contamination channel among several**, and it should not become the story. Sorting
+the evidence by what the clean rerun can take away:
+
+**Standing now — leak-independent:**
+- **G0 calibration** — 109/126 consensus recalled-prior. The instrument recognises the known recall
+  pole. G0 discloses identity anyway, so the leak is moot. *This is the construct-validity evidence.*
+- **The two-axis instrument itself** — strategy scored neutrally, support scored for real. The design
+  point that *unwarranted* recall is the failure, not recall, stands regardless of any run.
+- **Sample-count recognition** — 8 episodes, entirely agent-generated. A contamination channel we did
+  not create and cannot remove: dataset shape.
+- **Judge reliability** — 3-pass agreement, the separation test, the ceiling-effect caveat on
+  `codebook_response`.
+- **Cost** — grading is 0.3% of generating. Kills "process evaluation doesn't scale".
+- **The scorer-failure audit** — a failure mode that renders as a benign value. A methods
+  contribution in its own right.
+- **The conceptual claim** — correctness cannot certify provenance. Does not depend on our data at
+  all, which is exactly why it is the thing to stand on.
+
+**Pending the clean rerun — condition-A:**
+- H1 (outcome vs strategy), H2 (grounding vs robustness), the rigor paradox, the mechanism, Act 4b.
+
+That is the honest split. The empirical spine is provisional; the instrument, the method and the
+argument are not. The rerun converts the first list into the second — it does not create the paper
+from nothing.
 
 ---
 

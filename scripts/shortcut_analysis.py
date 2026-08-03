@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 """Shortcut analysis — how agents reach cohort identity on the blinded arm, and what it costs them.
 
-THE CLAIM THIS SUPPORTS: process varies enormously between agents; the outcome score does not see
-it. This is the paper's sharpest demonstration that correctness cannot certify discovery.
+THE CLAIM THIS SUPPORTS: in the SHORTCUT-AVAILABLE condition, process varied enormously between
+agents while the outcome score did not see it.
+
+SCOPE — READ BEFORE QUOTING. 83% of the shortcut signal here is OUR OWN blinding defect (45 of 47
+episodes cite the working path; only 8 are agent-generated sample-count recognition). This is a
+CONDITION-A result — what agents do when a shortcut is handed to them — not a standing claim about
+agents, and it will largely evaporate in the clean rerun BY DESIGN. The paper must not rest on it;
+see docs/PILOT_AS_EXPERIMENT.md and the "what carries the argument WITHOUT the leak" section of
+manuscript/STORY.md.
 
 It also DISCIPLINES an overstatement worth guarding against. "Blinded agents recognise rather than
 derive" is NOT true across the board: 52% of blinded episodes are judged data-derived and 94% carry
@@ -12,8 +19,8 @@ The finding is the VARIANCE plus the outcome score's blindness to it — not a u
 Two shortcut channels, both surface features that bypass biological derivation:
   count-leak   the model names this cohort's cancer with its exact sample size nearby, pre-reveal
                (extract_cot.count_based_identity — tightened, hand-validated probe)
-  path-cited   the agent's own reasoning invokes the working directory, which contains the cohort
-               name (our own blinding defect — see docs/DATA_INTEGRITY_AUDIT.md, deferred)
+  path-cited   the agent's own reasoning invokes the working directory, which contained the cohort
+               name (our own blinding defect — FIXED 48d1db0; see docs/DATA_INTEGRITY_AUDIT.md)
 
 Reported per arm alongside derivation rate, grounding rate and outcome, so the comparison that
 matters is visible in one table.
@@ -131,6 +138,14 @@ def main():
     print("\n  Process varies across ~80 points; the answer varies across ~3. The arm that takes")
     print("  shortcuts MOST often is not penalised — it scores at the top. That is the claim:")
     print("  an outcome score cannot tell you which kind of agent you have.")
+    cnt, pth, anyx = tot['cnt'], tot['pth'], tot['any']
+    print(f"\n  DECOMPOSITION — how much of this is OUR defect vs agent-generated:")
+    print(f"    count-leak (agent-generated) {cnt:>3}   path-cited (our plumbing) {pth:>3}   "
+          f"ANY {anyx:>3}")
+    print(f"    share attributable to the path defect: {(anyx-cnt)/max(anyx,1)*100:.0f}%")
+    print(f"    survives the fix on current evidence : {cnt}/{tot['n']} = {cnt/tot['n']*100:.0f}%")
+    print("    => CONDITION-A result. Not a standing claim about agents; it will largely")
+    print("       evaporate in the clean rerun BY DESIGN. Do not build the paper on it.")
     print("\n  GUARD AGAINST OVERSTATEMENT: this is about VARIANCE, not a universal behaviour.")
     print(f"  {tot['der']}/{tot['n']} ({tot['der']/tot['n']*100:.0f}%) of blinded episodes are "
           f"data-derived and {tot['grd']}/{tot['n']} ({tot['grd']/tot['n']*100:.0f}%) are grounded.")
