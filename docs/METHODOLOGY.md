@@ -169,7 +169,31 @@ Each was an idea we held. Marking them explicitly, in the documents where someon
 resurrect them, is worth more than the space it costs. **Evidence tags travel with claims**
 (SOLID / WEAK / NULL / RETRACTED) so that strength survives the trip between documents.
 
-## 14. Motivate broadly, claim narrowly
+## 14. Do not overinterpret your own benchmark
+
+**The reflexive one, and the strongest argument for restraint here.** A paper whose thesis is *"do
+not overinterpret benchmark numbers"* is held to that standard first. Aggressively restrained
+statistics are not a weakness of such a paper — they are the thesis applied to itself.
+
+Concretely, for a design with 3 models, 7 cohorts, **2 mislead pairs** and correlated episodes:
+
+- **Report an evidence hierarchy**, with formal tests last: construct demonstration → controlled
+  contrasts → replication across models/prompts/cohorts/judges → effect sizes with uncertainty →
+  tests as supporting diagnostics.
+- **Replication beats significance.** The same direction across most models, prompts and cohorts is
+  stronger evidence than a small p-value on pooled correlated episodes.
+- **Pseudoreplication is the real risk, not low power.** Bootstrap over *cohorts*, not episodes —
+  7 cohorts are not 126 independent draws.
+- **Drop a claim rather than reach for a test to license it.** We wanted "outcome is equivalent
+  across arms" and kept an equivalence test to justify it. Better: do not claim equivalence. Report
+  the difference against observed variation and let it stand beside the process change.
+- **Name the ceiling you cannot raise.** G3 has 2 mislead pairs. More seeds narrow intervals but
+  create no new independent units. Say so rather than letting seed count imply more evidence than
+  exists.
+- **Fix the language in advance**, because wording is where overinterpretation enters — "associated
+  with", not "predicts"; "a pattern to test", not "an effect".
+
+## 15. Motivate broadly, claim narrowly
 
 The general framing — outcome metrics cannot identify whether a conclusion is grounded — is what
 makes the work matter beyond genomics. The evidence is seven TCGA cohorts of one task family.
@@ -182,5 +206,6 @@ cheques the evidence cannot cash.**
 ## The shortest version
 
 > Failures render as benign values. Aggregates hide them. Gates need testing in both directions.
-> Judges must not see the answer. Machinery should match sample size. Freeze predictions before the
-> data. And build the argument on the part that does not depend on the run.
+> Judges must not see the answer. Machinery should match sample size, and a paper warning against
+> overinterpreting benchmarks must not overinterpret its own. Freeze predictions before the data.
+> Build the argument on the part that does not depend on the run.
