@@ -33,9 +33,11 @@ empty run, which is how the first attempt fooled us.
 **Six invocations — 3 models × 2 prompts.** `--prompt-file` is the ONLY difference between the
 prompt conditions; `--model` must be given explicitly or it defaults to `claude-sonnet-4-6`.
 
-```bash
-export G3_SEEDS="42 7 123 1 2 3 4 5"     # G3 8 seeds; honest arms stay at 3. 95 eps/run
+95 episodes per run: 63 honest (7 cohorts × 3 seeds × G0/G1/G2) + 32 G3 (2 pairs × 8 seeds × G3a/G3b).
+The 8 G3 seeds are the script's default — no env var to remember, and no way to under-run the
+smallest arm by forgetting one.
 
+```bash
 bash scripts/run_tcga.sh --tag clean/gpt55      --model gpt-5.5
 bash scripts/run_tcga.sh --tag clean/sonnet5    --model claude-sonnet-5
 bash scripts/run_tcga.sh --tag clean/gemini35f  --model gemini-3.5-flash

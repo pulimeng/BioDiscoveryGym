@@ -14,7 +14,7 @@
 #
 # Usage:
 #   bash scripts/run_tcga.sh --smoke-test                    # 1 cohort × 1 seed × G0/G1/G2/G3a/G3b at default 100-call budget (~$12, ~1 hr); score separately
-#   bash scripts/run_tcga.sh --tag run10                     # full benchmark (48 episodes); score separately with score_run.sh
+#   bash scripts/run_tcga.sh --tag run10                     # full benchmark (95 episodes: 63 G0/G1/G2 + 32 G3); score separately with score_run.sh
 #   bash scripts/run_tcga.sh --tag run10 --group G2          # one group only
 #   bash scripts/run_tcga.sh --tag run10 --group G3          # both G3a + G3b
 #   bash scripts/run_tcga.sh --tag run10 --group G3a         # one sub-arm only
@@ -41,9 +41,11 @@ BASE_DIR="results/tcga"
 COHORTS=(BRCA LIHC LUAD OV UCEC PRAD LUSC)
 SEEDS=(42 7 123)
 # G3 carries the false-context contrast and has only 2 mislead PAIRS, so it is the smallest arm.
-# More seeds narrow the within-pair interval; they cannot create new independent pairs
-# (manuscript/PREREGISTRATION.md §6). Override: G3_SEEDS="42 7 123 1 2 3 4 5"
-IFS=' ' read -r -a G3_SEEDS <<< "${G3_SEEDS:-${SEEDS[*]}}"
+# It therefore gets its OWN, larger seed list — 8 seeds, the registered plan
+# (manuscript/PREREGISTRATION.md §6). More seeds narrow the within-pair interval; they cannot
+# create new independent pairs, so the pair count stays the honest n for any across-pair claim.
+# Override for a cheaper run: G3_SEEDS="42 7 123"
+IFS=' ' read -r -a G3_SEEDS <<< "${G3_SEEDS:-42 7 123 1 2 3 4 5}"
 # G3 mislead pairs "true:mislead" — 2026-07-14: LUAD:LIHC → LUSC:LUAD (both lung; squamous-vs-
 # adeno is a more believable confuser than lung-vs-liver). OV:BRCA kept.
 G3_PAIRS=("OV:BRCA" "LUSC:LUAD")
