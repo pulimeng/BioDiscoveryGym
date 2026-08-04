@@ -51,6 +51,7 @@ retracted finding; see `docs/DATA_INTEGRITY_AUDIT.md`.
 | `cot_deepdive.py` | H1 (outcome vs derivation), H2 (derivation vs fooled) | `manuscript/figures/cot_stats.json` |
 | `shortcut_analysis.py` | how identity is reached, and what it costs | `manuscript/figures/shortcut_stats.json` |
 | `extract_cot.py` | trace distiller + `count_based_identity` probe | *(imported, also a CLI)* |
+| `episode_resources.py` | tokens in/out and wall-clock **per episode**; `--by-arm`, `--csv` | stdout / CSV |
 
 ## Reports — no API
 

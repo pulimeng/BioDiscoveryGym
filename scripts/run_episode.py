@@ -20,6 +20,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from biodiscoverygym.resources import summarize as resource_summary, format_line as format_resources
+
 VALID_COHORTS = ["BRCA", "PRAD", "UCEC", "LUAD", "LIHC", "LUSC", "OV", "OS"]
 
 # External cohorts not under data/tcga/ — map cohort name → data directory
@@ -310,6 +312,8 @@ def main():
     print(f"  Episode {episode.episode_id} complete")
     print(f"{'='*60}")
     print(f"  Wall time     : {result.wall_time_s:.1f}s")
+    _res = resource_summary(result.run_log, result.wall_time_s)
+    print(f"  Resources     : {format_resources(_res)}")
 
     if result.discovery:
         pkg = result.discovery
@@ -332,6 +336,10 @@ def main():
             "seed": args.seed,
             "model": args.model,
             "wall_time_s": result.wall_time_s,
+            # Rolled up here so analysis reads a field instead of re-summing usage_log (which
+            # several scripts were each doing slightly differently). Raw per-turn detail is still
+            # in run_log below. No prices — see biodiscoverygym/resources.py.
+            "resources": _res,
             "cli": {
                 "max_tool_calls": args.max_tool_calls,
                 "gene_codebook_gate": args.gene_codebook_gate,

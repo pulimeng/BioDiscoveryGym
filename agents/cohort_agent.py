@@ -9,6 +9,7 @@ clinical metadata.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -498,6 +499,8 @@ class CohortAgent:
             or (data_lock_active and data_lock_call_count < self.data_lock_max_calls)
             or (examination_active and examination_call_count < self.examination_max_calls)
         ):
+            _t_api = time.time()
+            _retries = 0
             for attempt in range(3):
                 try:
                     response = self.adapter.create(messages=messages, **_api_kwargs)
@@ -505,7 +508,12 @@ class CohortAgent:
                 except Exception as e:
                     if attempt == 2:
                         raise
+                    _retries += 1
                     self._log(f"[CohortAgent] API error (attempt {attempt+1}/3): {e} — retrying")
+            # Includes retry backoff by design: a provider that stalls and retries costs real
+            # wall-clock, and a turn that took 400s because of backoff should not look like a
+            # turn that took 400s of thinking. `retries` is what tells the two apart.
+            _api_s = time.time() - _t_api
 
             self._log(
                 f"[CohortAgent] Turn {tool_call_count + 1}: "
@@ -519,6 +527,8 @@ class CohortAgent:
                     "turn": tool_call_count,
                     "input_tokens": getattr(usage, "input_tokens", None),
                     "output_tokens": getattr(usage, "output_tokens", None),
+                    "api_s": round(_api_s, 2),
+                    "retries": _retries,
                     "tool_calls": [b.name for b in response.content if getattr(b, "type", None) == "tool_use"],
                 })
 
