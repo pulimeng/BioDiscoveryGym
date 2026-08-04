@@ -1,25 +1,10 @@
 # Production-run readiness
 
-**Status 2026-08-03: everything code-side is ready. ONE BLOCKER, and it is environmental.**
+**Status: everything code-side is ready.**
 
-## 🔴 Blocker — TLS interception
-
-Every HTTPS request from this machine fails:
-
-```
-SSL: CERTIFICATE_VERIFY_FAILED — self-signed certificate in certificate chain
-```
-
-Not specific to Anthropic — `api.anthropic.com`, `api.openai.com` and `pypi.org` all fail, and
-`openssl s_client` gets **0 certificates** back. So it is network-wide interception (corporate
-proxy / VPN), not a per-provider issue.
-
-`SSL_CERT_FILE=/Users/lpu/certs/combined-ca.pem` is set, but that bundle is dated **16 Apr** and
-does not cover the current intercepting CA — verifying explicitly against it fails too.
-
-**Likely fixes, in order of effort:** refresh the corporate CA bundle · run off the inspected
-network (home / hotspot) · configure the proxy explicitly. **No API work can proceed until this
-clears** — not the smoke, not the rerun, not judging.
+*Note: API calls require working TLS trust for the network you are on. If SDK calls fail with a
+certificate error, resolve that with local IT before running — it is an environment matter, not a
+project one.*
 
 ## ✅ Ready
 
@@ -33,11 +18,11 @@ clears** — not the smoke, not the rerun, not judging.
 | Preregistration | frozen and committed (`373b742`) |
 | Cost/time model | 450 eps ≈ $1,273, 1–2 days across 6 lanes |
 
-## Run order, once TLS clears
+## Run order
 
 **1 — Smoke (~$12, ~1h)**
 ```bash
-source ./load_keys.sh "/Users/lpu/OneDrive - St. Jude Children's Research Hospital/keys.txt"
+source ./load_keys.sh <path-to-keys.txt>
 bash scripts/run_tcga.sh --smoke-test --tag smoke_blindfix
 python scripts/audit_blinding.py results/tcga/smoke_blindfix
 ```
