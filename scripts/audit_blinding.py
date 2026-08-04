@@ -105,7 +105,14 @@ def audit_episode(path: str, label: str, verbose: bool):
     # adversarial — an agent that learns that can resist the planted label for the wrong reason,
     # corrupting G3 in the direction that flatters us).
     find(re.escape(label), 'EPISODE LABEL')
-    find(r'results[/\\][\w/\\.+-]*', 'RESULTS PATH')
+    # A results path is only a leak if it CARRIES identity. After the blinding fix the agent's
+    # working dir is `<base>/_work/<uuid12>`, which is opaque by construction — flagging every
+    # `results/...` string would fail a correctly-blinded run forever. So: flag a path only when
+    # an identity token sits inside it.
+    ident = [t for t in (arm, true_c, planted, seed) if t]
+    if ident:
+        find(r'results[/\\][\w/\\.+-]*(?:' + '|'.join(re.escape(t) for t in ident) + r')[\w/\\.+-]*',
+             'IDENTITY-BEARING PATH')
     find(r'\bmislead\b', 'MISLEAD KEYWORD')
     if arm:
         find(rf'(?<![a-z0-9]){re.escape(arm)}(?![a-z0-9])', 'ARM TOKEN')
