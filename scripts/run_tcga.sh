@@ -40,6 +40,10 @@ BASE_DIR="results/tcga"
 # CNA modality (cna.parquet), so this is the CNA-inclusive benchmark.
 COHORTS=(BRCA LIHC LUAD OV UCEC PRAD LUSC)
 SEEDS=(42 7 123)
+# G3 carries the false-context contrast and has only 2 mislead PAIRS, so it is the smallest arm.
+# More seeds narrow the within-pair interval; they cannot create new independent pairs
+# (manuscript/PREREGISTRATION.md §6). Override: G3_SEEDS="42 7 123 1 2 3 4 5"
+IFS=' ' read -r -a G3_SEEDS <<< "${G3_SEEDS:-${SEEDS[*]}}"
 # G3 mislead pairs "true:mislead" — 2026-07-14: LUAD:LIHC → LUSC:LUAD (both lung; squamous-vs-
 # adeno is a more believable confuser than lung-vs-liver). OV:BRCA kept.
 G3_PAIRS=("OV:BRCA" "LUSC:LUAD")
@@ -88,6 +92,7 @@ if [[ $SMOKE_TEST -eq 1 ]]; then
     COHORTS=(OV)
     SEEDS=(42)
     G3_PAIRS=("OV:BRCA")
+    G3_SEEDS=(42)
     # RUN_GROUP left as parsed: empty = all groups (full pipeline check);
     # --group G3 / G3a / G3b runs only those at smoke scale (1 cohort × 1 seed).
 fi
@@ -218,11 +223,11 @@ run_g2() {
 }
 
 run_g3a() {
-    echo "=== G3a: Mislead, early drop — fake sample codebook at 3rd record_observation (${#G3_PAIRS[@]} pairs × ${#SEEDS[@]} seeds) ==="
+    echo "=== G3a: Mislead, early drop — fake sample codebook at 3rd record_observation (${#G3_PAIRS[@]} pairs × ${#G3_SEEDS[@]} seeds) ==="
     for pair in "${G3_PAIRS[@]}"; do
         local true_cohort="${pair%%:*}"
         local mislead_cohort="${pair##*:}"
-        for seed in "${SEEDS[@]}"; do
+        for seed in "${G3_SEEDS[@]}"; do
             run_episode "g3a_$(lower $true_cohort)_mislead_$(lower $mislead_cohort)_s${seed}" \
                 --cohort "$true_cohort" --mislead-cohort "$mislead_cohort" --seed "$seed" \
                 --sample-codebook-ro-gate 3
@@ -231,11 +236,11 @@ run_g3a() {
 }
 
 run_g3b() {
-    echo "=== G3b: Mislead, late drop — fake sample codebook at 5th record_observation (${#G3_PAIRS[@]} pairs × ${#SEEDS[@]} seeds) ==="
+    echo "=== G3b: Mislead, late drop — fake sample codebook at 5th record_observation (${#G3_PAIRS[@]} pairs × ${#G3_SEEDS[@]} seeds) ==="
     for pair in "${G3_PAIRS[@]}"; do
         local true_cohort="${pair%%:*}"
         local mislead_cohort="${pair##*:}"
-        for seed in "${SEEDS[@]}"; do
+        for seed in "${G3_SEEDS[@]}"; do
             run_episode "g3b_$(lower $true_cohort)_mislead_$(lower $mislead_cohort)_s${seed}" \
                 --cohort "$true_cohort" --mislead-cohort "$mislead_cohort" --seed "$seed" \
                 --sample-codebook-ro-gate 5

@@ -23,15 +23,11 @@ from collections import Counter, defaultdict
 
 from scipy.stats import mannwhitneyu, spearmanr, fisher_exact
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import runs_config
+
 SF = ['_cotsummary.json', '_cotsummary_j2.json', '_cotsummary_j3.json']
-RUNS = [
-    ('GPT-5.5', 'detailed', 'results/tcga/ladder/gpt55_20260707'),
-    ('GPT-5.5', 'lean', 'results/tcga/lean/gpt55_20260721'),
-    ('Sonnet 5', 'detailed', 'results/tcga/ladder/sonnet5_20260713'),
-    ('Sonnet 5', 'lean', 'results/tcga/lean/sonnet5_20260722'),
-    ('Gemini 3.5 Flash', 'detailed', 'results/tcga/ladder/gemini35flash_20260716'),
-    ('Gemini 3.5 Flash', 'lean', 'results/tcga/lean/gemini35flash_20260722'),
-]
+RUNS = runs_config.triples()
 OUT = 'manuscript/figures/cot_stats.json'
 
 

@@ -40,19 +40,19 @@
         "n_not": 5,
         "delta": 0.028622239503942937
       },
-      "Sonnet 5/lean": {
-        "derived": 0.4852444221004115,
-        "n_derived": 11,
-        "not_derived": 0.46798782498424424,
-        "n_not": 10,
-        "delta": 0.017256597116167283
-      },
       "Gemini 3.5 Flash/detailed": {
         "derived": 0.46317782732910556,
         "n_derived": 3,
         "not_derived": 0.506874891696444,
         "n_not": 17,
         "delta": -0.04369706436733839
+      },
+      "Sonnet 5/lean": {
+        "derived": 0.4852444221004115,
+        "n_derived": 11,
+        "not_derived": 0.46798782498424424,
+        "n_not": 10,
+        "delta": 0.017256597116167283
       },
       "Gemini 3.5 Flash/lean": {
         "derived": 0.45042792403484433,
@@ -127,37 +127,5 @@
   "n": {
     "g2": 126,
     "g3": 72
-  },
-  "mechanism": {
-    "paradox": {
-      "fooled": 10,
-      "n_fooled": 35,
-      "resisted": 2,
-      "n_resisted": 28,
-      "fisher_p": 0.050856121440715704
-    },
-    "unresolved_contradiction": {
-      "fooled_rate": 0.51,
-      "resisted_rate": 0.29,
-      "fisher_p": 0.078,
-      "note": "suggestive only, not significant"
-    },
-    "weakness_type_g2": {
-      "detailed": {
-        "omission": 0.48,
-        "failure": 0.1,
-        "n": 879
-      },
-      "lean": {
-        "omission": 0.51,
-        "failure": 0.06,
-        "n": 873
-      }
-    },
-    "validation_rigor_high": {
-      "detailed": 0.85,
-      "lean": 0.71,
-      "note": "2/3 models; Sonnet flat at 95%"
-    }
   }
 }

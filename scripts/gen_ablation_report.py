@@ -10,14 +10,11 @@ Usage: python scripts/gen_ablation_report.py     ->  results/tcga/ABLATION_REPOR
 import glob, json, os, re, sys, statistics as st
 from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import runs_config
 from extract_cot import extract_episode, count_based_identity
 
 # (label, detailed_dir, lean_dir, color, tier)
-PAIRS = [
-    ('GPT-5.5', 'results/tcga/ladder/gpt55_20260707', 'results/tcga/lean/gpt55_20260721', '#1D9E75', 'flagship'),
-    ('Sonnet 5', 'results/tcga/ladder/sonnet5_20260713', 'results/tcga/lean/sonnet5_20260722', '#7F77DD', 'flagship'),
-    ('Gemini 3.5 Flash', 'results/tcga/ladder/gemini35flash_20260716', 'results/tcga/lean/gemini35flash_20260722', '#EF9F27', 'flash'),
-]
+PAIRS = runs_config.pairs()
 OUT = 'results/tcga/ABLATION_REPORT.html'
 
 def arm(lab): return lab.split('_')[0]

@@ -31,18 +31,12 @@ import glob, json, os, re, statistics as st, sys
 from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import runs_config
 from extract_cot import extract_episode, count_based_identity
 
 from scipy.stats import spearmanr
 
-RUNS = [
-    ('GPT-5.5', 'detailed', 'results/tcga/ladder/gpt55_20260707'),
-    ('GPT-5.5', 'lean', 'results/tcga/lean/gpt55_20260721'),
-    ('Sonnet 5', 'detailed', 'results/tcga/ladder/sonnet5_20260713'),
-    ('Sonnet 5', 'lean', 'results/tcga/lean/sonnet5_20260722'),
-    ('Gemini 3.5 Flash', 'detailed', 'results/tcga/ladder/gemini35flash_20260716'),
-    ('Gemini 3.5 Flash', 'lean', 'results/tcga/lean/gemini35flash_20260722'),
-]
+RUNS = runs_config.triples()
 SF = ['_cotsummary.json', '_cotsummary_j2.json', '_cotsummary_j3.json']
 OUT = 'manuscript/figures/shortcut_stats.json'
 # the agent INVOKING the path as a source — not a file merely being saved to it

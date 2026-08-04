@@ -25,6 +25,7 @@ import argparse, glob, json, os, statistics as st, sys
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import runs_config
 
 # ---------------------------------------------------------------------------------------------
 # PRICE TABLE — USD per 1M tokens. Supplied by the project owner 2026-07-28.
@@ -40,20 +41,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 PRICES = {
     'GPT-5.5':        {'in': 5.00,  'out': 30.00},
     'Sonnet 5':       {'in': 2.00,  'out': 10.00},
-    'Gemini Flash':   {'in': 1.50,  'out': 9.00},
+    'Gemini 3.5 Flash':   {'in': 1.50,  'out': 9.00},
     'deepseek-v4-pro': {'in': 0.435, 'out': 0.87},
 }
 PRICES_VERIFIED = True           # supplied by the project owner 2026-07-28
 PRICES_DATE = '2026-07-28 (supplied by project owner)'
 
-RUNS = [
-    ('GPT-5.5', 'detailed', 'results/tcga/ladder/gpt55_20260707', '#1D9E75'),
-    ('GPT-5.5', 'lean', 'results/tcga/lean/gpt55_20260721', '#1D9E75'),
-    ('Sonnet 5', 'detailed', 'results/tcga/ladder/sonnet5_20260713', '#7F77DD'),
-    ('Sonnet 5', 'lean', 'results/tcga/lean/sonnet5_20260722', '#7F77DD'),
-    ('Gemini Flash', 'detailed', 'results/tcga/ladder/gemini35flash_20260716', '#EF9F27'),
-    ('Gemini Flash', 'lean', 'results/tcga/lean/gemini35flash_20260722', '#EF9F27'),
-]
+_COL = {l: c for l, s, c, t in runs_config.MODELS}
+RUNS = [(m, p, r, _COL[m]) for m, p, r in runs_config.triples()]
 JUDGE_SUFFIXES = ['_cotsummary.json', '_cotsummary_j2.json', '_cotsummary_j3.json']
 OUT = 'results/tcga/COST_REPORT.html'
 
