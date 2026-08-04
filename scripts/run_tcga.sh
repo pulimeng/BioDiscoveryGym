@@ -122,6 +122,25 @@ if [[ $DRY_RUN -eq 0 ]]; then
         echo "Error: $KEY_VAR is not set (model '$MODEL'). Run: source load_keys.sh <keys.txt>" >&2
         exit 1
     fi
+
+    # Preflight the provider SDK. Forgetting `conda activate biodiscoverygym` leaves the base
+    # interpreter without google-genai, and the run then fails one episode at a time, ~5s apart,
+    # with an ImportError buried in a per-episode log — indistinguishable at a glance from the
+    # provider being down. That is exactly how it read on 2026-08-04: six dead episodes blamed on
+    # Gemini 503s that were unrelated. Two seconds here, before 95 episodes.
+    if ! python -c "
+import sys
+sys.path.insert(0, '.')
+from agents.adapters import get_adapter
+get_adapter('$MODEL')
+" 2>/dev/null; then
+        echo "Error: cannot construct the adapter for model '$MODEL' with this interpreter:" >&2
+        echo "  $(command -v python)" >&2
+        echo "Most likely the project env is not active. Run: conda activate biodiscoverygym" >&2
+        echo "Full error:" >&2
+        python -c "import sys; sys.path.insert(0,'.'); from agents.adapters import get_adapter; get_adapter('$MODEL')" 2>&1 | tail -5 >&2
+        exit 1
+    fi
 fi
 
 OUT_DIR="${BASE_DIR}/${TAG}"
