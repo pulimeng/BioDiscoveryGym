@@ -164,7 +164,8 @@ def _run_mofa(
     features_names: list[list] = []
     for name in view_names:
         df = aligned[name]
-        data_list.append([df.fillna(df.mean()).values.astype(float)])
+        _d = df.astype(float)                      # CNA is nullable Int8; cast BEFORE fillna
+        data_list.append([_d.fillna(_d.mean()).values])
         features_names.append([f"{name}::{c}" for c in df.columns])
 
     if not verbose:
@@ -228,7 +229,8 @@ def _run_snf(
 
     Ws, Ps = [], []
     for df in aligned.values():
-        X = StandardScaler().fit_transform(df.fillna(df.mean()).values.astype(float))
+        _d = df.astype(float)                      # CNA is nullable Int8; cast BEFORE fillna
+        X = StandardScaler().fit_transform(_d.fillna(_d.mean()).values)
         W = _full_affinity(X)
         Ws.append(W)
         Ps.append(_knn_affinity(W))
@@ -268,6 +270,7 @@ def _run_concat_pca(
     pcs_list = []
     for df in aligned.values():
         n_pc = min(n_factors, df.shape[1], df.shape[0] - 1)
-        X = StandardScaler().fit_transform(df.fillna(df.mean()).values.astype(float))
+        _d = df.astype(float)                      # CNA is nullable Int8; cast BEFORE fillna
+        X = StandardScaler().fit_transform(_d.fillna(_d.mean()).values)
         pcs_list.append(PCA(n_components=n_pc, random_state=seed).fit_transform(X))
     return np.hstack(pcs_list), "concat_pca"
