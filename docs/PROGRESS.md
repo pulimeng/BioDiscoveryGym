@@ -17,7 +17,7 @@ have since been RETRACTED or REPAIRED.** Do not cite from it.
 | **Pilot campaign** | 450 episodes, 3 models × 2 prompts × 75. Fully scored, judged 3× |
 | **Status of pilot G1/G2/G3 numbers** | **PROVISIONAL** — the campaign was path-contaminated |
 | **Harness** | **FIXED** `48d1db0` — agent now works in an opaque dir |
-| **Next** | preregister, then a clean rerun. See `manuscript/PLAN.md` |
+| **Next** | clean rerun. Preregistration is frozen (`373b742`); Phase 0 complete. See `manuscript/PLAN.md` |
 | **Target** | ICLR 2027, abstract ~18 Sep 2026 (dates unconfirmed) |
 
 ### The two defects that reshaped the project (2026-07-28 → 08-03)
@@ -49,10 +49,20 @@ of aggregation. Audit at the episode level before a number becomes a claim.
 - **G0 calibration** — 109/126 consensus recalled-prior. The instrument recognises the known recall
   pole; G0 discloses identity anyway, so the leak is moot there.
 - **Two-axis instrument** — *strategy* (derive/mix/recall, scored neutrally) vs *support*
-  (grounded/unsupported/anchored, the axis that carries the failure). Support is the better
-  predictor of false-label adoption (OR 14.9 vs 8.0).
+  (grounded/unsupported/anchored). The DESIGN point is leak-independent: recall is legitimate, so
+  the failure is *unwarranted* recall. **The magnitudes are not** — see below.
 - **Cost** — $1,273 for 450 episodes; grading an episode is 0.3% of generating it.
 - **The conceptual claim** — correctness cannot certify provenance. Does not depend on our data.
+
+### Provisional pilot evidence — NOT leak-independent
+
+Everything here comes from contaminated G2/G3 episodes and is superseded by the clean rerun:
+
+- **Support predicts false-label adoption, OR 14.9 (strategy OR 8.0)** — from G3, whose paths leaked
+  the true cohort, the planted cohort *and* the word `mislead`. It carries a second, independent
+  problem: the judge was also shown the true cohort while labelling provenance, so on G3 the
+  association is partly circular (fixed `12963d9`, but the pilot labels were produced unblinded).
+- H1 (outcome vs strategy), the rigor paradox, the mechanism markers, and the shortcut analysis.
 
 ### OS track — PARKED
 

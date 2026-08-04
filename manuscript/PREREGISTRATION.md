@@ -62,33 +62,64 @@ Directional predictions, registered in this order. **α = 0.05 after the correct
 
 **H1 — Information disclosure changes provenance.**
 Consensus strategy distribution differs across G0/G1/G2.
-*Test:* χ² on the 3×3 (arm × strategy), hierarchical model as in §5.
+*Test:* arm × strategy contingency over **3 arms × 4 strategy levels** (data-derived, mixed,
+recalled-prior, not-established), plus the §5 model. `not-established` is retained rather than
+collapsed — it occurred 3/1350 times in the pilot, so it is rare but real. **If any cell has an
+expected count < 5, use Fisher–Freeman–Halton rather than χ²**; that decision is made here, not
+after seeing the table.
 *Predicted:* G0 predominantly recalled-prior; G2 shifts away from that pole.
 
 **H2 — Outcome is equivalent across G0–G2 within a practical margin.**
-*Test:* TOST (two one-sided tests) on normalized outcome.
+*Estimand — fixed now, because "equivalent across G0–G2" has several non-equivalent readings.*
+The claim is the **maximum pairwise arm difference**: equivalence is declared only if **all three**
+model-based contrasts (G0−G1, G0−G2, G1−G2) fall inside the margin. This is the strictest reading
+and the one the narrative uses. TOST on each contrast; the conjunction requires all three, so no
+multiplicity adjustment is needed within H2 (an intersection–union test is valid at α).
+*Test:* TOST on the three model-based contrasts from the §5 model.
 **Margin: ±0.05 on the 0–1 scale**, chosen *a priori*. Justification: pilot honest-arm SD = 0.094,
 so ±0.05 ≈ **d = 0.53** — a medium effect. We assert that a difference smaller than this is not
 scientifically meaningful for "did the agent discover it". The margin is **not** derived from the
 observed G0–G2 spread (0.019); anchoring it to the effect we hope is small would be circular.
 *A non-significant difference alone does NOT establish equivalence and will not be reported as such.*
 
-**H3 — Unwarranted identity support predicts false-label adoption (G3).**
-*Test:* Fisher exact / logistic with the §5 random effects. **Primary axis = support.**
+**H3 — Unwarranted identity support is ASSOCIATED with false-label adoption (G3).**
+*Test:* logistic model per §5. **Primary axis = support.**
 *Predicted:* unwarranted more often fooled. Pilot OR ≈ 14.9 (contaminated; not a prediction of size).
+
+**⚠ Associational only — do not write this as causal, and the reason is not merely caution.**
+`support` is judged from the WHOLE trace, so an agent that accepts the false label and then
+reasons unsupportedly earns "unwarranted" as a *consequence* of being fooled, not a cause. The
+temporal order is not established by this design. Any causal reading requires evidence that the
+support behaviour preceded acceptance — which we do not have and will not claim.
+*Exploratory, registered here:* re-score support using only pre-acceptance trace segments and
+report whether the association survives. Exploratory because the segmentation rule is not yet
+validated.
 
 **H4 — Strategy provides a secondary association (G3).**
 Same test on the strategy axis. Secondary to H3 by design, since strategy is scored neutrally.
 
 **H5 — Detailed scaffolding increases documented rigor AND false-label adoption.**
-*Test:* paired by model/cohort/seed. Two components; **both** must hold for H5 to be supported.
+*Test:* an **intersection–union test** over two endpoints (validation_rigor; false-label adoption),
+each from the §5 model. H5 is supported only if **both** reject in the predicted direction.
+Because an IUT rejects only on the conjunction, it is valid at α without internal correction, so
+**H5 occupies ONE slot in the Holm family, not two.** If only one endpoint holds, H5 is *not*
+supported and the single surviving component is reported as exploratory.
 
 ## 5. Analysis
 
-- **Hierarchical models** with random effects for model, prompt, cohort, seed, and (G3) cohort-pair.
-  Episodes are not independent — the same cohort and seed recur across arms.
-- **Multiplicity:** Holm–Bonferroni across the five primary tests. Stratified and per-model analyses
-  are **exploratory** and reported as such.
+- **Mixed model, with the fixed/random split stated explicitly.**
+  **FIXED:** `arm` (3 or 2 levels), `prompt` (2), `model` (3). These are the experimental factors,
+  not samples from a population — and `prompt` is the manipulation H5 is *about*. With 2 and 3
+  levels their variance components are not estimable anyway.
+  **RANDOM:** `cohort` (7) and, on G3, `cohort_pair` (2, or fixed if it fails to converge).
+  **REPEATED:** `seed` nests within cohort×arm×prompt×model and indexes replicate episodes.
+  Model: `outcome ~ arm * prompt + model + (1 | cohort)` for H1/H2; the G3 models add
+  `(1 | cohort_pair)` and drop `arm`.
+  *A statistician should confirm the contrast coding and convergence before the run; this
+  specification is the assistant's and has not been reviewed.*
+- **Multiplicity:** Holm–Bonferroni across the **five primary hypotheses** (H5 contributes one slot
+  as an IUT; H2 contributes one as an IUT over its three contrasts). Stratified and per-model
+  analyses are **exploratory** and reported as such.
 - **Judge reliability** reported alongside every process result: unanimity, pairwise agreement, and
   the cross-family comparison.
 
@@ -112,9 +143,11 @@ Declared in advance; anything else is a deviation under §9.
 3. Episodes with no submitted discovery.
 4. **No other exclusions.** In particular we do **not** exclude episodes for being surprising.
 
-## 8. Both-directions framings
+## 8. Interpretation registered in advance, per outcome
 
-Registered so the study is publishable across plausible outcomes — the point of preregistering.
+**Not a claim that every result is a finding.** The purpose is to fix the *interpretation* of each
+plausible outcome now, so that reading is not chosen after seeing the data. Some outcomes below are
+genuine findings; others are failures we would report as failures. Which is which is decided here.
 
 - **H1 small or null.** A *small* clean process shift is a **finding, not a failure**: the pilot leak
   inflated the shift, so shrinkage is the expected direction. If G2 shows agents cannot derive
@@ -124,9 +157,10 @@ Registered so the study is publishable across plausible outcomes — the point o
   recall-biased.** Registered component-level prediction: the drop should concentrate in
   `reference_concordance`. In pilot data that is the only component with a significant G0 advantage
   (+0.073, p=0.011), while `marker_evidence` is marginally *higher* blind.
-- **H3 fails.** Then grounding does not predict robustness, the instrument's criterion validity is
-  not established, and we say so. This is the result that would most damage the paper; we report it
-  rather than retreating to H4.
+- **H3 fails.** Then support is not associated with robustness, the instrument's criterion validity
+  is not established, and we say so plainly. This is the outcome that would most damage the paper.
+  We report it rather than retreating to H4 — and H4 surviving alone would be reported as an
+  exploratory observation, not as a rescue of H3.
 - **H5 fails.** The scaffold reversal was a pilot artifact. Reported as a failed replication of our
   own exploratory finding.
 
@@ -134,7 +168,17 @@ Registered so the study is publishable across plausible outcomes — the point o
 
 *(append-only; date, what changed, why)*
 
-- *(none yet)*
+- **2026-08-04 — amended before any clean data existed.** Six statistical specifications were
+  underdetermined or wrong in the 08-03 freeze; corrected while the confirmatory run had not begun,
+  so nothing here was chosen with knowledge of clean results:
+  (1) H1 said a 3×3 table when strategy has four levels — now 3×4 with a prespecified
+  Fisher–Freeman–Halton fallback; (2) §5 listed `model` and `prompt` as RANDOM effects despite
+  having 3 and 2 levels, and `prompt` being the H5 manipulation — both are now FIXED;
+  (3) H2's equivalence estimand was unstated — now the maximum pairwise contrast, all three
+  required; (4) H5's two endpoints versus a five-test Holm family was ambiguous — now an
+  intersection–union test occupying one slot; (5) H3 was worded as prediction and is now explicitly
+  associational, with the post-acceptance confound stated; (6) §8's "publishable across outcomes"
+  framing was outcome-driven and is now "interpretation registered per outcome".
 
 ---
 
