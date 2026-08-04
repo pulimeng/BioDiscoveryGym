@@ -119,10 +119,19 @@ estimable and imply precision the design lacks. We replaced them with effect siz
 intervals, and **structure shown per stratum rather than modelled away**, with a rule fixed in
 advance: *a pooled estimate whose strata disagree is reported as heterogeneous, not as a headline.*
 
-**But do not simplify away a test the claim requires.** "Outcome is equivalent across arms" cannot
-be established by a non-significant difference. That one needs a margin and an equivalence test
-however small the study. Simplification is about removing machinery that buys nothing — not about
-removing the test that makes a claim valid.
+**But do not simplify away a test that a claim you are making requires** — and note the escape
+hatch in that sentence. We wanted "outcome is equivalent across arms", which a non-significant
+difference cannot establish, so we kept an equivalence test to license it.
+
+The better move was available and we missed it for two rounds: **drop the claim instead.** Report
+the largest pairwise difference against observed episode-level variation, put it beside the process
+change, and let the juxtaposition do the work. No equivalence assertion, no equivalence test, and
+nothing lost — because the design could never have supported "equivalent across scientific tasks"
+anyway.
+
+So the rule has two halves: never remove a test that a claim you are keeping depends on; and before
+adding statistical machinery to license a claim, check whether the claim itself is one the design
+can carry. (See §14.)
 
 ## 10. Preregistration converts exploration into method
 
