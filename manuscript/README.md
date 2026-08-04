@@ -47,6 +47,14 @@ scored neutrally — efficient recall is legitimate — while *support* (grounde
 is the one that carries the failure. 12 of 14 recalled G2 episodes are **grounded**. The claim is
 **unwarranted** recall, never recall as such.
 
+## Method
+
+Principles governing how this project treats evidence — gates, judges, audits, claim strength,
+statistical scale — are in **`docs/METHODOLOGY.md`**. They are candidate content for the paper's
+methods section, not just internal hygiene: several of them (failure modes that render as benign
+values; judges blinded to the answer they grade; scoring the neutral axis neutrally) are the kind of
+thing any LLM-judged benchmark will need and few report.
+
 ## Claim discipline
 
 **Motivate broadly, claim narrowly.** Lead with the general measurement problem; claim only what

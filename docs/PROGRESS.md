@@ -35,6 +35,8 @@ have since been RETRACTED or REPAIRED.** Do not cite from it.
 **Standing lesson:** both defects rendered as *benign values* — a path that looks like a save
 location, an API error that looks like a model resisting a trick. Neither was visible at any level
 of aggregation. Audit at the episode level before a number becomes a claim.
+**The full set of principles, each with the incident that generated it, is in
+`docs/METHODOLOGY.md`.**
 
 ### What is retracted / unsupported
 
