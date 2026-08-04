@@ -2,7 +2,7 @@
 CodeExecutor: stateful Python execution environment for Task A (cohort analysis) agents.
 
 - Maintains a persistent namespace across calls (variables survive between run_code invocations)
-- Pre-loads expression + metadata from data/episode/ on construction
+- Pre-loads expression + metadata from this process's staging dir (biodiscoverygym/paths.py)
 - Captures stdout and returns it as a string
 - Blocks access to internal keys, raw TCGA source files, and prior scored results
 - Network access blocking is handled externally by sandbox.py
@@ -27,6 +27,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from biodiscoverygym.paths import episode_data_dir
 from biodiscoverygym.tools.multimodal import multimodal_cluster
 
 
@@ -220,7 +221,7 @@ class CodeExecutor:
         expression and metadata are the only data pre-loaded — everything
         else is accessed by the agent via file reads.
         """
-        episode_dir = data_dir / "episode"
+        episode_dir = episode_data_dir(data_dir)   # per-process; see biodiscoverygym/paths.py
         expression = None
         metadata = None
 

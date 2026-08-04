@@ -5,7 +5,7 @@ Responsibilities:
   1. Load TCGA dataset via DataLoader
   2. Strip leaky columns via DataAnonymizer
   3. Replace TCGA barcodes with SAMPLE_XXXX
-  4. Write anonymized data to data/episode/ for agent access
+  4. Write anonymized data to a per-process staging dir for agent access (biodiscoverygym/paths.py)
   5. Run the agent (tool-use loop)
   6. Return EpisodeResult — scoring is post-hoc via scripts/score_tcga_episode.py
      (TCGA cohorts) or scripts/score_sghos_episode.py (SGH-OS, discovery rubric)
@@ -26,8 +26,12 @@ from biodiscoverygym.seeds import set_global_seed
 from biodiscoverygym.utils.data_loader import DataLoader
 from biodiscoverygym.utils.hidden_context import DataAnonymizer
 import biodiscoverygym.sandbox as sandbox
+from biodiscoverygym.paths import episode_data_dir as _episode_data_dir, sweep_stale_staging
 
-EPISODE_DATA_DIR = Path("data/episode")
+# Per-PROCESS, not a shared `data/episode` — concurrent lanes would otherwise overwrite and
+# delete each other's cohort data mid-episode. See biodiscoverygym/paths.py for why this is a
+# correctness fix and not just a crash fix.
+EPISODE_DATA_DIR = None  # resolved per-instance via paths.episode_data_dir()
 
 
 @dataclass
@@ -79,13 +83,15 @@ class Episode:
         episode_id: str,
         cohort: str,
         seed: int,
-        episode_data_dir: Path = EPISODE_DATA_DIR,
+        episode_data_dir: Path | None = None,
+        data_dir: str | Path = "data",
     ):
         self.dataset = dataset
         self.episode_id = episode_id
         self.cohort = cohort
         self.seed = seed
-        self.episode_data_dir = Path(episode_data_dir)
+        self.episode_data_dir = (Path(episode_data_dir) if episode_data_dir
+                                 else _episode_data_dir(data_dir))
         self._gene_map: dict[str, str] = {}      # populated if anonymize_genes=True
         self._sample_id_map: dict[str, str] = {} # {SAMPLE_XXXX: original_barcode}
 
@@ -140,6 +146,7 @@ class Episode:
             episode_id=episode_id,
             cohort=cohort,
             seed=seed,
+            data_dir=data_dir,
         )
         inst._gene_map = gene_map
         inst._sample_id_map = sample_id_map
@@ -302,7 +309,8 @@ class Episode:
         return anon_dataset, gene_map
 
     def _write_episode_data(self) -> None:
-        """Write anonymized data to data/episode/ for agent access."""
+        """Write anonymized data to this process's staging dir for agent access."""
+        sweep_stale_staging(self.episode_data_dir.parent.parent)
         self.episode_data_dir.mkdir(parents=True, exist_ok=True)
         written = []
 
@@ -334,6 +342,9 @@ class Episode:
         print(f"[Episode {self.episode_id}] Data → {self.episode_data_dir}/ [{', '.join(written)}]")
 
     def _cleanup_episode_data(self) -> None:
-        """Remove data/episode/ after episode completes."""
+        """Remove THIS process's staging dir after the episode completes.
+
+        Scoped to our own PID dir — a sibling lane's data must survive this.
+        """
         if self.episode_data_dir.exists():
             shutil.rmtree(self.episode_data_dir)

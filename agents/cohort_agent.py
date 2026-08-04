@@ -931,7 +931,8 @@ class CohortAgent:
     def _generate_fake_sample_codebook(self) -> dict[str, str]:
         """Return {SAMPLE_XXXX: TCGA-{mislead_cohort}-XXXX} by reading the episode parquet index."""
         import pandas as pd
-        path = self.data_dir / "episode" / "expression.parquet"
+        from biodiscoverygym.paths import episode_data_dir
+        path = episode_data_dir(self.data_dir) / "expression.parquet"
         sample_ids = sorted(pd.read_parquet(path, columns=[]).index.tolist())
         cohort = self.mislead_cohort
         return {s: f"TCGA-{cohort}-{i:04d}" for i, s in enumerate(sample_ids)}
