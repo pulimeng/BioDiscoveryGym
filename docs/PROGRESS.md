@@ -88,7 +88,7 @@ TARGET can. Not being worked on. `docs/OS_PHASE3_DIAGNOSIS.md`.
 | Gemini 2.5 Pro | `ladder/gemini25_` | 0.427 | 3.89 |
 
 - **Sonnet leads both axes; outcome & grounding track together** (right-answer model is also the
-  most faithful, not the biggest recaller). Report: `results/tcga/ladder/MODEL_COMPARISON.html`
+  most faithful, not the biggest recaller). Report: `results/tcga/pilot/ladder/MODEL_COMPARISON.html`
   (`gen_report.py`) + detailed `gen_ladder_report.py` (per-episode + judge evidence quotes).
 - **`run1+2` RETIRED** — old iteration (pre-Jun-30 prompt w/ RPPA + Sonnet 4.6). Kept on disk
   (docs cite its `_dpscores`) but **excluded from all comparisons**. Sonnet-5 detailed is its replacement.
@@ -287,7 +287,7 @@ bash scripts/run_cohort.sh --tag run10 --cohort OS
 ## Next Steps
 
 1. **Rescore support track (144 eps)** with the upgraded judge → populate `recall_type`:
-   `for d in gpt55_20260707 gemini25_ sonnet5_20260713; do python scripts/score_support.py results/tcga/ladder/$d --save --rescore; done`
+   `for d in gpt55_20260707 gemini25_ sonnet5_20260713; do python scripts/score_support.py results/tcga/pilot/ladder/$d --save --rescore; done`
 2. **Validate the taxonomy** — hand-audit ~10–20 `recall_type` + D1/D3 `grounded` labels for judge-vs-human agreement; add a `recall_type` panel to `gen_report.py`
 3. **Lean full runs** — GPT/Gemini/Sonnet G0/G1/G2 under `prompts/ablation/tcga_lean.txt` (scaffold-confound ablation), paired vs detailed
 4. **Opus arm** — detailed + lean, last (cost driver ~$720+)

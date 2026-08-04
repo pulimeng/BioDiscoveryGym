@@ -16,7 +16,7 @@ including them would bias the comparison). See extract_cot.py for the provenance
 Mirrors score_support.py: per-episode _cotsummary.json, resume-safe, neutral judge.
 
 Usage:
-  DEEPSEEK_API_KEY=... python scripts/summarize_cot.py results/tcga/ladder/gpt55_20260707 --save
+  DEEPSEEK_API_KEY=... python scripts/summarize_cot.py results/tcga/pilot/ladder/gpt55_20260707 --save
   ... --dry          # print the distilled LLM input, no API call
   ... --limit 3      # first N episodes
   ... --rescore      # redo episodes that already have _cotsummary.json

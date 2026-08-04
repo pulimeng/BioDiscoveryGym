@@ -7,17 +7,17 @@ highlights the discriminating signal: identity_derivation on the BLINDED arms (G
 agent must derive the cancer identity from anonymized data rather than read a pre-revealed codebook.
 
 Usage:
-  python scripts/cot_compare.py results/tcga/ladder/sonnet5_20260713 \
-                                results/tcga/ladder/gpt55_20260707 \
-                                results/tcga/ladder/gemini35flash_20260716
+  python scripts/cot_compare.py results/tcga/pilot/ladder/sonnet5_20260713 \
+                                results/tcga/pilot/ladder/gpt55_20260707 \
+                                results/tcga/pilot/ladder/gemini35flash_20260716
   (no args → the three default ladder runs)
 """
 import argparse, glob, json, os, sys
 from collections import Counter, defaultdict
 
-DEFAULT = ["results/tcga/ladder/sonnet5_20260713",
-           "results/tcga/ladder/gpt55_20260707",
-           "results/tcga/ladder/gemini35flash_20260716"]
+DEFAULT = ["results/tcga/pilot/ladder/sonnet5_20260713",
+           "results/tcga/pilot/ladder/gpt55_20260707",
+           "results/tcga/pilot/ladder/gemini35flash_20260716"]
 
 def load(run_dir, suffix="_cotsummary.json"):
     """Return {label: summary} deduped by episode label, for a given judge's output suffix."""

@@ -32,12 +32,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from extract_cot import extract_episode
 
 RUNS = [
-    ('GPT-5.5', 'detailed', 'results/tcga/ladder/gpt55_20260707'),
-    ('GPT-5.5', 'lean', 'results/tcga/lean/gpt55_20260721'),
-    ('Sonnet 5', 'detailed', 'results/tcga/ladder/sonnet5_20260713'),
-    ('Sonnet 5', 'lean', 'results/tcga/lean/sonnet5_20260722'),
-    ('Gemini 3.5 Flash', 'detailed', 'results/tcga/ladder/gemini35flash_20260716'),
-    ('Gemini 3.5 Flash', 'lean', 'results/tcga/lean/gemini35flash_20260722'),
+    ('GPT-5.5', 'detailed', 'results/tcga/pilot/ladder/gpt55_20260707'),
+    ('GPT-5.5', 'lean', 'results/tcga/pilot/lean/gpt55_20260721'),
+    ('Sonnet 5', 'detailed', 'results/tcga/pilot/ladder/sonnet5_20260713'),
+    ('Sonnet 5', 'lean', 'results/tcga/pilot/lean/sonnet5_20260722'),
+    ('Gemini 3.5 Flash', 'detailed', 'results/tcga/pilot/ladder/gemini35flash_20260716'),
+    ('Gemini 3.5 Flash', 'lean', 'results/tcga/pilot/lean/gemini35flash_20260722'),
 ]
 # the agent invoking the PATH as a source, not merely a file being saved to it
 PATH_REASONING = re.compile(

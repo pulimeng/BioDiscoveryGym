@@ -17,9 +17,9 @@ PAPERS = {'BRCA': 13305, 'LUAD': 2091, 'OV': 1982, 'LIHC': 1159}
 # The tier field is REQUIRED for honest reporting: Gemini runs a Flash tier while the others
 # run flagship, so a Gemini deficit is confounded by tier (see docs/MODEL_LADDER.md §2).
 MODELS = [
-    ('Sonnet 5', 'results/tcga/ladder/sonnet5_20260713', '#7F77DD', 'flagship'),
-    ('GPT-5.5', 'results/tcga/ladder/gpt55_20260707', '#1D9E75', 'flagship'),
-    ('Gemini 3.5 Flash', 'results/tcga/ladder/gemini35flash_20260716', '#EF9F27', 'flash'),
+    ('Sonnet 5', 'results/tcga/pilot/ladder/sonnet5_20260713', '#7F77DD', 'flagship'),
+    ('GPT-5.5', 'results/tcga/pilot/ladder/gpt55_20260707', '#1D9E75', 'flagship'),
+    ('Gemini 3.5 Flash', 'results/tcga/pilot/ladder/gemini35flash_20260716', '#EF9F27', 'flash'),
 ]
 OUT_PATH = 'results/tcga/LADDER_3MODEL.html'
 

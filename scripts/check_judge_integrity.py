@@ -26,12 +26,12 @@ import argparse, glob, json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 RUNS = [
-    "results/tcga/ladder/sonnet5_20260713",
-    "results/tcga/ladder/gpt55_20260707",
-    "results/tcga/ladder/gemini35flash_20260716",
-    "results/tcga/lean/sonnet5_20260722",
-    "results/tcga/lean/gpt55_20260721",
-    "results/tcga/lean/gemini35flash_20260722",
+    "results/tcga/pilot/ladder/sonnet5_20260713",
+    "results/tcga/pilot/ladder/gpt55_20260707",
+    "results/tcga/pilot/ladder/gemini35flash_20260716",
+    "results/tcga/pilot/lean/sonnet5_20260722",
+    "results/tcga/pilot/lean/gpt55_20260721",
+    "results/tcga/pilot/lean/gemini35flash_20260722",
 ]
 SUFFIXES = ["_cotsummary.json", "_cotsummary_j2.json", "_cotsummary_j3.json"]
 

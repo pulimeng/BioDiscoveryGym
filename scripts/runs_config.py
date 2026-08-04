@@ -1,7 +1,7 @@
 """Single source of truth for which run directories the analysis reads.
 
 WHY THIS EXISTS. Thirteen scripts hardcoded the pilot paths
-(`results/tcga/ladder/gpt55_20260707`, …). After the clean rerun they would keep analysing the
+(`results/tcga/pilot/ladder/gpt55_20260707`, …). After the clean rerun they would keep analysing the
 CONTAMINATED pilot and report its numbers without erroring — the project's signature failure mode:
 a wrong result that renders as a normal one. Nothing would have flagged it.
 
@@ -32,12 +32,12 @@ MODELS = [
 ]
 
 _PILOT = {
-    'detailed': {'gpt55': 'results/tcga/ladder/gpt55_20260707',
-                 'sonnet5': 'results/tcga/ladder/sonnet5_20260713',
-                 'gemini35flash': 'results/tcga/ladder/gemini35flash_20260716'},
-    'lean': {'gpt55': 'results/tcga/lean/gpt55_20260721',
-             'sonnet5': 'results/tcga/lean/sonnet5_20260722',
-             'gemini35flash': 'results/tcga/lean/gemini35flash_20260722'},
+    'detailed': {'gpt55': 'results/tcga/pilot/ladder/gpt55_20260707',
+                 'sonnet5': 'results/tcga/pilot/ladder/sonnet5_20260713',
+                 'gemini35flash': 'results/tcga/pilot/ladder/gemini35flash_20260716'},
+    'lean': {'gpt55': 'results/tcga/pilot/lean/gpt55_20260721',
+             'sonnet5': 'results/tcga/pilot/lean/sonnet5_20260722',
+             'gemini35flash': 'results/tcga/pilot/lean/gemini35flash_20260722'},
 }
 
 

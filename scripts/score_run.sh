@@ -2,7 +2,7 @@
 # score_run.sh — score a run dir on BOTH tracks. Decoupled from run_tcga.sh so scoring can be
 # re-run / changed without re-running episodes.
 #
-#   bash scripts/score_run.sh results/tcga/ladder/gpt55_20260707
+#   bash scripts/score_run.sh results/tcga/pilot/ladder/gpt55_20260707
 #   bash scripts/score_run.sh <dir> --rescore                 # overwrite existing support scores
 #   bash scripts/score_run.sh <dir> --model claude-sonnet-5   # different support judge (robustness)
 #   bash scripts/score_run.sh <dir> --outcome-only            # skip the support track
