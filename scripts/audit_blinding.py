@@ -4,11 +4,16 @@
 This is the gate that makes a clean rerun verifiable rather than assumed. Run it on every new run
 BEFORE any analysis. Exit code 1 on any hit, so it can gate a pipeline.
 
-WHAT COUNTS AS A LEAK, AND WHAT DOES NOT
-  We scan only what the HARNESS PUT IN FRONT OF the agent — tool results, and system/user turns.
-  We deliberately do NOT scan the agent's own assistant text, because an agent writing "this looks
-  like LIHC" is the behaviour we are trying to MEASURE. Flagging that would make derivation
-  indistinguishable from leakage, which is the exact confusion the audit exists to prevent.
+WHAT COUNTS AS A LEAK, AND WHAT DOES NOT — split by AUTHOR, not by channel.
+  Assistant turns are never scanned: an agent writing "this looks like LIHC" is the behaviour we
+  are MEASURING. Less obviously, neither are cohort names inside tool_results — those payloads are
+  mostly stdout from the agent's OWN code coming back, so "=== CONFIRMING OVARIAN CANCER IDENTITY
+  ===" is a derivation, not a leak. Flagging either would make derivation indistinguishable from
+  leakage, the exact confusion this audit exists to prevent.
+
+  So: cohort names are checked in HARNESS-AUTHORED text only. Harness STATE the agent cannot
+  invent — the episode label, an identity-bearing path, "mislead", the arm token — is checked
+  everywhere, tool_results included.
 
 ARM-AWARE BY NECESSITY: G0 discloses the true cohort and G3 discloses a FALSE one — those are the
 arms' definitions, not leaks. An audit that flagged them could never pass and would conflate "the
@@ -21,7 +26,8 @@ WHAT WE LOOK FOR (all case-insensitive, in agent-visible text only)
   planted cohort  on G3, the mislead label — revealing it is as bad as revealing the truth
   "mislead"       reveals that the condition is adversarial at all
   seed token      s7/s42/s123 alongside an arm, which reconstructs the label
-  results paths   any results/... path fragment, the channel we already found
+  results paths   only when an identity token sits INSIDE the path — after the fix the agent's
+                  working dir is an opaque `_work/<uuid12>`, which is not a leak
 
 WHY "mislead" MATTERS AS MUCH AS THE COHORT: an agent that learns it is in a deception condition
 can resist the planted label for the wrong reason, which corrupts the G3 result in the direction
@@ -46,15 +52,28 @@ COHORT_SYNONYMS = {
 }
 
 
-def agent_visible_text(ep: dict) -> str:
-    """Everything the HARNESS showed the agent. Excludes assistant output by design."""
-    out = []
+def agent_visible_text(ep: dict) -> tuple[str, str]:
+    """Split agent-visible text by AUTHOR, because the two need different rules.
+
+    `harness`  — prompts and harness-authored turns. The harness wrote every word, so ANY identity
+                 token here is a leak (subject to the by-design arm exemptions).
+    `echoed`   — tool_result payloads. These are mostly STDOUT FROM THE AGENT'S OWN CODE round-
+                 tripping back. An agent that prints "=== CONFIRMING OVARIAN CANCER IDENTITY ==="
+                 has DERIVED that — the behaviour we are measuring — and flagging it would make
+                 derivation indistinguishable from leakage.
+
+    The harness does append the codebook narrative into a tool_result, but that narrative reveals
+    gene symbols and file paths and never names the cancer (checked). So a cohort name in a
+    tool_result is always agent-authored. What the agent CANNOT invent is harness state: the
+    episode label, an identity-bearing path, the word "mislead". Those we still flag everywhere.
+    """
+    harness, echoed = [], []
     for m in ep.get('messages', []):
         role = m.get('role')
         c = m.get('content')
         if isinstance(c, str):
             if role != 'assistant':
-                out.append(c)
+                harness.append(c)
             continue
         if not isinstance(c, list):
             continue
@@ -62,14 +81,14 @@ def agent_visible_text(ep: dict) -> str:
             if not isinstance(b, dict):
                 continue
             t = b.get('type')
-            if t == 'tool_result':                      # what the executor returned
+            if t == 'tool_result':
                 r = b.get('content', '')
                 if isinstance(r, list):
                     r = ' '.join(x.get('text', '') for x in r if isinstance(x, dict))
-                out.append(str(r))
-            elif t == 'text' and role != 'assistant':   # harness-authored turns only
-                out.append(b.get('text', ''))
-    return '\n'.join(out)
+                echoed.append(str(r))
+            elif t == 'text' and role != 'assistant':
+                harness.append(b.get('text', ''))
+    return '\n'.join(harness), '\n'.join(echoed)
 
 
 def parse_label(label: str):
@@ -87,15 +106,16 @@ def audit_episode(path: str, label: str, verbose: bool):
         ep = json.load(open(path))
     except Exception as e:
         return [('unreadable', str(e)[:80])]
-    txt = agent_visible_text(ep)
+    harness_txt, echoed_txt = agent_visible_text(ep)
+    both = harness_txt + '\n' + echoed_txt
     arm, true_c, planted, seed = parse_label(label)
     hits = []
 
-    def find(pat, kind):
-        m = re.search(pat, txt, re.I)
+    def find(pat, kind, where):
+        m = re.search(pat, where, re.I)
         if m:
             s = max(0, m.start() - 60)
-            hits.append((kind, re.sub(r'\s+', ' ', txt[s:m.end() + 60]).strip()))
+            hits.append((kind, re.sub(r'\s+', ' ', where[s:m.end() + 60]).strip()))
 
     # ---- ARM-AWARE: some disclosure is the arm's DEFINITION, not a leak ---------------------
     # G0 tells the agent the cohort. G3 tells it a FALSE cohort. Flagging those would make the
@@ -104,7 +124,7 @@ def audit_episode(path: str, label: str, verbose: bool):
     # a results path, the arm token, or the word "mislead" (which reveals the condition is
     # adversarial — an agent that learns that can resist the planted label for the wrong reason,
     # corrupting G3 in the direction that flatters us).
-    find(re.escape(label), 'EPISODE LABEL')
+    find(re.escape(label), 'EPISODE LABEL', both)
     # A results path is only a leak if it CARRIES identity. After the blinding fix the agent's
     # working dir is `<base>/_work/<uuid12>`, which is opaque by construction — flagging every
     # `results/...` string would fail a correctly-blinded run forever. So: flag a path only when
@@ -112,21 +132,21 @@ def audit_episode(path: str, label: str, verbose: bool):
     ident = [t for t in (arm, true_c, planted, seed) if t]
     if ident:
         find(r'results[/\\][\w/\\.+-]*(?:' + '|'.join(re.escape(t) for t in ident) + r')[\w/\\.+-]*',
-             'IDENTITY-BEARING PATH')
-    find(r'\bmislead\b', 'MISLEAD KEYWORD')
+             'IDENTITY-BEARING PATH', both)
+    find(r'\bmislead\b', 'MISLEAD KEYWORD', both)
     if arm:
-        find(rf'(?<![a-z0-9]){re.escape(arm)}(?![a-z0-9])', 'ARM TOKEN')
+        find(rf'(?<![a-z0-9]){re.escape(arm)}(?![a-z0-9])', 'ARM TOKEN', both)
     if seed and arm:
-        find(rf'{re.escape(arm)}\W{{0,3}}\w*\W{{0,3}}{re.escape(seed)}', 'ARM+SEED')
+        find(rf'{re.escape(arm)}\W{{0,3}}\w*\W{{0,3}}{re.escape(seed)}', 'ARM+SEED', both)
 
     # true cohort: disclosed BY DESIGN in G0 only
     if arm != 'g0':
         for pat in COHORT_SYNONYMS.get(true_c or '', []):
-            find(pat, 'TRUE COHORT')
+            find(pat, 'TRUE COHORT', harness_txt)
     # planted cohort: disclosed BY DESIGN on the mislead arms — that IS the manipulation
     if planted and not arm.startswith('g3'):
         for pat in COHORT_SYNONYMS.get(planted, []):
-            find(pat, 'PLANTED COHORT')
+            find(pat, 'PLANTED COHORT', harness_txt)
     return hits
 
 
