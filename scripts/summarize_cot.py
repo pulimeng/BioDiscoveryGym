@@ -92,13 +92,35 @@ def _trunc(s, n):
     return s if len(s) <= n else s[:n] + "…"
 
 
-def build_input(rec: dict) -> str:
-    """Assemble the symmetric-channel reasoning trace for the judge."""
+def build_input(rec: dict, blind: bool = True) -> str:
+    """Assemble the symmetric-channel reasoning trace for the judge.
+
+    BLINDED BY DEFAULT. The judge decides `identity_derivation` — HOW the agent established the
+    cohort — and must not be told the answer, for two reasons:
+
+    1. Knowing the truth lets it grade CORRECTNESS instead of PROCESS. An agent that names the
+       right cancer looks like it reasoned well; one that names the wrong cancer looks like it
+       recalled badly. That is not what the label means.
+    2. On the mislead arm it makes the headline result partly CIRCULAR. Told `COHORT: OV`, the
+       judge reads an agent concluding "BRCA", knows that is wrong, and can label it
+       recalled-prior BECAUSE it is wrong. H2 then reports "recalled -> more fooled" when
+       "recalled" was assigned partly because the agent was fooled.
+
+    So we withhold both the true cohort AND the arm — `mode='G3A'` tells the judge a false label
+    was planted, which is the same leak by another name. What remains is codebook timing, which
+    the judge genuinely needs to interpret what the agent could have known and when. Arm and
+    cohort are rejoined from run metadata at analysis time, where WE know them and the judge did
+    not. Identity correctness is scored separately by the outcome scorer.
+
+    `blind=False` reproduces the pre-2026-08 behaviour, for comparing against the pilot only.
+    """
+    header = (f"MODEL: {rec['model']}   tool_calls: {rec['n_calls']}" if blind else
+              f"COHORT (blinded to the agent): {rec['cohort']}   ARM: {rec['mode']}   "
+              f"MODEL: {rec['model']}   tool_calls: {rec['n_calls']}")
     lines = [
-        f"COHORT (blinded to the agent): {rec['cohort']}   ARM: {rec['mode']}   "
-        f"MODEL: {rec['model']}   tool_calls: {rec['n_calls']}",
+        header,
         f"codebook revealed at call: {rec['codebook_at']}"
-        + ("  (pre-revealed: G0/G1)" if rec["codebook_pre_revealed"] else ""),
+        + ("  (revealed from the start)" if rec["codebook_pre_revealed"] else ""),
         "",
         "=== REASONING TIMELINE (WHY/EXPECTS per step + hypothesis-evolution checkpoints) ===",
     ]
@@ -218,6 +240,10 @@ def main():
     ap.add_argument("--dry", action="store_true", help="print the distilled LLM input, no API call")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--arms", default="", help="comma list to include, e.g. g0,g1,g2")
+    ap.add_argument("--unblinded-judge", action="store_true",
+                    help="show the judge the true cohort and arm (pre-2026-08 behaviour). Only for "
+                         "reproducing pilot numbers — biases identity_derivation toward "
+                         "correctness and makes the G3 result partly circular.")
     ap.add_argument("--rescore", action="store_true",
                     help="redo episodes that already have _cotsummary.json (default: skip)")
     args = ap.parse_args()
@@ -252,7 +278,7 @@ def main():
         label = os.path.basename(f)[:-5]
         try:
             rec = extract_episode(f)
-            umsg = build_input(rec)
+            umsg = build_input(rec, blind=not args.unblinded_judge)
         except Exception as e:
             print(f"  !! {label} skipped (extract): {e}", file=sys.stderr); fail += 1; continue
         if args.dry:
@@ -266,8 +292,11 @@ def main():
         # "model" = the AGENT being judged; "judge_model" = who judged it. Both are needed:
         # without judge_model a multi-judge robustness check is unauditable after the fact —
         # the _j2 suffix records that a second pass happened, not which judge ran it.
+        # cohort/arm are recorded for ANALYSIS but were withheld from the judge unless
+        # --unblinded-judge was passed; judge_blinded makes that auditable after the fact.
         v = {"cohort": rec["cohort"], "arm": rec["mode"], "model": rec["model"],
-             "judge_model": args.model, "judge_usage": LAST_USAGE, **v}
+             "judge_model": args.model, "judge_blinded": not args.unblinded_judge,
+             "judge_usage": LAST_USAGE, **v}
         print(f"{label:34} {rec['cohort']:5} {v['reasoning_strategy']:22} "
               f"id:{v['identity_derivation']:13} rigor:{v['validation_rigor']:6} "
               f"pivots:{v['num_pivots']}  {_trunc(v['overall_verdict'], 60)}")

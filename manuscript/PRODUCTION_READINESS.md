@@ -36,19 +36,20 @@ headline reversal undetectable, p≈0.24). Then:
 python scripts/audit_blinding.py <each run dir>   # gate: exit 0, before ANY analysis
 ```
 
-**3 — Judging (~$25)**
-Requires one code change first: **`summarize_cot.build_input` currently prints the true cohort into
-the judge's own prompt** (`summarize_cot.py:98`). The process judge must be blinded to true and
-planted identity before it classifies provenance — this is Limitation 3 in the outline, and it is
-not yet fixed. Then 3-pass consensus + ≥1 cross-family pass.
+**3 — Judging (~$25)** — blinded by default now, no extra step.
+The process judge no longer sees the true cohort or the arm; `judge_blinded: true` is recorded on
+every summary so it is auditable after the fact. 3-pass consensus + ≥1 cross-family pass.
+`--unblinded-judge` reproduces the old behaviour, for pilot comparison only.
 
 **4 — Analysis** — per `PREREGISTRATION.md`, in the registered order.
+
+**Order matters financially:** the audit is FREE and reads the episode JSON, so it gates *before*
+scoring and judging. A run that fails the gate is discarded without paying to analyse it.
 
 ## Decisions still open
 
 1. **Full 450 vs G1–G3 only** — recommend full; G0 is ~$350 and buys arm comparability.
 2. **Keep Gemini** — tier-confounded, but it is the interesting case. Recommend keep + disclose.
-3. **Blinded-judge edit** — needed before step 3; small change, no API.
 
 ## Not done, deliberately
 
