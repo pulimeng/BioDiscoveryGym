@@ -1,15 +1,18 @@
-# Data-integrity audit — 2026-07-28
+# Data-integrity audit — 2026-07-28, extended 2026-08-04
 
 **Reproduce:** `python scripts/audit_integrity.py --json manuscript/figures/integrity_audit.json`
 (exits 1 if any identity gate errored, so it can gate a release).
 
-Two defects, found by reading individual episodes rather than aggregates. **Neither is visible in
-any report** — that is what makes them dangerous. One silently weakens a headline metric; the other
-silently fabricates a zero that was then read as a finding.
+Three defects, none visible in any report — that is what makes them dangerous. One silently
+weakens a headline metric; one silently fabricates a zero that was then read as a finding; one
+would have silently swapped the cohort an episode analysed.
 
-Prompted by an external review pass. Of its three claims, one was real and understated, one was
-wrong, one was already fixed. The most serious problem was found while checking the claim that was
-wrong — recorded here so the audit's own provenance is honest.
+Defects 1 and 2 were found by reading individual episodes rather than aggregates, prompted by an
+external review pass. Of its three claims, one was real and understated, one was wrong, one was
+already fixed. The most serious problem was found while checking the claim that was wrong —
+recorded here so the audit's own provenance is honest.
+
+Defect 3 was found at launch on 2026-08-04, by crashing. It produced no data and is fixed.
 
 ---
 
@@ -182,6 +185,54 @@ relationship in either direction"** — not "derived scores higher", which the p
 
 ---
 
+## Defect 3 — concurrent lanes shared one episode staging directory
+
+**Found 2026-08-04, at launch, by the failure itself. Caught before it produced data.**
+
+Every episode staged its anonymized cohort to a single hardcoded `data/episode/`, read it back
+through `CodeExecutor`, and deleted it on the way out. Correct for one process; wrong for two.
+
+Three model lanes were started in parallel to cut a 1–2 day run to ~10 hours. All three died
+within minutes on `Parquet magic bytes not found in footer` — lane B truncating
+`expression.parquet` while lane A read it, lane C `rmtree`-ing the directory when its episode
+finished.
+
+### Why this belongs in this document
+
+The crash was the *lucky* branch. The unlucky branch is lane A opening the file a moment **after**
+lane B finished writing it: a complete, structurally valid parquet belonging to a different
+cohort. Nothing raises. The episode runs to completion, gets scored against the answer key for
+the cohort on its **label**, and enters the results table indistinguishable from any other row.
+
+That is Defect 1 and Defect 2's shape for the third time — a failure that renders as a benign
+value — but aimed at the cohort identity the entire benchmark exists to measure. An episode
+labelled `g2_brca_s42` that actually analyzed OV corrupts both the outcome score and the process
+judgment, and no aggregate would show it.
+
+### Extent
+
+**Zero contaminated episodes.** Checked at the time: of 133 attempted episodes across the three
+lanes, none completed — only harness artifacts (`gene_map.json`, `codebook.json`) had been
+written. The resume check keys on `<label>.json`, which none of them had, so nothing was skipped
+on the re-run either.
+
+### Fix
+
+`biodiscoverygym/paths.py` — writer (`Episode`) and reader (`CodeExecutor`) resolve the staging
+path through one PID-keyed function, which is what keeps them in agreement. Stale directories
+from SIGKILLed episodes are swept by liveness probe, scoped so a live sibling's data survives.
+
+Verified by a 3-process × 3-cohort concurrency test doing repeated interleaved write/read cycles:
+each lane reads back its own matrix shape. The pre-fix counterfactual deadlocks.
+
+### Standing consequence
+
+Parallelism was assumed safe because nothing in the harness *looked* stateful. The shared path
+was four years of single-process convention, invisible until concurrency made it a race. Before
+running anything in parallel again, ask what filesystem state it assumes it owns.
+
+---
+
 ## Claims checked and NOT supported
 
 Recorded so they are not re-litigated:
@@ -198,10 +249,17 @@ Recorded so they are not re-litigated:
 
 ## Standing lesson
 
-Both defects were invisible at every level of aggregation and were found only by reading episodes.
-Both share a shape: **a failure mode that renders as a benign value** — a path that looks like a
-save location, an API error that looks like a model resisting a trick. Aggregates cannot show you
-these, because the aggregate is exactly where the failure stops looking like one.
+All three defects share a shape: **a failure mode that renders as a benign value** — a path that
+looks like a save location, an API error that looks like a model resisting a trick, a valid
+parquet belonging to the wrong cohort. Aggregates cannot show you these, because the aggregate is
+exactly where the failure stops looking like one.
 
-Concretely: never let an error state share a code path with a legitimate value, and audit at the
-episode level before any number becomes a claim.
+Defects 1 and 2 were invisible at every level of aggregation and were found only by reading
+episodes. Defect 3 was different and instructive: it announced itself loudly, but only because
+the race happened to land on the destructive branch. Had the timing shifted by a few hundred
+milliseconds it would have joined the other two, and we would have been reading episodes to find
+it months later.
+
+Concretely: never let an error state share a code path with a legitimate value; audit at the
+episode level before any number becomes a claim; and when a bug is caught by luck, fix the class,
+not the symptom — the same race with different timing is a silent data-corruption bug.

@@ -47,10 +47,49 @@ bash scripts/run_tcga.sh --tag clean_lean/sonnet5    --model claude-sonnet-5  --
 bash scripts/run_tcga.sh --tag clean_lean/gemini35f  --model gemini-3.5-flash --prompt-file prompts/ablation/tcga_lean.txt
 ```
 
+### Running lanes in parallel
+
+Safe as of 2026-08-04 — before that, concurrent lanes shared one episode staging directory and
+corrupted each other (docs/DATA_INTEGRITY_AUDIT.md, Defect 3). Do not run parallel lanes on a
+checkout older than `daddea0`.
+
+**One lane per provider.** Two lanes on the same model share a rate limit and throttle each
+other, so run the three models concurrently and the two prompt conditions as successive waves.
+
+Measured footprint (32 GB / 10-core machine): **~1.2 GB resident per episode**, peaking ~1.3 GB
+on BRCA through a scale+PCA. Memory is not the constraint at 3 lanes (~7 GB) or even 6 (~15 GB).
+
+The real constraint is **BLAS thread oversubscription** — numpy/sklearn each grab all cores, so
+six lanes put 60 threads on 10 cores. Pin per lane; episodes are API-latency-bound, so this costs
+essentially nothing:
+
+```bash
+export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 VECLIB_MAXIMUM_THREADS=2
+caffeinate -is bash scripts/run_tcga.sh --tag clean/gpt55 --model gpt-5.5
+```
+
+`caffeinate -is` blocks idle sleep (AC power only; a closed lid still sleeps). Runs are
+resume-safe, so re-running an identical command retries only what is missing.
+
+One caveat at 6 lanes: `run_code` has a 600s wall-clock cap but **no memory cap**, and agent code
+runs in-process. A runaway allocation kills its own episode — survivable — but with six lanes it
+can pressure the machine and take siblings with it. Three lanes leave enough headroom.
+
 Then gate every run dir **before any analysis**:
 ```bash
 python scripts/audit_blinding.py results/tcga/clean/* results/tcga/clean_lean/*
 ```
+
+**Sanity-check the run before paying to score it** (free, reads the episode JSON):
+```bash
+python scripts/episode_resources.py --by-arm results/tcga/clean/*
+```
+Each episode now carries a `resources` block — tokens in/out, turn count, and the wall-clock split
+across API / `run_code` / unaccounted. What to look for: an arm whose mean wall-clock is several
+times its siblings' (the pilot's `gpt55_20260707` G0 ran 4169 s/episode against 588 s for G1 —
+a 7× gap no other arm shows, i.e. one or two stalled episodes rather than an arm effect); a
+nonzero `api_retries`, meaning provider backoff; and `n_exec_timeouts`, meaning agent code hit the
+600 s cap. All three are cheap to spot here and expensive to discover after scoring.
 
 **Then point the analysis at the clean run — one variable:**
 ```bash
