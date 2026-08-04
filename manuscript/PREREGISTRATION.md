@@ -58,80 +58,75 @@ do not overlap.
 
 ## 4. Primary hypotheses
 
-Directional predictions, registered in this order. **α = 0.05 after the correction in §5.**
+**Three, not five.** With ~21 episodes per honest arm and ~96 per G3 arm, more primary tests buys
+multiplicity burden rather than evidence. H4 (strategy on G3) and the rigor half of the old H5 move
+to §4a as secondary, reported with effect sizes and no multiplicity claim.
 
-**H1 — Information disclosure changes provenance.**
+**Analysis style, fixed here: effect sizes with 95% CIs lead; p-values are secondary.** At this n a
+CI communicates what the data can and cannot exclude; a p-value mostly communicates n. We report
+simple, transparent statistics — proportions, differences, odds ratios, and their intervals — not
+hierarchical models. The design has structure (cohort, seed, model, prompt recur), so we handle it
+by **stratifying and showing per-stratum estimates**, not by modelling it away.
+
+**P1 — Information disclosure changes provenance.**
 Consensus strategy distribution differs across G0/G1/G2.
-*Test:* arm × strategy contingency over **3 arms × 4 strategy levels** (data-derived, mixed,
-recalled-prior, not-established), plus the §5 model. `not-established` is retained rather than
-collapsed — it occurred 3/1350 times in the pilot, so it is rare but real. **If any cell has an
-expected count < 5, use Fisher–Freeman–Halton rather than χ²**; that decision is made here, not
-after seeing the table.
+*Report:* the 3×4 arm × strategy table, plus **derived-rate per arm with 95% CIs** (Wilson).
+*Test:* Fisher–Freeman–Halton on the table.
 *Predicted:* G0 predominantly recalled-prior; G2 shifts away from that pole.
 
-**H2 — Outcome is equivalent across G0–G2 within a practical margin.**
-*Estimand — fixed now, because "equivalent across G0–G2" has several non-equivalent readings.*
-The claim is the **maximum pairwise arm difference**: equivalence is declared only if **all three**
-model-based contrasts (G0−G1, G0−G2, G1−G2) fall inside the margin. This is the strictest reading
-and the one the narrative uses. TOST on each contrast; the conjunction requires all three, so no
-multiplicity adjustment is needed within H2 (an intersection–union test is valid at α).
-*Test:* TOST on the three model-based contrasts from the §5 model.
-**Margin: ±0.05 on the 0–1 scale**, chosen *a priori*. Justification: pilot honest-arm SD = 0.094,
-so ±0.05 ≈ **d = 0.53** — a medium effect. We assert that a difference smaller than this is not
-scientifically meaningful for "did the agent discover it". The margin is **not** derived from the
-observed G0–G2 spread (0.019); anchoring it to the effect we hope is small would be circular.
-*A non-significant difference alone does NOT establish equivalence and will not be reported as such.*
+**P2 — Outcome is equivalent across G0–G2 within a practical margin.**
+**This one genuinely needs an equivalence test** — a non-significant difference does NOT establish
+equivalence, and we will not report it as if it did.
+*Estimand:* the **largest pairwise arm difference** (G0−G1, G0−G2, G1−G2). Equivalence is declared
+only if all three 90% CIs sit inside the margin.
+**Margin: ±0.05 on the 0–1 scale**, chosen *a priori* (pilot honest-arm SD = 0.094, so ±0.05 ≈
+d=0.53). Not derived from the observed 0.019 spread — anchoring the margin to the effect we hope is
+small would be circular.
+*Test:* TOST per contrast, equivalently read off the 90% CIs.
 
-**H3 — Unwarranted identity support is ASSOCIATED with false-label adoption (G3).**
-*Test:* logistic model per §5. **Primary axis = support.**
-*Predicted:* unwarranted more often fooled. Pilot OR ≈ 14.9 (contaminated; not a prediction of size).
+**P3 — Unwarranted identity support is ASSOCIATED with false-label adoption (G3).**
+*Report:* fooled-rate by support class with 95% CIs, and the odds ratio with its CI. Stratified by
+model, prompt and cohort-pair, **shown as a small-multiples panel** rather than pooled into one
+number.
+*Test:* Fisher exact on the pooled 2×2, with the stratified panel as the honesty check — if the
+direction is inconsistent across strata, the pooled OR is not reported as the headline.
 
-**⚠ Associational only — do not write this as causal, and the reason is not merely caution.**
-`support` is judged from the WHOLE trace, so an agent that accepts the false label and then
-reasons unsupportedly earns "unwarranted" as a *consequence* of being fooled, not a cause. The
-temporal order is not established by this design. Any causal reading requires evidence that the
-support behaviour preceded acceptance — which we do not have and will not claim.
-*Exploratory, registered here:* re-score support using only pre-acceptance trace segments and
-report whether the association survives. Exploratory because the segmentation rule is not yet
-validated.
+**⚠ Associational only, and the reason is structural.** `support` is judged from the WHOLE trace, so
+an agent that accepts the false label and then reasons unsupportedly earns "unwarranted" as a
+*consequence* of being fooled, not a cause. Temporal order is not established by this design.
+*Exploratory:* re-score support on pre-acceptance trace segments only.
 
-**H4 — Strategy provides a secondary association (G3).**
-Same test on the strategy axis. Secondary to H3 by design, since strategy is scored neutrally.
+## 4a. Secondary — reported with CIs, no multiplicity claim
 
-**H5 — Detailed scaffolding increases documented rigor AND false-label adoption.**
-*Test:* an **intersection–union test** over two endpoints (validation_rigor; false-label adoption),
-each from the §5 model. H5 is supported only if **both** reject in the predicted direction.
-Because an IUT rejects only on the conjunction, it is valid at α without internal correction, so
-**H5 occupies ONE slot in the Holm family, not two.** If only one endpoint holds, H5 is *not*
-supported and the single surviving component is reported as exploratory.
+- **Strategy on G3** (the old H4) — the same 2×2 on the strategy axis. Secondary because strategy is
+  scored neutrally by design.
+- **Scaffolding and rigor** — does the detailed prompt raise `validation_rigor`?
+- **Scaffolding and fooling** — does it raise false-label adoption? *Pre-committed:* if this lands
+  directional but with a CI crossing 1, it is reported as **"directional in k/3 models"** and is not
+  a headline. That call is made here, not after seeing it.
 
 ## 5. Analysis
 
-- **Mixed model, with the fixed/random split stated explicitly.**
-  **FIXED:** `arm` (3 or 2 levels), `prompt` (2), `model` (3). These are the experimental factors,
-  not samples from a population — and `prompt` is the manipulation H5 is *about*. With 2 and 3
-  levels their variance components are not estimable anyway.
-  **RANDOM:** `cohort` (7) and, on G3, `cohort_pair` (2, or fixed if it fails to converge).
-  **REPEATED:** `seed` nests within cohort×arm×prompt×model and indexes replicate episodes.
-  Model: `outcome ~ arm * prompt + model + (1 | cohort)` for H1/H2; the G3 models add
-  `(1 | cohort_pair)` and drop `arm`.
-  *A statistician should confirm the contrast coding and convergence before the run; this
-  specification is the assistant's and has not been reviewed.*
-- **Multiplicity:** Holm–Bonferroni across the **five primary hypotheses** (H5 contributes one slot
-  as an IUT; H2 contributes one as an IUT over its three contrasts). Stratified and per-model
-  analyses are **exploratory** and reported as such.
-- **Judge reliability** reported alongside every process result: unanimity, pairwise agreement, and
-  the cross-family comparison.
+- **Effect sizes with CIs first.** Wilson intervals for proportions, bootstrap for differences,
+  exact CIs for odds ratios.
+- **Structure is shown, not modelled.** Episodes repeat across cohort/seed/model/prompt, so every
+  primary result is also given per stratum. A pooled estimate whose strata disagree is reported as
+  heterogeneous, not as a headline.
+- **Multiplicity:** Holm–Bonferroni across the **three** primary tests. Secondary and exploratory
+  analyses carry no multiplicity claim and are labelled as such.
+- **No hierarchical models.** At ~21 episodes per arm, variance components for factors with 2–3
+  levels are not estimable and would imply precision the design does not have.
+- **Judge reliability** reported alongside every process result: unanimity, pairwise agreement,
+  cross-family comparison.
 
 ## 6. Power
 
-G3 carries H3/H5 and is the smallest arm. At 3 seeds (36 per prompt arm) a moderate attenuation of
-the pilot fooling contrast is undetectable (p≈0.24). **G3 therefore moves to 8 seeds (96 per arm),**
-where the same attenuation reaches p≈0.02. Cost ≈ +$200.
+G3 carries P3 and is the smallest arm, so it gets the extra episodes. **G3 moves from 3 seeds to 8
+(36 → 96 per prompt arm),** cost ≈ +$200.
 
-**Pre-committed:** if H5 lands directional but non-significant, it is reported as *"directional
-across 3/3 models"* and **not** as a headline. That decision is made here, not after seeing the
-p-value.
+The reasoning is **precision, not significance**: at 36 per arm a fooled-rate CI is roughly ±16
+points, wide enough that most plausible results are uninformative. At 96 it is roughly ±10. We are
+buying a usable interval, not a p-value below a threshold.
 
 ## 7. Exclusions (fixed)
 
@@ -149,20 +144,20 @@ Declared in advance; anything else is a deviation under §9.
 plausible outcome now, so that reading is not chosen after seeing the data. Some outcomes below are
 genuine findings; others are failures we would report as failures. Which is which is decided here.
 
-- **H1 small or null.** A *small* clean process shift is a **finding, not a failure**: the pilot leak
+- **P1 small or null.** A *small* clean process shift is a **finding, not a failure**: the pilot leak
   inflated the shift, so shrinkage is the expected direction. If G2 shows agents cannot derive
   identity and fall back to recall, we report **"agents remain in the recall regime even under
   genuine blinding"**, which is a stronger claim than a large shift.
-- **H2 fails — clean G2 outcome drops below G0.** Also a finding: **the outcome metric is
+- **P2 fails — clean G2 outcome drops below G0.** Also a finding: **the outcome metric is
   recall-biased.** Registered component-level prediction: the drop should concentrate in
   `reference_concordance`. In pilot data that is the only component with a significant G0 advantage
   (+0.073, p=0.011), while `marker_evidence` is marginally *higher* blind.
-- **H3 fails.** Then support is not associated with robustness, the instrument's criterion validity
+- **P3 fails.** Then support is not associated with robustness, the instrument's criterion validity
   is not established, and we say so plainly. This is the outcome that would most damage the paper.
-  We report it rather than retreating to H4 — and H4 surviving alone would be reported as an
-  exploratory observation, not as a rescue of H3.
-- **H5 fails.** The scaffold reversal was a pilot artifact. Reported as a failed replication of our
-  own exploratory finding.
+  We report it rather than retreating to the strategy axis — strategy surviving alone would be an
+  exploratory observation, not a rescue of P3.
+- **Scaffolding→fooling fails (§4a).** The scaffold reversal was a pilot artifact. Reported as a
+  failed replication of our own exploratory finding — which is a legitimate result, not a gap.
 
 ## 9. Deviation log
 
@@ -179,6 +174,16 @@ genuine findings; others are failures we would report as failures. Which is whic
   intersection–union test occupying one slot; (5) H3 was worded as prediction and is now explicitly
   associational, with the post-acceptance confound stated; (6) §8's "publishable across outcomes"
   framing was outcome-driven and is now "interpretation registered per outcome".
+- **2026-08-04 (second amendment, still before any clean data) — statistical plan simplified to
+  match the sample size.** The 08-04 corrections were right but produced machinery out of scale with
+  ~21 episodes per arm. Five primary hypotheses collapse to **three** (P1–P3); the strategy-axis G3
+  test and both scaffolding endpoints move to secondary with no multiplicity claim. Hierarchical
+  models are **dropped entirely** — variance components for 2–3-level factors are not estimable at
+  this n and would imply precision the design lacks. Analysis now leads with **effect sizes and 95%
+  CIs**, with repeated structure **shown per stratum rather than modelled away**. The equivalence
+  test is **kept**: P2 asserts equivalence, which a non-significant difference cannot establish.
+  Power is re-argued in terms of interval width (±16 → ±10 points at 96/arm) rather than a p-value
+  threshold.
 
 ---
 
