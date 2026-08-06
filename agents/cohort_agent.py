@@ -851,6 +851,18 @@ class CohortAgent:
 
             if results:
                 messages.append({"role": "user", "content": results})
+            elif attempt < 2:
+                # The model answered in prose with no tool call. Without this branch the next
+                # attempt would resend a conversation ending in an ASSISTANT turn, which several
+                # providers reject outright (Anthropic: 400 "This model does not support assistant
+                # message prefill. The conversation must end with a user message."). That killed
+                # g3b_ov_mislead_brca_s3 in the 2026-08-05 production run -- a deterministic
+                # failure, so the resume re-run would have hit it again.
+                messages.append({
+                    "role": "user",
+                    "content": ("You replied with text but did not call submit_discovery. "
+                                "Call the submit_discovery tool now."),
+                })
             if discovery is not None:
                 return discovery
 

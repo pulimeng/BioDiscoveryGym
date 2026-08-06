@@ -12,6 +12,7 @@ here). This adapter is the one to smoke-test first on a live episode.
 """
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 from .base import Adapter, Block, Response, iter_blocks
@@ -27,7 +28,20 @@ class GeminiAdapter(Adapter):
         self._genai = genai
         from google.genai import types as gtypes
         self._t = gtypes
-        self._client = genai.Client(**({"api_key": api_key} if api_key else {}))
+        # A REQUEST TIMEOUT IS MANDATORY HERE, not a tuning knob. Without it the SDK blocks
+        # forever on a connection that is established but never answers, and because run_tcga runs
+        # episodes sequentially, one hung call stops the entire lane. On 2026-08-05 a g2_lusc_s42
+        # call hung at 0% CPU for 18 hours, silently, after a burst of 503s -- the lane sat at
+        # 58/95 overnight and looked exactly like an episode that was merely slow.
+        #
+        # The retry loop below does NOT protect against this: it only catches exceptions, and a
+        # blocked socket never raises. 600s matches the Anthropic adapter's read timeout and is
+        # ~4x the slowest legitimate Gemini turn observed in the pilot.
+        timeout_ms = int(os.environ.get("GEMINI_TIMEOUT_S", "600")) * 1000
+        self._client = genai.Client(
+            http_options=self._t.HttpOptions(timeout=timeout_ms),
+            **({"api_key": api_key} if api_key else {}),
+        )
 
     def _tools(self, tools: list[dict]):
         t = self._t
