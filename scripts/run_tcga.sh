@@ -141,6 +141,42 @@ get_adapter('$MODEL')
         python -c "import sys; sys.path.insert(0,'.'); from agents.adapters import get_adapter; get_adapter('$MODEL')" 2>&1 | tail -5 >&2
         exit 1
     fi
+
+    # LIVE ROUND-TRIP. Constructing the adapter proves the SDK imports; it proves nothing about
+    # the key, the network, or whether the model id exists. On 2026-08-06 all three failed
+    # separately, and each one failed the SAME way: 95 episodes dying one at a time, ~5s apart,
+    # with the real cause buried in a per-episode log.
+    #   - wrong env          -> ImportError            (caught above)
+    #   - blocked endpoint   -> 303 to a block page
+    #   - bad model id       -> 404 models/... not found for API version v1beta
+    # One 1-token call catches all of them for a fraction of a cent, before 95 episodes and
+    # potentially hundreds of dollars.
+    _PF=$(python - "$MODEL" <<'PYEOF' 2>&1
+import sys
+sys.path.insert(0, '.')
+from agents.adapters import get_adapter
+try:
+    a = get_adapter(sys.argv[1])
+    a.create(model=sys.argv[1], system="Reply with the single word: ok",
+             tools=[], max_tokens=8,
+             messages=[{"role": "user", "content": "ok"}])
+    print("PREFLIGHT_OK")
+except Exception as e:
+    print(f"PREFLIGHT_FAIL {type(e).__name__}: {e}")
+PYEOF
+)
+    if ! grep -q PREFLIGHT_OK <<< "$_PF"; then
+        echo "Error: model '$MODEL' failed a live 1-token call." >&2
+        echo "  ${_PF}" | tail -6 >&2
+        case "$_PF" in
+            *NOT_FOUND*|*404*)  echo "  -> the model id does not exist for this provider/API version." >&2
+                                echo "     List them:  python -c \"from google import genai; [print(m.name) for m in genai.Client().models.list()]\"" >&2 ;;
+            *401*|*403*|*API_KEY*|*api_key*) echo "  -> key rejected. Re-run: source load_keys.sh <keys.txt>" >&2 ;;
+            *block*|*303*|*CERTIFICATE*)     echo "  -> network/TLS blocked this endpoint." >&2 ;;
+        esac
+        exit 1
+    fi
+    echo "  preflight: ${MODEL} reachable, key valid, model id exists"
 fi
 
 OUT_DIR="${BASE_DIR}/${TAG}"
