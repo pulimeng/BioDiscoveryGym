@@ -47,12 +47,37 @@ class _JudgeClient:
                 retry_tokens = max_tokens
 
             def _call(max_toks):
-                return client.chat.completions.create(
+                r = client.chat.completions.create(
                     model=model, max_tokens=max_toks,
                     messages=[{"role": "system", "content": system}] + list(messages),
                     response_format={"type": "json_object"})
+                # The OpenAI SDK hands back the RAW BODY AS A STRING when the response is not
+                # parseable JSON — an upstream HTML error page, a proxy/captive-portal block page,
+                # or a plain-text overload notice served with HTTP 200. The SDK does not raise,
+                # so the next line used to explode with a bare
+                # `'str' object has no attribute 'choices'`, which names the symptom and discards
+                # the one thing that identifies the cause: the body. Surface it.
+                if not hasattr(r, "choices"):
+                    body = r if isinstance(r, str) else repr(r)
+                    raise RuntimeError(
+                        f"judge endpoint returned an unparseable body "
+                        f"({type(r).__name__}, {len(body)} chars): {body[:400]}")
+                return r
 
-            r = _call(max_tokens)
+            # HTTP-level retries are the SDK's job (max_retries=3); this covers the case it
+            # cannot see, where a 200 carries a non-JSON body. Bounded and backed off so a real
+            # outage fails the episode instead of hanging the batch.
+            import time as _time
+            last = None
+            for _attempt in range(3):
+                try:
+                    r = _call(max_tokens)
+                    break
+                except RuntimeError as e:
+                    last = e
+                    if _attempt == 2:
+                        raise
+                    _time.sleep(5 * 2 ** _attempt)
             if r.choices[0].finish_reason == "length" and retry_tokens > max_tokens:
                 r = _call(retry_tokens)
             return types.SimpleNamespace(
