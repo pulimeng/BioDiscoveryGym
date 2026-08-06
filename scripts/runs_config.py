@@ -25,10 +25,21 @@ import os
 import sys
 
 # (display label, directory stem, colour, tier)
+#
+# BOTH Gemini entries are listed on purpose. The pilot ran Gemini 3.5 Flash; the clean run uses
+# Gemini 3.1 Pro after Flash was abandoned at 60/95 on sustained 503s and an 18h hang
+# (results/tcga/_abandoned/gemini35flash_20260805_incomplete/WHY_ABANDONED.md). Replacing the row
+# outright would have silently dropped Gemini from every pilot analysis, since triples() filters
+# on `stem in RUNS[prompt]` and would simply have found nothing to iterate — no error, one fewer
+# arm in the tables. Listing both means each run set resolves the Gemini it actually has.
+#
+# TIER NOTE: the clean run is now three flagships. That removes the tier confound the pilot had,
+# and with it the flash-vs-flagship contrast. See docs/MODEL_LADDER.md.
 MODELS = [
     ('GPT-5.5', 'gpt55', '#1D9E75', 'flagship'),
     ('Sonnet 5', 'sonnet5', '#7F77DD', 'flagship'),
     ('Gemini 3.5 Flash', 'gemini35flash', '#EF9F27', 'flash'),
+    ('Gemini 3.1 Pro', 'gemini31pro', '#EF9F27', 'flagship'),
 ]
 
 _PILOT = {
