@@ -157,8 +157,13 @@ sys.path.insert(0, '.')
 from agents.adapters import get_adapter
 try:
     a = get_adapter(sys.argv[1])
+    # Budget must cover THINKING, not just the visible answer. A reasoning model (Gemini 3.x Pro,
+    # o-series, DeepSeek-R1 style) spends its output budget on internal tokens first, so a tiny
+    # cap returns finish_reason=MAX_TOKENS with zero parts and the preflight condemns a model that
+    # works fine at the 32k the agent actually uses. 2048 is small enough to stay ~free and large
+    # enough that a thinking model emits something.
     a.create(model=sys.argv[1], system="Reply with the single word: ok",
-             tools=[], max_tokens=8,
+             tools=[], max_tokens=2048,
              messages=[{"role": "user", "content": "ok"}])
     print("PREFLIGHT_OK")
 except Exception as e:
@@ -168,11 +173,23 @@ PYEOF
     if ! grep -q PREFLIGHT_OK <<< "$_PF"; then
         echo "Error: model '$MODEL' failed a live 1-token call." >&2
         echo "  ${_PF}" | tail -6 >&2
-        case "$_PF" in
-            *NOT_FOUND*|*404*)  echo "  -> the model id does not exist for this provider/API version." >&2
-                                echo "     List them:  python -c \"from google import genai; [print(m.name) for m in genai.Client().models.list()]\"" >&2 ;;
-            *401*|*403*|*API_KEY*|*api_key*) echo "  -> key rejected. Re-run: source load_keys.sh <keys.txt>" >&2 ;;
-            *block*|*303*|*CERTIFICATE*)     echo "  -> network/TLS blocked this endpoint." >&2 ;;
+        # Match on the FINAL verdict line, not the whole transcript. The transcript includes every
+        # retry the adapter logged, so broad patterns matched incidental text and printed a
+        # confident, wrong diagnosis — a MAX_TOKENS failure reported as "key rejected". A hint
+        # that misdirects is worse than no hint.
+        _V=$(grep PREFLIGHT_FAIL <<< "$_PF" | tail -1)
+        case "$_V" in
+            *NOT_FOUND*|*404*)   echo "  -> the model id does not exist for this provider/API version." >&2
+                                 echo "     List them:  python -c \"from google import genai; c=genai.Client(); [print(m.name) for m in c.models.list()]\"" >&2 ;;
+            *API_KEY_INVALID*|*401*|*403*|*"not valid"*)
+                                 echo "  -> key rejected. Re-run: source load_keys.sh <keys.txt>" >&2 ;;
+            *MAX_TOKENS*|*"no usable parts"*)
+                                 echo "  -> the model consumed the token budget without emitting text (reasoning model)." >&2
+                                 echo "     This is a PREFLIGHT limit, not necessarily a broken model — the agent runs at 32k." >&2 ;;
+            *503*|*UNAVAILABLE*|*"high demand"*)
+                                 echo "  -> provider capacity (503). Transient; retry, or pick a model with more headroom." >&2 ;;
+            *block*|*303*|*CERTIFICATE*)
+                                 echo "  -> network/TLS blocked this endpoint." >&2 ;;
         esac
         exit 1
     fi
