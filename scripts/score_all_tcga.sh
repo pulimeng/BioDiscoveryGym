@@ -16,10 +16,17 @@ set -uo pipefail
 
 RESCORE=0
 RESULTS_DIR=""
+# The outcome track had no way to change its judge, while the support and CoT tracks both took
+# --model. That asymmetry is a trap: a multi-judge robustness check would silently have re-judged
+# two tracks and left the third on the default, and the resulting comparison would look complete.
+JUDGE_MODEL="${BDG_JUDGE_MODEL:-}"
+_next_is_model=0
 for arg in "$@"; do
+    if [[ $_next_is_model -eq 1 ]]; then JUDGE_MODEL="$arg"; _next_is_model=0; continue; fi
     case "$arg" in
-        --rescore) RESCORE=1 ;;
-        *)         RESULTS_DIR="$arg" ;;
+        --rescore)    RESCORE=1 ;;
+        --llm-model)  _next_is_model=1 ;;
+        *)            RESULTS_DIR="$arg" ;;
     esac
 done
 
@@ -72,7 +79,7 @@ for ep in "${EPISODES[@]}"; do
         continue
     fi
     echo "=== $(basename "$ep") ==="
-    if python scripts/score_tcga_episode.py "$ep" --save; then
+    if python scripts/score_tcga_episode.py "$ep" --save ${JUDGE_MODEL:+--llm-model "$JUDGE_MODEL"}; then
         SCORED=$((SCORED + 1))
     else
         rc=$?

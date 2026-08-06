@@ -26,12 +26,20 @@ for a in "$@"; do
 done
 
 if [[ $DO_OUTCOME -eq 1 ]]; then
-    echo "=== outcome track  ->  _v3scores.json  (judge: DeepSeek) ==="
-    bash scripts/score_all_tcga.sh "$DIR" $RESCORE
+    # BDG_JUDGE_MODEL keeps all three tracks on ONE judge. Set it and the outcome, support and
+    # CoT judges move together; forget it and they diverge silently, which is the failure a
+    # multi-judge robustness check cannot survive.
+    _J="${BDG_JUDGE_MODEL:-deepseek-v4-pro}"
+    echo "=== outcome track  ->  _v3scores.json  (judge: ${_J}) ==="
+    bash scripts/score_all_tcga.sh "$DIR" $RESCORE ${BDG_JUDGE_MODEL:+--llm-model "$BDG_JUDGE_MODEL"}
 fi
 
 if [[ $DO_SUPPORT -eq 1 ]]; then
     echo ""
-    echo "=== support track (strategy x support)  ->  _supportscores.json ==="
+    echo "=== support track (strategy x support)  ->  _supportscores.json (judge: ${BDG_JUDGE_MODEL:-deepseek-v4-pro}) ==="
+    # An explicit --model in SUPPORT_ARGS still wins; BDG_JUDGE_MODEL is only the default.
+    if [[ -n "${BDG_JUDGE_MODEL:-}" ]] && ! printf '%s\n' ${SUPPORT_ARGS[@]+"${SUPPORT_ARGS[@]}"} | grep -qx -- '--model'; then
+        SUPPORT_ARGS+=(--model "$BDG_JUDGE_MODEL")
+    fi
     python scripts/score_support.py "$DIR" --save ${SUPPORT_ARGS[@]+"${SUPPORT_ARGS[@]}"}
 fi
