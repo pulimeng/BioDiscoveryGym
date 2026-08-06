@@ -95,14 +95,21 @@ class GeminiAdapter(Adapter):
     def create(self, *, model, system, messages, tools, max_tokens, thinking=None) -> Response:
         t = self._t
         cfg = dict(
-            tools=self._tools(tools),
             max_output_tokens=min(max_tokens, self.max_output_cap),
             automatic_function_calling=t.AutomaticFunctionCallingConfig(disable=True),
+        )
+        # Only declare tool config when there ARE tools. An empty list previously still sent
+        # mode="ANY", i.e. "you must call a function" with no functions declared, and the API
+        # rejects that outright:
+        #   400 INVALID_ARGUMENT: Function calling config is set without function_declarations.
+        # Real episodes always pass tools so this never surfaced there — it surfaced the moment
+        # anything made a plain, tool-free call (the run_tcga preflight).
+        if tools:
+            cfg["tools"] = self._tools(tools)
             # ANY forces a structured call; AUTO makes 2.5 emit the call as plain 'tool_code'
             # text and measured 0/3 reliable here.
-            tool_config=t.ToolConfig(
-                function_calling_config=t.FunctionCallingConfig(mode="ANY")),
-        )
+            cfg["tool_config"] = t.ToolConfig(
+                function_calling_config=t.FunctionCallingConfig(mode="ANY"))
         # Reasoning policy = DEFAULT / as-deployed (reviewer-proof): don't touch thinking —
         # let the model use its own default adaptive thinking. Only set a budget if one is
         # explicitly requested (thinking != None).
