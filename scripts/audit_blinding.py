@@ -135,7 +135,28 @@ def audit_episode(path: str, label: str, verbose: bool):
              'IDENTITY-BEARING PATH', both)
     find(r'\bmislead\b', 'MISLEAD KEYWORD', both)
     if arm:
-        find(rf'(?<![a-z0-9]){re.escape(arm)}(?![a-z0-9])', 'ARM TOKEN', both)
+        # Underscore counts as a BOUNDARY, so `_` must be excluded on both sides. In cancer
+        # genomics `G1`/`G2` are also cell-cycle phases, and MSigDB ships their pathway names:
+        # REACTOME_G2_M_CHECKPOINTS, REACTOME_G1_S_DNA_DAMAGE_CHECKPOINTS. Those are the agent's
+        # own enrichment output, not disclosure, and they failed 10/190 correctly-blinded episodes
+        # in the 2026-08-05 run. Agent-authored variable names (`mean_g0`) hit the same way.
+        #
+        # This CANNOT hide a real leak: the arm never appears alone in the plumbing, it appears
+        # inside the episode label (`g2_lihc_s42`) or a path — both of which have their own checks
+        # above, and both of which still fire. Prose disclosure ("the G2 arm", "arm: G2") also
+        # still fires, since neither neighbour is an underscore. Positive controls in the
+        # self-test below cover all four cases.
+        # HARNESS CHANNEL ONLY, for the same reason cohort names are checked there: the agent
+        # cannot disclose the arm to itself. A bare `g0`/`g1` in the echoed channel is the agent's
+        # own stdout naming its own two clusters — `THBS2: g0=1.241, g1=3.181, cohen_d=-1.99` is
+        # a group contrast it computed, carrying no information it did not already have. Checking
+        # `both` failed g0_ov_s42 on exactly that.
+        #
+        # Tradeoff, stated plainly: a harness string that injected the arm *through a tool_result*
+        # would now be missed by THIS check. The realistic forms of that leak — the episode label
+        # and an identity-bearing path — are still checked against `both` above, so the gap is
+        # narrow and deliberate rather than unnoticed.
+        find(rf'(?<![a-z0-9_]){re.escape(arm)}(?![a-z0-9_])', 'ARM TOKEN', harness_txt)
     if seed and arm:
         find(rf'{re.escape(arm)}\W{{0,3}}\w*\W{{0,3}}{re.escape(seed)}', 'ARM+SEED', both)
 

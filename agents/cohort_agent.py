@@ -534,7 +534,21 @@ class CohortAgent:
 
             messages.append({"role": "assistant", "content": response.content})
 
-            if response.stop_reason == "end_turn":
+            # DISPATCH ON CONTENT, NOT ONLY ON stop_reason. A response can carry tool_use blocks
+            # while reporting a stop_reason other than "tool_use" — providers differ, and the
+            # adapters normalize the blocks but cannot normalize away the discrepancy. Both exits
+            # below used to `break` *before* the block loop, silently discarding any tool call in
+            # that same response.
+            #
+            # This cost a real episode: sonnet5 g1_lihc_s7 in the 2026-08-05 run emitted a
+            # complete, high-confidence submit_discovery (TP53, CTNNB1, AFP, EPCAM, KRT19 — the
+            # right LIHC markers) that was dropped on the floor. The episode then fell through to
+            # forced submission, wrote a JSON with `discovery: {}`, and reads downstream as "the
+            # agent never answered". Worse, the file EXISTS, so the resume check skips it and the
+            # scorer would grade the empty submission as a failure to submit.
+            _has_tool_use = any(getattr(b, "type", None) == "tool_use" for b in response.content)
+
+            if response.stop_reason == "end_turn" and not _has_tool_use:
                 # If examination is active and Q4 hasn't been injected yet, inject it now
                 # instead of breaking — this guarantees Q4 gets its own dedicated turn.
                 if examination_active and not q4_injected and self._q4_prompt:
@@ -566,9 +580,15 @@ class CohortAgent:
                     messages.append({"role": "user", "content": nudge})
                 continue
 
-            if response.stop_reason != "tool_use":
+            if response.stop_reason != "tool_use" and not _has_tool_use:
                 self._log(f"[CohortAgent] Unexpected stop_reason: {response.stop_reason}")
                 break
+            if response.stop_reason != "tool_use":
+                # Tool calls present under an unexpected stop_reason — process them, but say so.
+                # Silence here is what made the dropped submission undiagnosable after the fact.
+                self._log(f"[CohortAgent] stop_reason={response.stop_reason} but "
+                          f"{sum(1 for b in response.content if getattr(b,'type',None)=='tool_use')} "
+                          f"tool_use block(s) present — processing them")
 
             tool_results = []
             submitted = False
