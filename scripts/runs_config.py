@@ -39,8 +39,14 @@ MODELS = [
     ('GPT-5.5', 'gpt55', '#1D9E75', 'flagship'),
     ('Sonnet 5', 'sonnet5', '#7F77DD', 'flagship'),
     ('Gemini 3.5 Flash', 'gemini35flash', '#EF9F27', 'flash'),
-    ('Gemini 3.1 Pro', 'gemini31pro', '#EF9F27', 'flagship'),
+    ('Gemini 2.5 Pro', 'gemini25pro', '#EF9F27', 'flagship'),
 ]
+# GENERATION NOTE for the write-up: GPT-5.5 and Sonnet 5 are current flagships; Gemini 2.5 Pro is
+# a generation behind. It is here because gemini-3.1-pro-preview (released 2026-02-19) is on a
+# saturated shared serving lane and returned 503 on even a 1-token preflight, and Gemini 3.5 Flash
+# was abandoned at 60/95 for the same reason. 2.5 Pro is GA, so it is the newest Gemini that can
+# actually complete 95 episodes. Any Gemini-vs-others gap is therefore confounded with model
+# generation and must not be read as a vendor difference.
 
 _PILOT = {
     'detailed': {'gpt55': 'results/tcga/pilot/ladder/gpt55_20260707',
