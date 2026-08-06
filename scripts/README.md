@@ -10,6 +10,7 @@ assistant.
 | `audit_blinding.py` | nothing the **harness** showed the agent reveals identity | 1 on any hit |
 | `audit_integrity.py` | the `output_dir` leak + failed identity gates | 1 if a gate errored |
 | `check_judge_integrity.py` | every judge output parses, is complete, schema-valid | 1 if corrupt |
+| `check_judge_symmetry.py` | the judge sees the same reasoning channel for every model | 1 on asymmetry |
 
 ```bash
 python scripts/audit_blinding.py <run_dir>      # MUST exit 0 for a blinding claim to stand

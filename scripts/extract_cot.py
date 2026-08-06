@@ -209,7 +209,7 @@ def extract_episode(path: str) -> dict:
 
     calls: list[dict] = []
     text_blocks: list[dict] = []
-    think_blocks: list[dict] = []   # model chain-of-thought (Anthropic 'thinking' / provider 'reasoning')
+    think_blocks: list[dict] = []   # provider CoT; EMPTY by design — thinking is disabled, see below
     current_stage = ""
     current_stage_num: Optional[int] = None
     call_idx = 0
@@ -342,11 +342,29 @@ def extract_episode(path: str) -> dict:
                         "is_milestone": bool(HYPOTHESIS_KW.search(txt)),
                     })
 
-            # THE ACTUAL CHAIN-OF-THOUGHT. Anthropic emits 'thinking' blocks (text under the
-            # 'thinking' key); some providers use 'reasoning'. Previously dropped entirely, so
-            # the "CoT" traces contained no CoT. NOTE: only Sonnet persists these — GPT and
-            # Gemini episodes carry ZERO thinking blocks (OpenAI doesn't return reasoning; the
-            # Gemini adapter strips 'thought' parts), so cross-model CoT is inherently asymmetric.
+            # Provider chain-of-thought, if any is ever persisted. Anthropic uses 'thinking',
+            # others 'reasoning'.
+            #
+            # AS OF 2026-08-06 THIS BRANCH YIELDS NOTHING, AND THAT IS THE INTENDED STATE.
+            # Extended thinking is off (--thinking-budget defaults to 0 and no runner passes it),
+            # so Sonnet emits thinking blocks that are empty shells — {'type','thinking':'',
+            # 'signature'} — while GPT emits none and Gemini keeps reasoning server-side.
+            # Measured across 265 episodes (clean gpt55 + sonnet5, pilot sonnet5): 5,409 thinking
+            # blocks, ZERO with any text. The `if txt` guard drops them, so the rendered judge
+            # input contains 0% thinking for every model.
+            #
+            # An earlier version of this comment claimed cross-model CoT "is inherently
+            # asymmetric". That was wrong about this data and actively misleading: it implied the
+            # judge saw more of Sonnet than of GPT, i.e. a confound in the very instrument the
+            # derived-vs-recalled labels come from. It does not. The judge's reasoning channel is
+            # record_observation (see the note at the record_observation branch above), which
+            # every model fills identically — the agent's STATED reasoning rather than an internal
+            # monologue three providers expose three incompatible ways.
+            #
+            # IF EXTENDED THINKING IS EVER ENABLED, this becomes a real asymmetry and must be
+            # handled before judging: Anthropic would persist thinking text that OpenAI structurally
+            # cannot. Re-check with the census in the commit message for 8f2c1a1 before trusting any
+            # cross-model comparison.
             elif btype in ("thinking", "reasoning") and role == "assistant":
                 txt = (block.get("thinking") or block.get("reasoning")
                        or block.get("text") or "").strip()
@@ -564,8 +582,10 @@ def render_cot(ep: dict, detail: str = "normal") -> str:
         if c["stats"]:
             out.append(f"  → stats: {', '.join(c['stats'])}")
 
-    # Chain-of-thought — the model's actual 'thinking' blocks (Sonnet only; GPT/Gemini persist
-    # none). Truncated per block for readability; the full text lives in ep['think_blocks'].
+    # Chain-of-thought. Empty in practice: extended thinking is off, so no provider persists any
+    # thinking TEXT and this section never renders — judge input is 0% thinking for every model.
+    # Kept so the renderer stays correct if thinking is ever enabled; see the long note at the
+    # thinking/reasoning branch in extract_episode() for what to re-check first.
     think = ep.get("think_blocks", [])
     if think:
         out.append("")
