@@ -33,15 +33,40 @@ ARMS="${ARMS:-g0,g1,g2,g3a,g3b}"
 # Pass 1 = _cotsummary.json (already complete; deliberately NOT regenerated — the committed
 # report, figures and every quoted number derive from it, so a re-run would silently move them).
 # Override to run one pass at a time, e.g.  PASSES=_cotsummary_j2.json bash scripts/run_judge_panel.sh
-IFS=', ' read -r -a PASSES <<< "${PASSES:-_cotsummary_j2.json _cotsummary_j3.json}"
-RUNS=(
-  results/tcga/pilot/ladder/sonnet5_20260713
-  results/tcga/pilot/ladder/gpt55_20260707
-  results/tcga/pilot/ladder/gemini35flash_20260716
-  results/tcga/pilot/lean/sonnet5_20260722
-  results/tcga/pilot/lean/gpt55_20260721
-  results/tcga/pilot/lean/gemini35flash_20260722
-)
+# Pass 1 is EXCLUDED BY DEFAULT only because the pilot already has it. A run that has never been
+# judged needs all three, and defaulting to two would hand back a 2-pass "3-pass panel" without
+# erroring. So: default to whatever is missing, computed per run set below.
+_DEFAULT_PASSES="${PASSES:-}"
+
+# Runs come from runs_config, the same single source of truth every analysis script uses, so
+# `export BDG_RUNS=clean` moves the judge panel with everything else. Previously hardcoded to the
+# pilot, which meant a clean-run panel would have silently re-judged the CONTAMINATED pilot and
+# written its labels — the exact failure runs_config exists to prevent. Override with
+# RUNS_OVERRIDE="dir1 dir2".
+if [[ -n "${RUNS_OVERRIDE:-}" ]]; then
+  IFS=' ' read -r -a RUNS <<< "$RUNS_OVERRIDE"
+else
+  while IFS= read -r line; do RUNS+=("$line"); done < <(
+    python -c "import sys; sys.path.insert(0,'scripts'); import runs_config; [print(p) for p in runs_config.flat()]"
+  )
+fi
+if [[ ${#RUNS[@]} -eq 0 ]]; then
+  echo "No run directories resolved. Set BDG_RUNS (e.g. clean) or RUNS_OVERRIDE." >&2
+  exit 1
+fi
+echo "=== judging runs ==="; printf '  %s\n' "${RUNS[@]}"
+
+# Auto-select passes: keep pass 1 in the list when the first run has no _cotsummary.json yet.
+if [[ -z "$_DEFAULT_PASSES" ]]; then
+  if compgen -G "${RUNS[0]}/*/*_cotsummary.json" > /dev/null; then
+    _DEFAULT_PASSES="_cotsummary_j2.json _cotsummary_j3.json"
+    echo "  pass 1 already present — running j2 + j3"
+  else
+    _DEFAULT_PASSES="_cotsummary.json _cotsummary_j2.json _cotsummary_j3.json"
+    echo "  no pass 1 found — running all three passes"
+  fi
+fi
+IFS=', ' read -r -a PASSES <<< "$_DEFAULT_PASSES"
 
 DRY=""; [[ "${1:-}" == "--dry-run" ]] && DRY=1
 
