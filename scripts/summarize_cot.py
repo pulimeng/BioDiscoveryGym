@@ -301,7 +301,18 @@ def main():
               f"id:{v['identity_derivation']:13} rigor:{v['validation_rigor']:6} "
               f"pivots:{v['num_pivots']}  {_trunc(v['overall_verdict'], 60)}")
         if args.save:
-            json.dump(v, open(f[:-5] + args.out_suffix, "w"), indent=2)
+            # ATOMIC: write to a temp file in the same directory, then rename. A plain
+            # json.dump leaves a TRUNCATED file if the process dies mid-write (Ctrl-C, SIGKILL,
+            # a dropped connection killing the batch) — and a truncated file still *exists*, so
+            # the resume filter above skips it permanently and the episode is silently lost from
+            # the panel. rename() is atomic on POSIX, so a file is either absent or complete.
+            _out = f[:-5] + args.out_suffix
+            _tmp = _out + ".part"
+            with open(_tmp, "w") as _fh:
+                json.dump(v, _fh, indent=2)
+                _fh.flush()
+                os.fsync(_fh.fileno())
+            os.replace(_tmp, _out)
         done += 1
 
     if not args.dry:
