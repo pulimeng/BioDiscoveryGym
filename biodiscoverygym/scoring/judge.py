@@ -14,7 +14,17 @@ import types
 
 import anthropic
 
-_DEFAULT_MODEL = "deepseek-v4-pro"   # NEUTRAL judge (not a benchmarked family) — see memory
+# THE judge default, for every track. Previously this string was duplicated in eight places
+# (both scorers, the support judge, the CoT judge, two shell drivers, the cost report), so
+# changing judges meant changing all eight and a missed one would silently keep judging with the
+# old model while the run looked uniform.
+#
+# nemotron-3-super is served by the St. Jude internal gateway. Two properties make it the right
+# default: it belongs to NO benchmarked agent family (no self-preference exposure, unlike
+# GPT/Claude/Gemini), and it is inside the network perimeter, so it cannot be firewalled off
+# mid-run the way DeepSeek was on 2026-08-06.
+DEFAULT_JUDGE_MODEL = os.environ.get("BDG_JUDGE_MODEL", "nemotron-3-super")
+_DEFAULT_MODEL = DEFAULT_JUDGE_MODEL
 
 
 class _JudgeClient:
@@ -31,7 +41,22 @@ class _JudgeClient:
                 return anthropic.Anthropic().messages.create(
                     model=model, max_tokens=max_tokens, system=system, messages=messages)
             import openai
-            if ml.startswith("deepseek"):
+            if ml.startswith(("nemotron", "laguna")):
+                # St. Jude internal OpenAI-compatible gateway (bifrost). This is the preferred
+                # judge: nemotron-3-super and laguna belong to NO benchmarked agent family, so
+                # unlike GPT/Claude/Gemini there is no self-preference exposure, and unlike
+                # DeepSeek it sits inside the network perimeter and cannot be firewalled off
+                # mid-run (which happened on 2026-08-06 and stopped scoring dead).
+                client = openai.OpenAI(
+                    base_url=os.environ.get("BIFROST_BASE_URL",
+                                            "https://bifrost.ai-application.stjude.org/v1"),
+                    api_key=os.environ.get("BIFROST_API_KEY"),
+                    timeout=600.0, max_retries=3)
+                # Same headroom rationale as DeepSeek below: the budget has to cover reasoning
+                # AND the JSON verdict, or the answer truncates into unterminated JSON.
+                max_tokens = max(max_tokens, 8000)
+                retry_tokens = 16000
+            elif ml.startswith("deepseek"):
                 # thinking model: generous timeout + retries (heavier prompts run long)
                 client = openai.OpenAI(base_url="https://api.deepseek.com",
                                        api_key=os.environ.get("DEEPSEEK_API_KEY"),

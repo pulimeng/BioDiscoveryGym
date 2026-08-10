@@ -32,6 +32,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from extract_cot import extract_episode  # deterministic distiller (no LLM)
+from biodiscoverygym.scoring.judge import DEFAULT_JUDGE_MODEL
 
 # ---------------------------------------------------------------------------
 # Judge prompt + tool schema (structured fields + prose)
@@ -163,7 +164,7 @@ def build_input(rec: dict, blind: bool = True) -> str:
 LAST_USAGE: dict | None = None
 
 
-def call_judge(user_msg: str, model: str = "deepseek-v4-pro") -> dict:
+def call_judge(user_msg: str, model: str = DEFAULT_JUDGE_MODEL) -> dict:
     global LAST_USAGE          # declared once: Python rejects a second `global` after assignment
     LAST_USAGE = None
     ml = model.lower()
@@ -182,7 +183,16 @@ def call_judge(user_msg: str, model: str = "deepseek-v4-pro") -> dict:
         raise ValueError(f"no tool_use (stop_reason={r.stop_reason})")
 
     import openai
-    if ml.startswith("deepseek"):
+    if ml.startswith(("nemotron", "laguna")):
+        # St. Jude internal gateway (bifrost) — OpenAI-compatible. NEUTRAL judge: not a
+        # benchmarked agent family, and inside the perimeter so it cannot be firewalled
+        # off mid-run the way DeepSeek was on 2026-08-06.
+        client = openai.OpenAI(
+            base_url=os.environ.get("BIFROST_BASE_URL",
+                                    "https://bifrost.ai-application.stjude.org/v1"),
+            api_key=os.environ.get("BIFROST_API_KEY"))
+        tok_key, base_toks, retry_toks, tool_choice = "max_tokens", 16000, 32000, "auto"
+    elif ml.startswith("deepseek"):
         client = openai.OpenAI(base_url="https://api.deepseek.com",
                                api_key=os.environ.get("DEEPSEEK_API_KEY"))
         tok_key, base_toks, retry_toks, tool_choice = "max_tokens", 16000, 32000, "auto"
@@ -230,7 +240,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run_dir")
-    ap.add_argument("--model", default="deepseek-v4-pro",
+    ap.add_argument("--model", default=DEFAULT_JUDGE_MODEL,
                     help="NEUTRAL judge (not a benchmarked family): deepseek-v4-pro / claude-* / gpt-*")
     ap.add_argument("--save", action="store_true", help="write <episode><out-suffix>")
     ap.add_argument("--out-suffix", default="_cotsummary.json",
@@ -250,7 +260,8 @@ def main():
 
     if not args.dry:
         m = args.model.lower()
-        need = ("DEEPSEEK_API_KEY" if m.startswith("deepseek")
+        need = ("BIFROST_API_KEY" if m.startswith(("nemotron","laguna"))
+            else "DEEPSEEK_API_KEY" if m.startswith("deepseek")
                 else "ANTHROPIC_API_KEY" if "claude" in m else "OPENAI_API_KEY")
         if not os.environ.get(need):
             sys.exit(f"{need} not set for judge model {args.model} (or use --dry)")

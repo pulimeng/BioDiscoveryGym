@@ -27,6 +27,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from biodiscoverygym.scoring.judge import DEFAULT_JUDGE_MODEL
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -42,7 +43,7 @@ def parse_args():
     p.add_argument("--target-dir", default=TARGET_DATA_DIR,
                    help="TARGET-OS data directory for Phase 3 external validation")
     p.add_argument("--save", action="store_true", help="Save score + trace JSON files")
-    p.add_argument("--llm-model", default="deepseek-v4-pro",
+    p.add_argument("--llm-model", default=DEFAULT_JUDGE_MODEL,
                    help="judge model (NEUTRAL family): deepseek-v4-pro (default) / claude-* / gpt-*")
     p.add_argument("--skip-llm", action="store_true",
                    help="Skip LLM judge components — faster, no API cost")
@@ -78,7 +79,8 @@ def main():
     # for batch resilience but a footgun for one-off scoring runs.
     import os
     _m = args.llm_model.lower()
-    _need = ("DEEPSEEK_API_KEY" if _m.startswith("deepseek")
+    _need = ("BIFROST_API_KEY" if _m.startswith(("nemotron","laguna"))
+            else "DEEPSEEK_API_KEY" if _m.startswith("deepseek")
              else "ANTHROPIC_API_KEY" if "claude" in _m else "OPENAI_API_KEY")
     if not args.skip_llm and not os.environ.get(_need):
         print(f"ERROR: {_need} is not set (judge model = {args.llm_model}).", file=sys.stderr)

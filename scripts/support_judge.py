@@ -12,6 +12,7 @@ rewritten score_decision_points.py. Nothing here calls the API at import time.
 from __future__ import annotations
 import re
 from pathlib import Path
+from biodiscoverygym.scoring.judge import DEFAULT_JUDGE_MODEL
 
 DECISIONS = ["d1_partition", "d2_identity", "d3_mechanism"]
 SUPPORT_POINTS = {"grounded": 1.0, "unsupported": 0.25, "anchored": 0.0}
@@ -231,7 +232,7 @@ def _is_complete(v: dict) -> bool:
     return bool((v.get("d2_identity") or {}).get("recall_type"))
 
 
-def call_judge(user_msg: str, model: str = "deepseek-v4-pro") -> dict:
+def call_judge(user_msg: str, model: str = DEFAULT_JUDGE_MODEL) -> dict:
     """Force the verdict through tool-use (valid JSON + enum-checked levels). Routes by model
     so the judge can be a NEUTRAL family not in the benchmarked set (self-preference bias):
     claude* -> Anthropic; deepseek*/gpt*/o* -> OpenAI-compatible (DeepSeek endpoint for deepseek*)."""
@@ -260,7 +261,19 @@ def _judge_openai_compatible(user_msg: str, model: str) -> dict:
     DeepSeek is served at api.deepseek.com and is OpenAI-compatible incl. tool calls."""
     import openai, json, os
     ml = model.lower()
-    if ml.startswith("deepseek"):
+    if ml.startswith(("nemotron", "laguna")):
+        # St. Jude internal gateway (bifrost) — OpenAI-compatible. NEUTRAL judge: not a
+        # benchmarked agent family, and inside the perimeter so it cannot be firewalled off
+        # mid-run the way DeepSeek was on 2026-08-06. Token budget and tool_choice follow the
+        # DeepSeek settings below, which exist because a thinking model needs room for BOTH the
+        # reasoning and the tool-call JSON, and rejects a forced tool_choice.
+        client = openai.OpenAI(
+            base_url=os.environ.get("BIFROST_BASE_URL",
+                                    "https://bifrost.ai-application.stjude.org/v1"),
+            api_key=os.environ.get("BIFROST_API_KEY"))
+        tok_key, base_tokens, retry_tokens = "max_tokens", 16000, 32000
+        tool_choice = "auto"
+    elif ml.startswith("deepseek"):
         client = openai.OpenAI(base_url="https://api.deepseek.com",
                                api_key=os.environ.get("DEEPSEEK_API_KEY"))
         # V4 Pro is a thinking model: forced tool_choice is rejected in thinking mode, so use

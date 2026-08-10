@@ -31,6 +31,11 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         openai|gpt)       export OPENAI_API_KEY="$key" ;;
         gemini|google)    export GEMINI_API_KEY="$key"; export GOOGLE_API_KEY="$key" ;;
         deepseek)         export DEEPSEEK_API_KEY="$key" ;;
+        # St. Jude internal OpenAI-compatible gateway (bifrost). Serves nemotron-3-super and
+        # laguna — neither is a benchmarked agent family, so it is a genuinely NEUTRAL judge,
+        # and unlike DeepSeek it is inside the network perimeter and cannot be firewalled off
+        # mid-run. Accepts several spellings because keys.txt is hand-edited.
+        nemo|nemotron|bifrost|stjude) export BIFROST_API_KEY="$key" ;;
         *) echo "load_keys: unknown provider '$provider' — skipped" >&2 ;;
     esac
 done < "$KEYS_FILE"

@@ -16,13 +16,13 @@
 # re-running this script only fills gaps. It never touches _cotsummary.json (pass 1).
 #
 # Usage:
-#   source ~/OneDrive/keys.txt   # or however DEEPSEEK_API_KEY gets into the env
+#   source load_keys.sh <keys.txt>   # exports the key for whichever JUDGE is selected
 #   bash scripts/run_judge_panel.sh              # run the panel
 #   bash scripts/run_judge_panel.sh --dry-run    # show what WOULD run, no API calls
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-JUDGE="${JUDGE:-deepseek-v4-pro}"
+JUDGE="${JUDGE:-${BDG_JUDGE_MODEL:-nemotron-3-super}}"
 # G3 (mislead) is included deliberately. The headline fooling number comes from the OUTCOME
 # scorer (v3scores.cohort_identity_verdict), not from here, so it needs no replicates — but the
 # CoT-based G3 claims do: "identity derivation under a false frame" and the relabel-a-real-finding
@@ -70,8 +70,15 @@ IFS=', ' read -r -a PASSES <<< "$_DEFAULT_PASSES"
 
 DRY=""; [[ "${1:-}" == "--dry-run" ]] && DRY=1
 
-if [[ -z "$DRY" && -z "${DEEPSEEK_API_KEY:-}" ]]; then
-  echo "DEEPSEEK_API_KEY not set — source your keys first (see feedback_never_commit_keys)." >&2
+# Require the key for THIS judge, not always DeepSeek's.
+case "$JUDGE" in
+  nemotron*|laguna*) KEY_VAR=BIFROST_API_KEY ;;
+  deepseek*)         KEY_VAR=DEEPSEEK_API_KEY ;;
+  claude*)           KEY_VAR=ANTHROPIC_API_KEY ;;
+  *)                 KEY_VAR=OPENAI_API_KEY ;;
+esac
+if [[ -z "$DRY" && -z "${!KEY_VAR:-}" ]]; then
+  echo "$KEY_VAR not set for judge '$JUDGE' — source your keys first." >&2
   exit 1
 fi
 

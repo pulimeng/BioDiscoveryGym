@@ -28,6 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import support_judge as gj
+from biodiscoverygym.scoring.judge import DEFAULT_JUDGE_MODEL
 
 STRATS = ["explore", "exploit", "mixed"]
 GRDS = ["grounded", "unsupported", "anchored"]
@@ -67,7 +68,7 @@ def arm_of(fname: str) -> str:
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("run_dir")
-    p.add_argument("--model", default="deepseek-v4-pro",
+    p.add_argument("--model", default=DEFAULT_JUDGE_MODEL,
                    help="judge model — NEUTRAL family (not in the benchmarked set). "
                         "deepseek-v4-pro (default) / claude-* / gpt-* all supported.")
     p.add_argument("--save", action="store_true", help="write <episode>_supportscores.json")
@@ -80,7 +81,8 @@ def main():
 
     if not args.dry:
         m = args.model.lower()
-        need = ("DEEPSEEK_API_KEY" if m.startswith("deepseek")
+        need = ("BIFROST_API_KEY" if m.startswith(("nemotron","laguna"))
+            else "DEEPSEEK_API_KEY" if m.startswith("deepseek")
                 else "ANTHROPIC_API_KEY" if "claude" in m else "OPENAI_API_KEY")
         if not os.environ.get(need):
             sys.exit(f"{need} not set for judge model {args.model} (or use --dry)")
