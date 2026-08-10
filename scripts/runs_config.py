@@ -112,7 +112,15 @@ def pairs() -> list[tuple[str, str, str, str, str]]:
     return out
 
 
-def flat() -> list[str]:
-    """[path] — for scripts that just need every run directory."""
+def flat(prompt: str | None = None) -> list[str]:
+    """[path] — every run directory; `prompt` ('detailed'|'lean') restricts to one wave.
+
+    Filtering matters for anything that SPENDS money or writes labels. The two waves finish at
+    different times, so a combined list will happily schedule work against a wave that is still
+    being generated — judging a 12/95 lane, then re-judging it once the other 83 land.
+    """
     announce()
-    return [p for prompt in ('detailed', 'lean') for p in RUNS.get(prompt, {}).values()]
+    if prompt is not None and prompt not in RUNS:
+        raise ValueError(f"unknown prompt set {prompt!r}; expected 'detailed' or 'lean'")
+    prompts = (prompt,) if prompt else ('detailed', 'lean')
+    return [p for pr in prompts for p in RUNS.get(pr, {}).values()]

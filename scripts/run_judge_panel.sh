@@ -43,11 +43,19 @@ _DEFAULT_PASSES="${PASSES:-}"
 # pilot, which meant a clean-run panel would have silently re-judged the CONTAMINATED pilot and
 # written its labels — the exact failure runs_config exists to prevent. Override with
 # RUNS_OVERRIDE="dir1 dir2".
+# PROMPT_SET=detailed|lean judges ONE wave. The waves are generated weeks apart, so a combined
+# panel schedules judge calls against a wave that is still being written — spending on a partial
+# lane that must be re-judged once the rest lands. Default stays both for backwards compatibility.
 if [[ -n "${RUNS_OVERRIDE:-}" ]]; then
   IFS=' ' read -r -a RUNS <<< "$RUNS_OVERRIDE"
 else
   while IFS= read -r line; do RUNS+=("$line"); done < <(
-    python -c "import sys; sys.path.insert(0,'scripts'); import runs_config; [print(p) for p in runs_config.flat()]"
+    PROMPT_SET="${PROMPT_SET:-}" python -c "
+import os, sys
+sys.path.insert(0, 'scripts')
+import runs_config
+sel = os.environ.get('PROMPT_SET') or None
+[print(p) for p in runs_config.flat(sel)]"
   )
 fi
 if [[ ${#RUNS[@]} -eq 0 ]]; then
@@ -56,14 +64,24 @@ if [[ ${#RUNS[@]} -eq 0 ]]; then
 fi
 echo "=== judging runs ==="; printf '  %s\n' "${RUNS[@]}"
 
-# Auto-select passes: keep pass 1 in the list when the first run has no _cotsummary.json yet.
+# Auto-select passes: keep pass 1 whenever ANY run is missing it. Testing only RUNS[0] was wrong —
+# a list whose first entry is a fully-judged lane concluded "pass 1 is done" for every other lane
+# too, so a freshly generated run would receive j2 and j3 and never a base pass. Nothing errors:
+# cot_compare simply finds two passes where it expects three, and a "3-pass consensus" is silently
+# computed from 2. summarize_cot skips episodes that already have the suffix, so including pass 1
+# costs nothing on the lanes that have it.
 if [[ -z "$_DEFAULT_PASSES" ]]; then
-  if compgen -G "${RUNS[0]}/*/*_cotsummary.json" > /dev/null; then
+  _missing_p1=()
+  for run in "${RUNS[@]}"; do
+    compgen -G "$run/*/*_cotsummary.json" > /dev/null || _missing_p1+=("$run")
+  done
+  if [[ ${#_missing_p1[@]} -eq 0 ]]; then
     _DEFAULT_PASSES="_cotsummary_j2.json _cotsummary_j3.json"
-    echo "  pass 1 already present — running j2 + j3"
+    echo "  pass 1 present in all ${#RUNS[@]} runs — running j2 + j3"
   else
     _DEFAULT_PASSES="_cotsummary.json _cotsummary_j2.json _cotsummary_j3.json"
-    echo "  no pass 1 found — running all three passes"
+    echo "  pass 1 missing in ${#_missing_p1[@]}/${#RUNS[@]} runs — running all three passes"
+    printf '    no pass 1: %s\n' "${_missing_p1[@]}"
   fi
 fi
 IFS=', ' read -r -a PASSES <<< "$_DEFAULT_PASSES"
@@ -85,6 +103,13 @@ fi
 LOGDIR="results/tcga/_judge_panel_logs"
 mkdir -p "$LOGDIR"
 
+# Identify a run by its last TWO path components. `basename` alone is ambiguous: the detailed and
+# lean waves use the SAME model stems, so results/tcga/clean/gemini25pro and
+# results/tcga/clean_lean/gemini25pro both render as "gemini25pro". In the preflight table that is
+# merely confusing; in the log name below it is destructive — both lanes tee to one file and the
+# second silently overwrites the first, so the evidence for one of them is simply gone.
+run_label() { local p="${1%/}"; printf '%s/%s' "$(basename "$(dirname "$p")")" "$(basename "$p")"; }
+
 # ---- pre-flight: how much work is actually outstanding? -----------------------------------
 todo_total=0
 echo "=== outstanding episodes (arms: $ARMS) ==="
@@ -105,7 +130,7 @@ for p in glob.glob(f"{run}/*/g[0-3]*_s*.json"):
 print(n)
 PY
 )
-    printf "  %-14s %-46s %3s\n" "${sfx%.json}" "$(basename "$run")" "$n"
+    printf "  %-14s %-46s %3s\n" "${sfx%.json}" "$(run_label "$run")" "$n"
     todo_total=$((todo_total + n))
   done
 done
@@ -118,7 +143,7 @@ echo
 fail=0
 for sfx in "${PASSES[@]}"; do
   for run in "${RUNS[@]}"; do
-    tag="$(basename "$run")${sfx%.json}"
+    tag="$(run_label "$run" | tr '/' '_')${sfx%.json}"
     echo ">>> $tag"
     # python -u: without it Python block-buffers stdout when piped, so per-episode progress sits
     # in an 8K buffer and the log stays EMPTY for ~40 min. Stream to both the log and the
