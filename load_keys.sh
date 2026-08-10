@@ -40,4 +40,12 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     esac
 done < "$KEYS_FILE"
 
-echo "loaded from $KEYS_FILE -> ANTHROPIC=${ANTHROPIC_API_KEY:+set} OPENAI=${OPENAI_API_KEY:+set} GEMINI=${GEMINI_API_KEY:+set} DEEPSEEK=${DEEPSEEK_API_KEY:+set}"
+# Report EVERY provider this script can export, including the ones that are absent. A summary
+# that lists only what loaded cannot distinguish "the key is missing" from "this script has no
+# mapping for that label" — which is exactly how the Nemo key read as unloaded when it was fine.
+# NEVER interpolate a key variable directly. `${VAR:-x}` expands to the VALUE when VAR is set —
+# it is a default-if-empty operator, not a mask — so using it here printed all five keys in
+# plaintext. Only `${VAR:+literal}` is safe, and this helper avoids the trap entirely.
+_lk_status() { [ -n "${1:-}" ] && printf 'set' || printf '-'; }
+echo "loaded from $KEYS_FILE -> ANTHROPIC=$(_lk_status "${ANTHROPIC_API_KEY:-}") OPENAI=$(_lk_status "${OPENAI_API_KEY:-}") GEMINI=$(_lk_status "${GEMINI_API_KEY:-}") DEEPSEEK=$(_lk_status "${DEEPSEEK_API_KEY:-}") BIFROST=$(_lk_status "${BIFROST_API_KEY:-}")"
+unset -f _lk_status
