@@ -188,20 +188,44 @@ ROWS = [
     ('g2_derived', 'CoT: G2 identity DERIVED', lambda v: f"{v:.0%}", False),
     ('g2_recalled', 'CoT: G2 identity RECALLED', lambda v: f"{v:.0%}", True),
     ('rigor_high', 'CoT: validation rigor high', lambda v: f"{v:.0%}", False),
-    ('fooled', 'G3 fooled (of 12)', lambda v: f"{int(v)}/12", True),
+    ('fooled', 'G3 fooled', None, True),   # rendered by fooled_cell — denominator varies by wave
     ('ro_per_ep', 'record_observation / ep', lambda v: f"{v:.1f}", None),
 ]
 
 def delta_cell(key, det, lean, fmt, lower_better):
     d = lean - det
     arrow = "→" if abs(d) < 1e-9 else ("↑" if d > 0 else "↓")
-    if lower_better is None or abs(d) < (0.005 if key != 'fooled' else 0.5):
+    if lower_better is None or abs(d) < 0.005:
         cls = "mut"
     else:
         good = (d < 0) if lower_better else (d > 0)
         cls = "good" if good else "bad"
-    dtxt = fmt(abs(d)) if key not in ('fooled',) else f"{abs(int(d))}"
-    return f'<td class="num">{fmt(det)}</td><td class="num">{fmt(lean)}</td><td class="num {cls}">{arrow}{dtxt}</td>'
+    return f'<td class="num">{fmt(det)}</td><td class="num">{fmt(lean)}</td><td class="num {cls}">{arrow}{fmt(abs(d))}</td>'
+
+
+def fooled_rate(m):
+    """G3 fooled as a RATE. n_g3 is not a constant across run sets."""
+    n = m.get('n_g3', 0)
+    return (m['fooled'] / n) if n else 0.0
+
+
+def fooled_cell(det, lean):
+    """Fooled count over the denominator each wave ACTUALLY has.
+
+    The denominator was hardcoded to 12 — the pilot's G3 count (2 cohort pairs x 3 seeds). The
+    clean run defaults to 8 seeds and so has 32, meaning a genuine 24/32 rendered as "24/12".
+    Anything at or below 12 still looks entirely plausible while under-reporting the fooled rate
+    by ~2.7x, and this row carries one of the headline findings. Rates are compared rather than
+    counts because the two waves are not required to have equal n.
+    """
+    dn, ln_ = det.get('n_g3', 0), lean.get('n_g3', 0)
+    dr, lr = fooled_rate(det), fooled_rate(lean)
+    d = lr - dr
+    arrow = "→" if abs(d) < 1e-9 else ("↑" if d > 0 else "↓")
+    cls = "mut" if abs(d) < 0.005 else ("good" if d < 0 else "bad")   # fooled: lower is better
+    return (f'<td class="num">{int(det["fooled"])}/{dn} ({dr:.0%})</td>'
+            f'<td class="num">{int(lean["fooled"])}/{ln_} ({lr:.0%})</td>'
+            f'<td class="num {cls}">{arrow}{abs(d):.0%}</td>')
 
 # ---- per-cohort outcome, detailed vs lean (is a collapse cohort-specific?) ----
 COHORTS = sorted({c for m in DATA for c in DATA[m]['detailed']['out_by_cohort']},
@@ -239,7 +263,8 @@ for lab in DATA:
     det, lean = DATA[lab]['detailed'], DATA[lab]['lean']
     body = ""
     for key, name, fmt, lb in ROWS:
-        body += f'<tr><td>{name}</td>{delta_cell(key, det[key], lean[key], fmt, lb)}</tr>'
+        cell = fooled_cell(det, lean) if key == 'fooled' else delta_cell(key, det[key], lean[key], fmt, lb)
+        body += f'<tr><td>{name}</td>{cell}</tr>'
     tier = DATA[lab]['tier']
     tnote = (f'<span class="tier">{tier}</span>' if tier != 'flagship' else '')
     cards += (f'<div class="card" style="border-top:3px solid {DATA[lab]["color"]}">'
@@ -266,7 +291,10 @@ flag_shift = st.mean([abs(DATA[m]['lean']['out_hon'] - DATA[m]['detailed']['out_
 der_up = sum(1 for m in DATA if DATA[m]['lean']['g2_derived'] > DATA[m]['detailed']['g2_derived'])
 sup_up_det = sum(1 for m in DATA if DATA[m]['detailed']['support'] > DATA[m]['lean']['support'] + 1e-9)
 ro_up_det = sum(1 for m in DATA if DATA[m]['detailed']['ro_per_ep'] > DATA[m]['lean']['ro_per_ep'])
-fool_up_det = sum(1 for m in DATA if DATA[m]['detailed']['fooled'] > DATA[m]['lean']['fooled'])
+# RATES, not counts. The staged-prompt finding rides on this comparison, and counts are only
+# comparable when both waves have the same n_g3 — true in the pilot (12 v 12), not guaranteed
+# afterwards. A wave with more G3 episodes would win on raw count while being fooled less often.
+fool_up_det = sum(1 for m in DATA if fooled_rate(DATA[m]['detailed']) > fooled_rate(DATA[m]['lean']) + 1e-9)
 rig_up_det = sum(1 for m in DATA if DATA[m]['detailed']['rigor_high'] > DATA[m]['lean']['rigor_high'])
 # the Flash outcome-collapse line (if any non-flagship model drops materially under lean)
 flash_line = ""

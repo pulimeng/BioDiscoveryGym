@@ -31,14 +31,15 @@ from collections import Counter, defaultdict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from extract_cot import extract_episode
 
-RUNS = [
-    ('GPT-5.5', 'detailed', 'results/tcga/pilot/ladder/gpt55_20260707'),
-    ('GPT-5.5', 'lean', 'results/tcga/pilot/lean/gpt55_20260721'),
-    ('Sonnet 5', 'detailed', 'results/tcga/pilot/ladder/sonnet5_20260713'),
-    ('Sonnet 5', 'lean', 'results/tcga/pilot/lean/sonnet5_20260722'),
-    ('Gemini 3.5 Flash', 'detailed', 'results/tcga/pilot/ladder/gemini35flash_20260716'),
-    ('Gemini 3.5 Flash', 'lean', 'results/tcga/pilot/lean/gemini35flash_20260722'),
-]
+# Runs come from runs_config, like every other analysis script. These six paths used to be
+# hardcoded to the pilot, which made this audit unable to say anything about the clean run while
+# looking exactly as though it had: `BDG_RUNS=clean python scripts/audit_integrity.py` printed
+# pilot counts, pilot model names and "no silent zeros", with no indication it had ignored the
+# variable. An integrity audit that silently audits the wrong data is the failure mode it exists
+# to catch. triples() already returns (label, prompt, path) — the shape this file wanted.
+import runs_config
+
+RUNS = runs_config.triples()
 # the agent invoking the PATH as a source, not merely a file being saved to it
 PATH_REASONING = re.compile(
     r"(output_dir|directory|folder|dir(?:ectory)? name|file ?path|path (?:name|contain|suggest))", re.I)
