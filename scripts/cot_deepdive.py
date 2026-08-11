@@ -80,13 +80,30 @@ def main():
             h1[k] = dict(n=len(v), mean=st.mean(v), median=st.median(v), sd=st.pstdev(v))
             print(f"  {k:16} n={len(v):3}  mean {st.mean(v):.3f}  median {st.median(v):.3f}")
     d, r = by.get('data-derived', []), by.get('recalled-prior', [])
-    u, pv = mannwhitneyu(d, r)
     rank = {'recalled-prior': 0, 'mixed': 1, 'data-derived': 2}
     xs = [(rank[x['deriv']], x['outcome']) for x in g2 if x['deriv'] in rank]
-    rho, rpv = spearmanr([a for a, _ in xs], [b for _, b in xs])
-    print(f"\n  derived {st.mean(d):.3f} vs recalled {st.mean(r):.3f}  "
-          f"delta {st.mean(d)-st.mean(r):+.3f}   Mann-Whitney p={pv:.3f}")
-    print(f"  ordinal derivation-rank vs outcome: rho={rho:+.3f}  p={rpv:.3f}  (n={len(xs)})")
+    # H1 contrasts derived against recalled, so it needs BOTH groups. On the blinded clean run the
+    # judge assigned recalled-prior to ZERO G2 episodes, which is a result in itself — but it left
+    # mannwhitneyu returning NaN and st.mean() raising on the empty list, killing the whole script
+    # before H2 ever ran. Report the absent group and skip the contrast rather than crash: an
+    # empty comparison group is a finding to state, not an error to hit.
+    if not d or not r:
+        h1['comparison'] = None
+        h1['missing_groups'] = [k for k, v in (('data-derived', d), ('recalled-prior', r)) if not v]
+        print(f"\n  H1 NOT COMPUTABLE — no episodes labelled {' or '.join(h1['missing_groups'])}.")
+        print(f"  A derived-vs-recalled contrast needs both groups; this run has "
+              f"{len(d)} derived and {len(r)} recalled.")
+    else:
+        u, pv = mannwhitneyu(d, r)
+        h1['comparison'] = dict(delta=st.mean(d) - st.mean(r), p=pv, n_derived=len(d), n_recalled=len(r))
+        print(f"\n  derived {st.mean(d):.3f} vs recalled {st.mean(r):.3f}  "
+              f"delta {st.mean(d)-st.mean(r):+.3f}   Mann-Whitney p={pv:.3f}")
+    rho = rpv = None
+    if len({a for a, _ in xs}) >= 2:
+        rho, rpv = spearmanr([a for a, _ in xs], [b for _, b in xs])
+        print(f"  ordinal derivation-rank vs outcome: rho={rho:+.3f}  p={rpv:.3f}  (n={len(xs)})")
+    else:
+        print(f"  ordinal correlation skipped — derivation rank has no variance (n={len(xs)}).")
     # within-arm, to rule out a pooling artifact
     within = {}
     print(f"\n  within each arm (guards against Simpson's paradox):")
@@ -100,12 +117,21 @@ def main():
                                                delta=st.mean(dd) - st.mean(nn))
             print(f"    {model+'/'+prompt:24} {st.mean(dd):.3f} (n={len(dd):2}) vs "
                   f"{st.mean(nn):.3f} (n={len(nn):2})   {st.mean(dd)-st.mean(nn):+.3f}")
+    # `None` for an uncomputable statistic, never a placeholder number. A 0.0 or 1.0 stand-in here
+    # would flow into the report as though the test had been run and returned that value.
+    _cmp = h1.get('comparison')
     stats['h1_outcome_vs_derivation'] = dict(
-        groups=h1, mann_whitney_p=float(pv),
-        delta=st.mean(d) - st.mean(r), spearman_rho=float(rho), spearman_p=float(rpv),
+        groups={k: v for k, v in h1.items() if k not in ('comparison', 'missing_groups')},
+        mann_whitney_p=(float(_cmp['p']) if _cmp else None),
+        delta=(_cmp['delta'] if _cmp else None),
+        missing_groups=h1.get('missing_groups', []),
+        spearman_rho=(float(rho) if rho is not None else None),
+        spearman_p=(float(rpv) if rpv is not None else None),
         n=len(xs), within_arm=within,
-        verdict=('outcome does NOT separate derived from recalled'
-                 if pv > 0.05 else 'outcome separates them'))
+        verdict=('NOT COMPUTABLE — no ' + ' or '.join(h1.get('missing_groups', [])) + ' episodes'
+                 if not _cmp else
+                 'outcome does NOT separate derived from recalled' if _cmp['p'] > 0.05
+                 else 'outcome separates them'))
 
     # ---------------- H2: derivation predicts robustness ----------------
     print("\n" + "=" * 78)
@@ -165,7 +191,12 @@ def main():
     print(f"\nwrote {OUT}")
     print("\n" + "-" * 78)
     print("  THE ARGUMENT, in two numbers:")
-    print(f"    outcome cannot see grounding      p={pv:.2f}  (derived {st.mean(d):.3f} vs recalled {st.mean(r):.3f})")
+    if _cmp:
+        print(f"    outcome cannot see grounding      p={_cmp['p']:.2f}  "
+              f"(derived {st.mean(d):.3f} vs recalled {st.mean(r):.3f})")
+    else:
+        print(f"    outcome cannot see grounding      NOT COMPUTABLE — "
+              f"{len(d)} derived, {len(r)} recalled; the contrast has no second group")
     print(f"    grounding predicts robustness     p={fpv:.4f} ({a[1]/max(sum(a),1)*100:.0f}% vs {b[1]/max(sum(b),1)*100:.0f}% fooled)")
     print("  The property that matters for deployment is invisible to the reported metric.")
     return 0
