@@ -129,7 +129,25 @@ def audit_episode(path: str, label: str, verbose: bool):
     # working dir is `<base>/_work/<uuid12>`, which is opaque by construction — flagging every
     # `results/...` string would fail a correctly-blinded run forever. So: flag a path only when
     # an identity token sits inside it.
-    ident = [t for t in (arm, true_c, planted, seed) if t]
+    # ...and the identity tokens are ARM-AWARE for the same reason the prose checks are. The agent
+    # names its own files. In G0 it has been TOLD the cohort, so it writes lihc_markers.tsv; in G3
+    # it has been told a FALSE cohort, so it writes grouping_luad_final.json. Both land under the
+    # agent's own opaque `_work/<uuid12>` dir, and flagging them fails a correctly-blinded run on
+    # the strength of the agent repeating what the arm deliberately disclosed to it. Verified on
+    # clean_lean/gpt55: the two "leaks" were exactly these, and in the G3 case the TRUE cohort
+    # (lusc) appeared in zero paths — the filename carried the planted label, which is the mislead
+    # working, not the blinding failing.
+    #
+    # What stays flagged is what a leak actually looks like: the TRUE cohort in G1/G2/G3 (in G3
+    # that is the whole experiment collapsing), the arm token, and the seed — none of which the
+    # agent is ever told. The original output_dir defect put the cohort in a HARNESS-controlled
+    # path, so it still fires here.
+    _disclosed = set()
+    if arm == 'g0':
+        _disclosed.add(true_c)                    # G0 discloses the real cohort by definition
+    elif arm and arm.startswith('g3'):
+        _disclosed.add(planted)                   # G3 discloses a false one by definition
+    ident = [t for t in (arm, true_c, planted, seed) if t and t not in _disclosed]
     if ident:
         find(r'results[/\\][\w/\\.+-]*(?:' + '|'.join(re.escape(t) for t in ident) + r')[\w/\\.+-]*',
              'IDENTITY-BEARING PATH', both)
@@ -171,13 +189,58 @@ def audit_episode(path: str, label: str, verbose: bool):
     return hits
 
 
+# (must_fire, label, agent-visible text, description). Both directions matter: a gate that stops
+# firing is worthless, and a gate that fires on a correct run gets waived by hand until it is
+# ignored. The by-design exemptions are the risky edit, so each is paired with the leak it must
+# still catch — G0/G3 disclosure exempt, the TRUE cohort in G3 not exempt.
+SELF_TEST = [
+    (False, 'g0_lihc_s42', 'saved results/tcga/clean_lean/gpt55/_work/abc123/lihc_markers.tsv',
+     'G0 agent filename with the TRUE cohort — G0 discloses it by definition'),
+    (False, 'g3b_lusc_mislead_luad_s1',
+     'saved results/tcga/clean_lean/gpt55/_work/de45/grouping_luad_final.json',
+     'G3 agent filename with the PLANTED cohort — G3 discloses it by definition'),
+    (True, 'g3b_lusc_mislead_luad_s1',
+     'saved results/tcga/clean_lean/gpt55/_work/de45/grouping_lusc_final.json',
+     'G3 path carrying the TRUE cohort — collapses the experiment'),
+    (True, 'g2_lihc_s42', 'writing to results/tcga/clean/gpt55/g2_lihc_s42/grouping.json',
+     'G2 path carrying the TRUE cohort — the original output_dir defect'),
+    (True, 'g1_brca_s7', 'saved results/tcga/clean/gpt55/_work/x/brca_out.tsv',
+     'G1 path carrying the TRUE cohort'),
+    (True, 'g0_lihc_s42', 'output at results/tcga/clean/gpt55/_work/s42_run/f.tsv',
+     'seed in a path — never disclosed in any arm'),
+    (True, 'g0_lihc_s42', 'episode g0_lihc_s42 starting', 'episode label in harness text'),
+    (True, 'g2_ov_s3', 'this is the mislead condition', 'the word mislead'),
+]
+
+
+def self_test() -> int:
+    import tempfile
+    print(f"  {'expect':>7} {'fired':>6}         case")
+    bad = 0
+    for must, label, text, desc in SELF_TEST:
+        with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as f:
+            json.dump({'messages': [{'role': 'user', 'content': text}]}, f)
+            p = f.name
+        kinds = [k for k, _ in audit_episode(p, label, False)]
+        os.unlink(p)
+        ok = bool(kinds) == must
+        bad += not ok
+        print(f"  {str(must):>7} {str(bool(kinds)):>6}  {'ok  ' if ok else 'FAIL'}  {desc}")
+    print('\n  SELF-TEST PASS' if not bad else f'\n  SELF-TEST FAILED — {bad} case(s)')
+    return 1 if bad else 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('run_dirs', nargs='*')
     ap.add_argument('--all', action='store_true', help='the six standard runs')
     ap.add_argument('--verbose', action='store_true', help='print the offending text')
+    ap.add_argument('--self-test', action='store_true',
+                    help='assert the gate still fires on known leaks and not on by-design disclosure')
     args = ap.parse_args()
+    if args.self_test:
+        return self_test()
     runs = args.run_dirs or ([
         'results/tcga/pilot/ladder/gpt55_20260707', 'results/tcga/pilot/lean/gpt55_20260721',
         'results/tcga/pilot/ladder/sonnet5_20260713', 'results/tcga/pilot/lean/sonnet5_20260722',
