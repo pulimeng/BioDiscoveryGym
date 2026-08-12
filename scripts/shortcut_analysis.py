@@ -32,7 +32,7 @@ from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import runs_config
-from extract_cot import extract_episode, count_based_identity
+from extract_cot import extract_episode, count_based_identity, COHORT_DIS
 
 from scipy.stats import spearmanr
 
@@ -42,6 +42,30 @@ OUT = 'manuscript/figures/shortcut_stats.json'
 # the agent INVOKING the path as a source — not a file merely being saved to it
 PATH_CITED = re.compile(
     r"(output_dir|directory|folder|dir(?:ectory)? name|file ?path|path (?:name|contain|suggest))", re.I)
+
+
+def path_cited_identity(txt, cohort, window=150):
+    """True iff the agent names THIS cohort's cancer BESIDE a path mention.
+
+    The bare regex above matches the word "directory", which agents say constantly for reasons
+    that have nothing to do with identity: "save grouping.json to the output directory", "list the
+    data directory to find a GMT". A hand-read of all 14 episodes it flagged on the clean run
+    (2026-08-12) found 14/14 to be exactly that, and ZERO naming the cohort anywhere near the
+    match — while `audit_blinding` independently reported no leak on the same lanes.
+
+    Counting those as shortcuts fabricated a defect in a clean run and inflated the one number the
+    paper's "does it survive the fix?" claim rests on. Same false-positive mode, same fix, as the
+    leak probe in audit_integrity.py: require the identity to be ADJACENT to the mention, mirroring
+    count_based_identity's validated window approach.
+    """
+    dis = COHORT_DIS.get(cohort)
+    if not dis:
+        return False
+    dpat = re.compile(dis, re.I)
+    for m in PATH_CITED.finditer(txt):
+        if dpat.search(txt[max(0, m.start() - window):m.end() + window]):
+            return True
+    return False
 
 
 def cohort_sizes():
@@ -94,7 +118,7 @@ def main():
                 txt = ' '.join((x.get('why') or '') + ' ' + (x.get('expects') or '') + ' ' +
                                ' '.join(str(z) for z in (x.get('obs') or {}).values())
                                for x in rec['calls'])
-                pa = bool(PATH_CITED.search(txt))
+                pa = path_cited_identity(txt, rec.get('cohort'))
             except Exception:
                 pass
             cnt += c; pth += pa
@@ -129,9 +153,29 @@ def main():
     print(f"  G2 outcome across arms    : {min(ys):.3f} .. {max(ys):.3f}   "
           f"(spread {max(ys)-min(ys):.3f})")
     print(f"  correlation shortcut vs outcome: rho={rho:+.2f}, p={p:.2f} (n={len(xs)} arms)")
-    print("\n  Process varies across ~80 points; the answer varies across ~3. The arm that takes")
-    print("  shortcuts MOST often is not penalised — it scores at the top. That is the claim:")
-    print("  an outcome score cannot tell you which kind of agent you have.")
+    # NARRATE FROM THE NUMBERS, never alongside them. This block used to print a fixed sentence —
+    # "Process varies across ~80 points; the answer varies across ~3 … the arm that takes shortcuts
+    # MOST often is not penalised, it scores at the top" — describing the pilot. On the clean run
+    # the spread is 33 points, and the worst-shortcutting arm has the LOWEST outcome, so the stored
+    # prose contradicted the table printed three lines above it. A reviewer running the code sees
+    # both at once.
+    _arms = list(out['arms'].items())
+    _worst = max(_arms, key=lambda kv: kv[1]['shortcut_rate'])          # most shortcuts
+    _rank = sorted(_arms, key=lambda kv: -kv[1]['outcome_g2'])          # best outcome first
+    _pos = [k for k, _ in _rank].index(_worst[0]) + 1
+    _place = ('the TOP' if _pos == 1 else 'the BOTTOM' if _pos == len(_rank) else f'#{_pos}')
+    print(f"\n  Process varies across {(max(xs)-min(xs))*100:.0f} points; the answer varies across "
+          f"{(max(ys)-min(ys))*100:.0f}. The arm that takes")
+    print(f"  shortcuts MOST often ({_worst[0]}, {_worst[1]['shortcut_rate']*100:.0f}%) ranks "
+          f"{_place} of {len(_rank)} on outcome ({_worst[1]['outcome_g2']:.3f}).")
+    if p < 0.05:
+        _verdict = ("Outcome TRACKS shortcut-taking here — the dissociation claim does NOT hold "
+                    "on this run set.") if rho < 0 else (
+                   "Outcome rises with shortcut-taking — inspect before claiming anything.")
+    else:
+        _verdict = (f"The rank correlation is rho={rho:+.2f} at p={p:.2f} with n={len(xs)} arms: "
+                    "directional, NOT established.")
+    print(f"  {_verdict}")
     cnt, pth, anyx = tot['cnt'], tot['pth'], tot['any']
     print(f"\n  DECOMPOSITION — how much of this is OUR defect vs agent-generated:")
     print(f"    count-leak (agent-generated) {cnt:>3}   path-cited (our plumbing) {pth:>3}   "
