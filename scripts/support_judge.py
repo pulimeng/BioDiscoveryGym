@@ -260,27 +260,22 @@ def _judge_openai_compatible(user_msg: str, model: str) -> dict:
     """DeepSeek (the neutral judge) + OpenAI, via the OpenAI SDK with forced tool-calling.
     DeepSeek is served at api.deepseek.com and is OpenAI-compatible incl. tool calls."""
     import openai, json, os
-    ml = model.lower()
-    if ml.startswith(("nemotron", "laguna")):
-        # St. Jude internal gateway (bifrost) — OpenAI-compatible. NEUTRAL judge: not a
-        # benchmarked agent family, and inside the perimeter so it cannot be firewalled off
-        # mid-run the way DeepSeek was on 2026-08-06. Token budget and tool_choice follow the
-        # DeepSeek settings below, which exist because a thinking model needs room for BOTH the
-        # reasoning and the tool-call JSON, and rejects a forced tool_choice.
-        client = openai.OpenAI(
-            base_url=os.environ.get("BIFROST_BASE_URL",
-                                    "https://bifrost.ai-application.stjude.org/v1"),
-            api_key=os.environ.get("BIFROST_API_KEY"))
-        tok_key, base_tokens, retry_tokens = "max_tokens", 16000, 32000
-        tool_choice = "auto"
-    elif ml.startswith("deepseek"):
-        client = openai.OpenAI(base_url="https://api.deepseek.com",
-                               api_key=os.environ.get("DEEPSEEK_API_KEY"))
-        # V4 Pro is a thinking model: forced tool_choice is rejected in thinking mode, so use
-        # "auto" (the prompt instructs it to call record_support). The budget must cover BOTH
-        # the reasoning AND the tool-call JSON — too small and the args truncate mid-string
-        # ("Unterminated string" on json.loads). Start generous, and if the response is still
-        # cut off (finish_reason="length") retry once with a bigger budget.
+    from biodiscoverygym.scoring.judge import judge_provider
+    # Routed from judge_provider — the one table. This module produced its own copy of the
+    # routing chain (the sixth), and it is the one that emits d2_identity.strategy, i.e. the
+    # labels the paper's headline claim rests on. Under the old prefix matching a gateway-
+    # qualified id such as "AI-Workstation/nemotron-3-super" fell through to the OpenAI default
+    # and would have been judged by GPT — a BENCHMARKED family — with no error and no clue in
+    # the output. Substring matching in judge_provider closes that; keeping the routing in one
+    # place is what stops it reopening.
+    env_key, base_url = judge_provider(model)
+    if base_url:
+        # Self-hosted / third-party OpenAI-compatible endpoint (bifrost: nemotron, laguna; the
+        # AIE serving platform: qwen; DeepSeek). A thinking model needs room for BOTH the
+        # reasoning and the tool-call JSON — too small and the args truncate mid-string
+        # ("Unterminated string" on json.loads) — and rejects a forced tool_choice, so "auto"
+        # with the prompt instructing it to call record_support.
+        client = openai.OpenAI(base_url=base_url, api_key=os.environ.get(env_key))
         tok_key, base_tokens, retry_tokens = "max_tokens", 16000, 32000
         tool_choice = "auto"
     else:                                       # openai gpt/o-series

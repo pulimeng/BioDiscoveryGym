@@ -33,7 +33,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from extract_cot import extract_episode  # deterministic distiller (no LLM)
 from biodiscoverygym.scoring.judge import (DEFAULT_JUDGE_MODEL, judge_provider,
-                                           required_key_env)
+                                           required_key_env,
+                                           is_benchmarked_family)
 
 # ---------------------------------------------------------------------------
 # Judge prompt + tool schema (structured fields + prose)
@@ -254,6 +255,13 @@ def main():
     ap.add_argument("--rescore", action="store_true",
                     help="redo episodes that already have _cotsummary.json (default: skip)")
     args = ap.parse_args()
+
+    if is_benchmarked_family(args.model):
+        print(f"\n  !! NEUTRALITY WARNING: judge model {args.model} belongs to a family UNDER\n"
+              f"     EVALUATION in this benchmark (gpt / claude / gemini). Self-preference is\n"
+              f"     available to it, so its labels are not a neutral measurement. Use a neutral\n"
+              f"     judge (nemotron-3-super, laguna, qwen*, deepseek*) for anything reported.\n",
+              file=sys.stderr)
 
     if not args.dry:
         need = required_key_env(args.model)

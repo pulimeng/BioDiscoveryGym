@@ -58,21 +58,41 @@ QWEN_BASE_URL = os.environ.get(
 QWEN_MODEL = os.environ.get("BDG_QWEN_MODEL", "qwen36-27b-fp8")
 
 
+# Families that are UNDER EVALUATION in this benchmark. A judge drawn from one of these has
+# self-preference exposure and is not a valid neutral judge — see docs/SUPPORT_JUDGE_PROMPT.md.
+BENCHMARKED_FAMILIES = ("gpt", "claude", "gemini")
+
+
 def judge_provider(model: str) -> tuple[str, str | None]:
     """(env var holding the key, base_url) for a judge model id.
 
     base_url None means "the SDK's own default endpoint" (Anthropic, or OpenAI proper).
+
+    Matching is SUBSTRING, not prefix. Gateways advertise vendor-qualified ids — bifrost's
+    /v1/models returns `AI-Workstation/nemotron-3-super`, which is exactly the string an
+    operator copies out of it — and under prefix matching that fell through every branch to
+    the OpenAI default. That does not fail: it quietly sends the trace to GPT, a BENCHMARKED
+    family, so the run completes, the files are well-formed, and the only thing wrong is that
+    the "neutral" judge was one of the evaluated models. Another benign-looking non-event, the
+    failure shape this project keeps meeting. Substring matching cannot regress that way; the
+    names are distinctive enough that over-matching is not a realistic risk.
     """
     ml = (model or "").lower()
     if "claude" in ml:
         return ("ANTHROPIC_API_KEY", None)
-    if ml.startswith("qwen"):
+    if "qwen" in ml:
         return ("QWEN_API_KEY", QWEN_BASE_URL)
-    if ml.startswith(("nemotron", "laguna")):
+    if "nemotron" in ml or "laguna" in ml:
         return ("BIFROST_API_KEY", BIFROST_BASE_URL)
-    if ml.startswith("deepseek"):
+    if "deepseek" in ml:
         return ("DEEPSEEK_API_KEY", "https://api.deepseek.com")
     return ("OPENAI_API_KEY", None)
+
+
+def is_benchmarked_family(model: str) -> bool:
+    """True if this judge belongs to a family under evaluation (self-preference exposure)."""
+    ml = (model or "").lower()
+    return any(f in ml for f in BENCHMARKED_FAMILIES)
 
 
 def required_key_env(model: str) -> str:

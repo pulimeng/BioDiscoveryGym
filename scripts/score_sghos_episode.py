@@ -27,7 +27,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from biodiscoverygym.scoring.judge import DEFAULT_JUDGE_MODEL, required_key_env
+from biodiscoverygym.scoring.judge import (DEFAULT_JUDGE_MODEL, is_benchmarked_family,
+                                           required_key_env)
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -79,6 +80,12 @@ def main():
     # for batch resilience but a footgun for one-off scoring runs.
     import os
     _need = required_key_env(args.llm_model)
+    if is_benchmarked_family(args.llm_model):
+        print(f"\n  !! NEUTRALITY WARNING: judge model {args.llm_model} belongs to a family UNDER\n"
+              f"     EVALUATION in this benchmark (gpt / claude / gemini). Self-preference is\n"
+              f"     available to it, so its labels are not a neutral measurement. Use a neutral\n"
+              f"     judge (nemotron-3-super, laguna, qwen*, deepseek*) for anything reported.\n",
+              file=sys.stderr)
     if not args.skip_llm and not os.environ.get(_need):
         print(f"ERROR: {_need} is not set (judge model = {args.llm_model}).", file=sys.stderr)
         print("  This script invokes 3 LLM judges (~7 of 24 pts).", file=sys.stderr)

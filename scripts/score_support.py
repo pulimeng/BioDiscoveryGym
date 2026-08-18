@@ -28,7 +28,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import support_judge as gj
-from biodiscoverygym.scoring.judge import DEFAULT_JUDGE_MODEL, required_key_env
+from biodiscoverygym.scoring.judge import (DEFAULT_JUDGE_MODEL, is_benchmarked_family,
+                                           required_key_env)
 
 STRATS = ["explore", "exploit", "mixed"]
 GRDS = ["grounded", "unsupported", "anchored"]
@@ -78,6 +79,13 @@ def main():
     p.add_argument("--rescore", action="store_true",
                    help="re-judge episodes that already have _supportscores.json (default: skip them)")
     args = p.parse_args()
+
+    if is_benchmarked_family(args.model):
+        print(f"\n  !! NEUTRALITY WARNING: judge model {args.model} belongs to a family UNDER\n"
+              f"     EVALUATION in this benchmark (gpt / claude / gemini). Self-preference is\n"
+              f"     available to it, so its labels are not a neutral measurement. Use a neutral\n"
+              f"     judge (nemotron-3-super, laguna, qwen*, deepseek*) for anything reported.\n",
+              file=sys.stderr)
 
     if not args.dry:
         need = required_key_env(args.model)
