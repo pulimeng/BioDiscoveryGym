@@ -252,19 +252,35 @@ Home: `cot_deepdive.py`, which needs rework regardless (its stated H1/H2 are bot
 
 ## 9. Running it
 
+**One judge per terminal.** That is the parallelism: three processes, each a single stream of
+work. There is deliberately no "run everything" mode.
+
 ```bash
-export BDG_RUNS=clean BDG_JOBS=6
+# in each of three terminals
+export BDG_RUNS=clean
 source load_keys.sh "<keys.txt>"
 
-scripts/run_judge_panel_v2.sh              # all judges x all artifacts, resume-safe
-scripts/run_judge_panel_v2.sh qwen         # one judge
-python scripts/panel_status.py             # coverage gate; non-zero exit until complete
+scripts/run_judge.sh nemotron      # terminal 1
+scripts/run_judge.sh laguna        # terminal 2
+scripts/run_judge.sh qwen          # terminal 3
+
+python scripts/panel_status.py     # coverage gate; non-zero exit until complete
 ```
 
-Judges run **sequentially** by design: nemotron and laguna share one bifrost gateway that is
-demonstrably capacity-limited (Gemini 3.1 Pro returned 503 on a 1-token preflight there; Gemini 3.5
-Flash was abandoned at 60/95). Qwen is a separate host, so a qwen lane may safely run alongside a
-bifrost lane.
+Each run preflights a 1-token call first, so a bad key or model id fails in seconds rather than
+95 episodes in, and each is resume-safe: the scorers skip episodes that already have the
+artifact, so re-running after an interrupt continues where it stopped.
+
+An earlier driver sharded episodes across N background workers per stage. It was faster on paper
+and had far more ways to go wrong — partial shards on interrupt, interleaved logs, a silently
+empty work list, and 6–18 concurrent connections onto a gateway that is known to fail under load
+(Gemini 3.1 Pro returned 503 there on a *1-token* preflight; Gemini 3.5 Flash was abandoned at
+60/95). Three streams is a load the gateway is known to survive, and a crashed terminal loses one
+judge rather than a shard of three.
+
+Cost of the simplicity: each judge is one call at a time, so a full pass is long. If that becomes
+the binding constraint, the safe lever is lane-level concurrency *within* one terminal — not
+re-sharding across judges.
 
 ### Integrity gates
 | gate | checks |
