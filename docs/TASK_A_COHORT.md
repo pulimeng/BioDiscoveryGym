@@ -115,7 +115,7 @@ Three changes locked in preparation for the multi-seed TCGA run, mirroring the O
 - *OncoKB driver preference hint added* — 20 % of `marker_evidence` rewards OncoKB driver overlap, but the prompt never told the agent that submitting established drivers (when statistically comparable to novel markers) is preferred. Added explicit "PREFER established cancer-relevant drivers among comparable candidates" instruction.
 - *Mechanism hypothesis wording strengthened* — was "what biological process underlies the grouping" (pathway-level satisfies); judge wants "full directional chain with named molecular actors at each step." Stage 6 now asks for the chain with the example syntax inline.
 
-**3. Smoke-test runner wired.** `bash scripts/run_tcga.sh --smoke-test` runs all 4 groups (G0/G1/G2/G3) on a single cohort (OV) at one seed (42) with 15-call budget — pipeline check, not a scoring run. Mirrors the OS `run_cohort.sh --smoke-test` pattern. Forces `SKIP_SCORE=1` (15 calls produce no meaningful scores) and `OUT_DIR=results/tcga/smoke-test`. ~$1, ~10 min total.
+**3. Smoke-test runner wired.** `bash scripts/run_tcga.sh --smoke-test` runs all 4 groups (G0/G1/G2/G3) on a single cohort (OV) at one seed (42) with 15-call budget — pipeline check, not a scoring run. Mirrors the OS `run_cohort.sh --smoke-test` pattern. Forces `SKIP_SCORE=1` (15 calls produce no meaningful scores) and `OUT_DIR=results/tcga/_smoke/smoke-test`. ~$1, ~10 min total.
 
 ### Results path migration (2026-06-15)
 
@@ -125,7 +125,7 @@ Unified the output layout so TCGA results mirror the OS pattern. Before: TCGA ep
 |---|---|
 | OS smoke test | `results/external/smoke-test/<uuid>/` |
 | OS named run | `results/external/<tag>/<uuid>/` |
-| TCGA smoke test | `results/tcga/smoke-test/<uuid>/` |
+| TCGA smoke test | `results/tcga/_smoke/smoke-test/<uuid>/` |
 | TCGA named run | `results/tcga/<tag>/<uuid>/` |
 
 Changed: `scripts/run_tcga.sh` (BASE_DIR), `scripts/run_episode.py` (default for non-external), `biodiscoverygym/episode.py` (fallback default), plus README/PROGRESS.md/BENCHMARK_PLAN.md path examples. No `results/cohort/` references remain in active code or docs.

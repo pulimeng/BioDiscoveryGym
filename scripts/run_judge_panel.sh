@@ -100,7 +100,7 @@ if [[ -z "$DRY" && -z "${!KEY_VAR:-}" ]]; then
   exit 1
 fi
 
-LOGDIR="results/tcga/_judge_panel_logs"
+LOGDIR="results/tcga/_superseded/judge_panel_logs"
 mkdir -p "$LOGDIR"
 
 # Identify a run by its last TWO path components. `basename` alone is ambiguous: the detailed and

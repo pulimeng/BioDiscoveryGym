@@ -5,7 +5,7 @@ every metric per model so you can read whether instruction changes WHAT is found
 how GROUNDED it looks (support/D2), and how it actually REASONS (CoT derive-vs-recall, fooling,
 observation count). Reads v3 + support + cotsummary + the raw trace (record_observation count).
 
-Usage: python scripts/gen_ablation_report.py     ->  results/tcga/ABLATION_REPORT.html
+Usage: python scripts/gen_ablation_report.py     ->  results/tcga/reports/ABLATION_REPORT.html
 """
 import glob, json, os, re, sys, statistics as st
 from collections import Counter
@@ -35,7 +35,7 @@ from extract_cot import extract_episode, count_based_identity
 
 # (label, detailed_dir, lean_dir, color, tier)
 PAIRS = runs_config.pairs()
-OUT = 'results/tcga/ABLATION_REPORT.html'
+OUT = 'results/tcga/reports/ABLATION_REPORT.html'
 
 def arm(lab): return lab.split('_')[0]
 def cohort_of(lab): return lab.split('_')[1].upper() if '_' in lab else '?'

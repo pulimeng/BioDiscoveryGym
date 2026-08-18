@@ -90,7 +90,11 @@ done
 #   --smoke-test --max-calls 100       → 100 calls, scored   (~$12, ~1 hr)     — depth check
 # Auto-skips scoring only when MAX_CALLS ≤ 30 (too few to produce meaningful scores).
 if [[ $SMOKE_TEST -eq 1 ]]; then
-    [[ -z "$TAG" ]] && TAG="smoke-test"   # default tag, but respect an explicit --tag
+    # Land under _smoke/ so throwaway pipeline checks stay out of the campaign namespace.
+    # results/tcga/ was reorganized 2026-08-18: campaigns at top level, smoke runs under
+    # _smoke/, superseded runs under _superseded/. A bare "smoke-test" tag would recreate a
+    # top-level directory and quietly undo that.
+    [[ -z "$TAG" ]] && TAG="_smoke/smoke-test"   # default tag, but respect an explicit --tag
     COHORTS=(OV)
     SEEDS=(42)
     G3_PAIRS=("OV:BRCA")

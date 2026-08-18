@@ -24,15 +24,13 @@ Usage:
 import argparse, glob, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import runs_config
 
-RUNS = [
-    "results/tcga/pilot/ladder/sonnet5_20260713",
-    "results/tcga/pilot/ladder/gpt55_20260707",
-    "results/tcga/pilot/ladder/gemini35flash_20260716",
-    "results/tcga/pilot/lean/sonnet5_20260722",
-    "results/tcga/pilot/lean/gpt55_20260721",
-    "results/tcga/pilot/lean/gemini35flash_20260722",
-]
+# Resolved from runs_config, not hardcoded. This list used to name the six PILOT lanes, so a
+# bare `python scripts/check_judge_integrity.py` certified the judge outputs of a campaign that
+# is not the one under analysis — passing loudly while saying nothing about the clean run.
+# runs_config defaults to the clean campaign and announces whatever it picked.
+RUNS = runs_config.flat()
 SUFFIXES = ["_cotsummary.json", "_cotsummary_j2.json", "_cotsummary_j3.json"]
 
 # Pulled from summarize_cot's tool schema rather than hardcoded, so the two cannot drift apart.

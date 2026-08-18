@@ -1,7 +1,7 @@
 # The pilot is a condition, not a mistake
 
 **Decision 2026-08-03: keep the 450-episode pilot campaign. Do not delete or archive it.**
-`results/tcga/pilot/ladder/` + `results/tcga/pilot/lean/`, 1.4G.
+`results/tcga/_superseded/pilot/ladder/` + `results/tcga/_superseded/pilot/lean/`, 1.4G.
 
 ## Why
 

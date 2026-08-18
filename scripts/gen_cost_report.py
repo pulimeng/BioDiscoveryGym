@@ -18,7 +18,7 @@ counts — a model that takes 55 turns re-sends its context 55 times, so per-epi
 dominated by conversation length rather than by the model's sticker price.
 
 Usage:
-  python scripts/gen_cost_report.py                      -> results/tcga/COST_REPORT.html
+  python scripts/gen_cost_report.py                      -> results/tcga/reports/COST_REPORT.html
   python scripts/gen_cost_report.py --prices my.json     -> override the price table
 """
 import argparse, glob, json, os, statistics as st, sys
@@ -62,7 +62,7 @@ PRICES_DATE = '2026-07-28 (supplied by project owner)'
 _COL = {l: c for l, s, c, t in runs_config.MODELS}
 RUNS = [(m, p, r, _COL[m]) for m, p, r in runs_config.triples()]
 JUDGE_SUFFIXES = ['_cotsummary.json', '_cotsummary_j2.json', '_cotsummary_j3.json']
-OUT = 'results/tcga/COST_REPORT.html'
+OUT = 'results/tcga/reports/COST_REPORT.html'
 
 
 def episode_paths(run):

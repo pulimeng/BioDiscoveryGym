@@ -20,7 +20,7 @@ SECTIONS
 All labels are the 3-pass CONSENSUS unless a section says otherwise; ties are shown as unresolved
 rather than silently broken.
 
-Usage: python scripts/gen_cot_report.py   ->  results/tcga/COT_REPORT.html
+Usage: python scripts/gen_cot_report.py   ->  results/tcga/reports/COT_REPORT.html
 """
 import glob, html as H, json, os, re, sys
 from collections import Counter
@@ -32,7 +32,7 @@ from extract_cot import extract_episode, count_based_identity
 _COL = {l: c for l, s, c, t in runs_config.MODELS}
 RUNS = [(m, p, r, _COL[m]) for m, p, r in runs_config.triples()]
 SUFFIXES = ['_cotsummary.json', '_cotsummary_j2.json', '_cotsummary_j3.json']
-OUT = 'results/tcga/COT_REPORT.html'
+OUT = 'results/tcga/reports/COT_REPORT.html'
 
 ID_ORDER = ['data-derived', 'mixed', 'recalled-prior', 'not-established']
 RIG_ORDER = ['high', 'medium', 'low']

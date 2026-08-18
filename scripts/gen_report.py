@@ -9,14 +9,14 @@ grounding (mean support /5) is auto-included per model when *_supportscores.json
 exist in that run dir, and omitted otherwise (no hardcoded "outcome only" caveat).
 
   python scripts/gen_report.py \
-      --model "GPT-5.5:results/tcga/pilot/ladder/gpt55_20260707:#1D9E75" \
+      --model "GPT-5.5:results/tcga/_superseded/pilot/ladder/gpt55_20260707:#1D9E75" \
       --model "Claude Sonnet:results/tcga/_archive/run1+2:#7F77DD" \
-      --model "Gemini 2.5 Pro:results/tcga/pilot/ladder/gemini25_:#D29922" \
-      --out results/tcga/pilot/ladder/MODEL_COMPARISON.html
+      --model "Gemini 2.5 Pro:results/tcga/_superseded/pilot/ladder/gemini25_:#D29922" \
+      --out results/tcga/_superseded/pilot/ladder/MODEL_COMPARISON.html
 
   # lean-vs-detailed ablation (same script, different run dirs):
   python scripts/gen_report.py \
-      --model "GPT-5.5 detailed:results/tcga/pilot/ladder/gpt55_20260707:#1D9E75" \
+      --model "GPT-5.5 detailed:results/tcga/_superseded/pilot/ladder/gpt55_20260707:#1D9E75" \
       --model "GPT-5.5 lean:results/tcga/_ablation/lean_gpt55:#58a6ff" \
       --title "TCGA — lean vs detailed prompt (GPT-5.5)" --out results/tcga/_ablation/LEAN_VS_DETAILED.html
 """
@@ -209,8 +209,8 @@ def build(models, cohorts, title):
 def main():
     ap = argparse.ArgumentParser(description="Parameterized TCGA benchmark comparison report.")
     ap.add_argument('--model', action='append', required=True, metavar='LABEL:DIR[:#COLOR]',
-                    help='repeatable; e.g. "GPT-5.5:results/tcga/pilot/ladder/gpt55_20260707:#1D9E75"')
-    ap.add_argument('--out', default='results/tcga/pilot/ladder/MODEL_COMPARISON.html')
+                    help='repeatable; e.g. "GPT-5.5:results/tcga/_superseded/pilot/ladder/gpt55_20260707:#1D9E75"')
+    ap.add_argument('--out', default='results/tcga/_superseded/pilot/ladder/MODEL_COMPARISON.html')
     ap.add_argument('--title', default='TCGA Agent Benchmark — Model Comparison')
     ap.add_argument('--cohorts', default=','.join(COHORTS_DEFAULT))
     a = ap.parse_args()

@@ -1,22 +1,30 @@
 """Single source of truth for which run directories the analysis reads.
 
 WHY THIS EXISTS. Thirteen scripts hardcoded the pilot paths
-(`results/tcga/pilot/ladder/gpt55_20260707`, …). After the clean rerun they would keep analysing the
+(`results/tcga/_superseded/pilot/ladder/gpt55_20260707`, …). After the clean rerun they would keep analysing the
 CONTAMINATED pilot and report its numbers without erroring — the project's signature failure mode:
 a wrong result that renders as a normal one. Nothing would have flagged it.
 
-USAGE — point every analysis at the clean run with one variable:
+USAGE — the CLEAN campaign is the default. A bare run analyses publication-safe data:
 
-    export BDG_RUNS=clean            # reads results/tcga/clean/*  + results/tcga/clean_lean/*
-    python scripts/cot_deepdive.py
+    python scripts/cot_deepdive.py   # reads results/tcga/clean/* + results/tcga/clean_lean/*
 
-or give explicit roots:
+Reading the contaminated pilot is now an explicit, deliberate act:
 
-    export BDG_DETAILED_ROOT=results/tcga/clean
-    export BDG_LEAN_ROOT=results/tcga/clean_lean
+    export BDG_RUNS=pilot            # prints a banner; results are NOT publication-safe
 
-Default is the pilot, so existing behaviour is unchanged until you opt in — and every script that
-imports this prints which run set it used, so a report can never quietly describe the wrong data.
+or give explicit roots / another campaign tag:
+
+    export BDG_RUNS=<tag>            # results/tcga/<tag> + results/tcga/<tag>_lean
+    export BDG_DETAILED_ROOT=... ; export BDG_LEAN_ROOT=...
+
+DEFAULT FLIPPED 2026-08-18. It used to be the pilot, on the reasoning that changing it would
+silently repoint thirteen scripts. That protected the scripts and not the science: the failure
+it left open — a bare `python scripts/gen_*.py` quietly reporting contaminated numbers — actually
+happened, twice in one session, one of them printing a conclusion the clean run contradicts at
+p=2.4e-14. The clean run is the campaign of record; the pilot is post-mortem evidence for the
+paper's validity section. The safe choice is now the default one, and the unsafe one announces
+itself. Every consumer still prints which run set it used.
 """
 from __future__ import annotations
 
@@ -28,7 +36,7 @@ import sys
 #
 # BOTH Gemini entries are listed on purpose. The pilot ran Gemini 3.5 Flash; the clean run uses
 # Gemini 3.1 Pro after Flash was abandoned at 60/95 on sustained 503s and an 18h hang
-# (results/tcga/_abandoned/gemini35flash_20260805_incomplete/WHY_ABANDONED.md). Replacing the row
+# (results/tcga/_superseded/abandoned_gemini35flash/WHY_ABANDONED.md). Replacing the row
 # outright would have silently dropped Gemini from every pilot analysis, since triples() filters
 # on `stem in RUNS[prompt]` and would simply have found nothing to iterate — no error, one fewer
 # arm in the tables. Listing both means each run set resolves the Gemini it actually has.
@@ -49,12 +57,12 @@ MODELS = [
 # generation and must not be read as a vendor difference.
 
 _PILOT = {
-    'detailed': {'gpt55': 'results/tcga/pilot/ladder/gpt55_20260707',
-                 'sonnet5': 'results/tcga/pilot/ladder/sonnet5_20260713',
-                 'gemini35flash': 'results/tcga/pilot/ladder/gemini35flash_20260716'},
-    'lean': {'gpt55': 'results/tcga/pilot/lean/gpt55_20260721',
-             'sonnet5': 'results/tcga/pilot/lean/sonnet5_20260722',
-             'gemini35flash': 'results/tcga/pilot/lean/gemini35flash_20260722'},
+    'detailed': {'gpt55': 'results/tcga/_superseded/pilot/ladder/gpt55_20260707',
+                 'sonnet5': 'results/tcga/_superseded/pilot/ladder/sonnet5_20260713',
+                 'gemini35flash': 'results/tcga/_superseded/pilot/ladder/gemini35flash_20260716'},
+    'lean': {'gpt55': 'results/tcga/_superseded/pilot/lean/gpt55_20260721',
+             'sonnet5': 'results/tcga/_superseded/pilot/lean/sonnet5_20260722',
+             'gemini35flash': 'results/tcga/_superseded/pilot/lean/gemini35flash_20260722'},
 }
 
 
@@ -63,11 +71,17 @@ def _resolve() -> tuple[dict, str]:
     det_root = os.environ.get('BDG_DETAILED_ROOT')
     lean_root = os.environ.get('BDG_LEAN_ROOT')
     tag = os.environ.get('BDG_RUNS')
+    # The pilot needs its own branch, not the {tag}/{tag}_lean rule: its two waves are
+    # `_superseded/pilot/ladder` and `_superseded/pilot/lean` with per-model date stamps, so the
+    # generic rule would resolve `results/tcga/pilot` + `results/tcga/pilot_lean`, find neither,
+    # and hand back EMPTY run sets — an analysis over nothing, reported as a normal run.
+    if tag == 'pilot':
+        return _PILOT, 'PILOT (path-contaminated — see docs/DATA_INTEGRITY_AUDIT.md)'
     if tag and not (det_root and lean_root):
         det_root = det_root or f'results/tcga/{tag}'
         lean_root = lean_root or f'results/tcga/{tag}_lean'
     if not (det_root or lean_root):
-        return _PILOT, 'PILOT (path-contaminated — see docs/DATA_INTEGRITY_AUDIT.md)'
+        det_root, lean_root = 'results/tcga/clean', 'results/tcga/clean_lean'
 
     out = {'detailed': {}, 'lean': {}}
     for prompt, root in (('detailed', det_root), ('lean', lean_root)):
@@ -88,12 +102,10 @@ _announced = False
 def announce() -> None:
     """Print which run set is in use. Called by every consumer, once.
 
-    The PILOT default gets a banner, not a line. It is path-contaminated and superseded, yet it is
-    what a bare `python scripts/gen_*.py` still reads — and this session produced two reports dated
-    today built entirely on it, one of which printed a conclusion the clean run contradicts at
-    p=2.4e-14. Nothing failed; the only signal was a single quiet stderr line that scrolled past.
-    Behaviour is unchanged (changing the default would silently repoint thirteen scripts); what
-    changes is that choosing the contaminated campaign can no longer be done by accident.
+    The PILOT gets a banner, not a line. It is path-contaminated and superseded; it is no longer
+    reachable by accident (the default is the clean run as of 2026-08-18), but an explicit
+    BDG_RUNS=pilot still has to be impossible to forget you set — a single quiet stderr line
+    scrolled past twice and produced two reports on contaminated data.
     """
     global _announced
     if not _announced:
@@ -102,7 +114,7 @@ def announce() -> None:
             print(f"\n{bar}\n  READING THE CONTAMINATED PILOT — results are NOT publication-safe.\n"
                   f"  {SOURCE}\n"
                   f"  The pilot leaked the cohort through output_dir; see docs/DATA_INTEGRITY_AUDIT.md.\n"
-                  f"  For the clean campaign:  export BDG_RUNS=clean\n{bar}\n", file=sys.stderr)
+                  f"  The clean campaign is the DEFAULT: just unset BDG_RUNS.\n{bar}\n", file=sys.stderr)
         else:
             print(f"  [runs] {SOURCE}", file=sys.stderr)
         _announced = True

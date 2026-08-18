@@ -22,7 +22,7 @@
 > gate now runs without a partition and returns `mislead_cohort`. All 192 G3 episodes now carry a
 > usable verdict.*
 
-The pilot (`results/tcga/pilot/*`) leaked the cohort name through `output_dir` into the arms that
+The pilot (`results/tcga/_superseded/pilot/*`) leaked the cohort name through `output_dir` into the arms that
 were supposed to be blind. This document reports the blinded rerun and states plainly which pilot
 findings survived it. Two did not.
 
@@ -42,7 +42,7 @@ findings survived it. Two did not.
 
 Judge: `nemotron-3-super` via the St. Jude internal gateway. Not a benchmarked agent family, so
 self-preference is not available to it. The earlier DeepSeek judging is archived under
-`results/tcga/_archive_deepseek_judge_20260809/`.
+`results/tcga/_superseded/deepseek_judge_20260809/`.
 
 **Gates — one FAILS. Corrected 2026-08-13 after an audit; this block previously read "all passing".**
 

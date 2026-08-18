@@ -115,7 +115,7 @@ Gemini is the one to watch (matches tool responses by name, not id; finickier fu
 ## 4. Full ladder
 
 `run_tcga.sh` takes `--model` and a nested `--tag`, so each model's 48 episodes land grouped
-under `results/tcga/pilot/ladder/<model>_<date>/` (analysis is then `for m in results/tcga/pilot/ladder/*/`):
+under `results/tcga/_superseded/pilot/ladder/<model>_<date>/` (analysis is then `for m in results/tcga/_superseded/pilot/ladder/*/`):
 
 ```bash
 D=$(date +%Y%m%d)     # ONE date per campaign — reuse the SAME tag to resume (see note)
@@ -130,7 +130,7 @@ with `scripts/score_run.sh`, or `scripts/score_support.py <dir> --save` for a wh
 An unscored ladder dir is therefore expected, not a symptom. It is **resume-safe** — re-run
 the *same tag* to continue. **Note:** the timestamp versions a campaign; to resume across days,
 hardcode the date (`--tag ladder/gpt41_20260707`) rather than `$(date)`, which would roll to a
-new dir. To (re)score a whole model dir: `python scripts/score_support.py results/tcga/pilot/ladder/<dir> --save`.
+new dir. To (re)score a whole model dir: `python scripts/score_support.py results/tcga/_superseded/pilot/ladder/<dir> --save`.
 
 The paper figure is the **outcome × support cross-tab per model** — does the top-right cell
 (correct-but-unwarranted) fill for weaker models and stay empty for stronger ones?

@@ -51,7 +51,7 @@ def _cot_judge_name(runs):
 MODELS = [(lab, det, col, tier) for lab, det, _lean, col, tier in runs_config.pairs()]
 if not MODELS:
     sys.exit("no runs resolved — set BDG_RUNS (e.g. BDG_RUNS=clean) or pass --model")
-OUT_PATH = 'results/tcga/LADDER_3MODEL.html'
+OUT_PATH = 'results/tcga/reports/LADDER_3MODEL.html'
 JUDGE_NAME = None  # set after MODELS resolves
 
 _ap = argparse.ArgumentParser(description=__doc__)

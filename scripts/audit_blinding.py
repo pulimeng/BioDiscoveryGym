@@ -242,9 +242,9 @@ def main():
     if args.self_test:
         return self_test()
     runs = args.run_dirs or ([
-        'results/tcga/pilot/ladder/gpt55_20260707', 'results/tcga/pilot/lean/gpt55_20260721',
-        'results/tcga/pilot/ladder/sonnet5_20260713', 'results/tcga/pilot/lean/sonnet5_20260722',
-        'results/tcga/pilot/ladder/gemini35flash_20260716', 'results/tcga/pilot/lean/gemini35flash_20260722',
+        'results/tcga/_superseded/pilot/ladder/gpt55_20260707', 'results/tcga/_superseded/pilot/lean/gpt55_20260721',
+        'results/tcga/_superseded/pilot/ladder/sonnet5_20260713', 'results/tcga/_superseded/pilot/lean/sonnet5_20260722',
+        'results/tcga/_superseded/pilot/ladder/gemini35flash_20260716', 'results/tcga/_superseded/pilot/lean/gemini35flash_20260722',
     ] if args.all else [])
     if not runs:
         ap.error('give a run dir or --all')

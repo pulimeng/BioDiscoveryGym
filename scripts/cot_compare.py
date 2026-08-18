@@ -7,17 +7,21 @@ highlights the discriminating signal: identity_derivation on the BLINDED arms (G
 agent must derive the cancer identity from anonymized data rather than read a pre-revealed codebook.
 
 Usage:
-  python scripts/cot_compare.py results/tcga/pilot/ladder/sonnet5_20260713 \
-                                results/tcga/pilot/ladder/gpt55_20260707 \
-                                results/tcga/pilot/ladder/gemini35flash_20260716
+  python scripts/cot_compare.py results/tcga/_superseded/pilot/ladder/sonnet5_20260713 \
+                                results/tcga/_superseded/pilot/ladder/gpt55_20260707 \
+                                results/tcga/_superseded/pilot/ladder/gemini35flash_20260716
   (no args → the three default ladder runs)
 """
 import argparse, glob, json, os, sys
 from collections import Counter, defaultdict
 
-DEFAULT = ["results/tcga/pilot/ladder/sonnet5_20260713",
-           "results/tcga/pilot/ladder/gpt55_20260707",
-           "results/tcga/pilot/ladder/gemini35flash_20260716"]
+# Resolved from runs_config (the detailed wave), not hardcoded. The old default named the three
+# PILOT ladder lanes, so a bare invocation compared contaminated CoT summaries and reported them
+# as the current comparison. runs_config defaults to the clean campaign and announces its choice.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import runs_config
+
+DEFAULT = runs_config.flat('detailed')
 
 def load(run_dir, suffix="_cotsummary.json"):
     """Return {label: summary} deduped by episode label, for a given judge's output suffix."""
