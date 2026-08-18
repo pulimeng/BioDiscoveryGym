@@ -37,6 +37,12 @@ def parse_args():
                    help="Cohort name (e.g. BRCA, OS). Reads from episode JSON if omitted.")
     p.add_argument("--data-dir", default="data", help="Root data directory (default: data)")
     p.add_argument("--save", action="store_true", help="Save score + trace JSON files")
+    p.add_argument("--out-suffix", default="_v3scores.json",
+                   help="output filename suffix. Use a DISTINCT one per judge (e.g. "
+                        "_v3scores_laguna.json) so a second judge's mechanism_grounding and "
+                        "cohort-identity verdict sit BESIDE the first rather than overwriting "
+                        "it. The 6 computational components are seeded and reproduce exactly, "
+                        "so per-judge files differ only in the two LLM-derived fields.")
     p.add_argument("--llm-model", default=DEFAULT_JUDGE_MODEL,
                    help="judge model for outcome LLM components (NEUTRAL family). "
                         "deepseek-v4-pro (default) / claude-* / gpt-*")
@@ -249,13 +255,20 @@ def main():
 
     if args.save:
         stem = episode_path.stem
-        scores_path = episode_path.parent / f"{stem}_v3scores.json"
+        scores_path = episode_path.parent / f"{stem}{args.out_suffix}"
         trace_path = episode_path.parent / f"{stem}_v3trace.json"
 
         combined_scores = score_report.to_dict()
         combined_scores["trace_summary"] = {
             k: v for k, v in trace_report.to_dict().items() if k != "calls"
         }
+        # PROVENANCE. Two fields in this file are LLM-derived — mechanism_grounding (a scored
+        # component) and cohort_identity (the gate whose verdict IS the false-label adoption
+        # result) — and nothing recorded which model produced them. Judge attribution in the
+        # reports was being derived from the CoT summaries, a DIFFERENT artifact by a possibly
+        # different model. Record it where it is used.
+        combined_scores["judge_model"] = (None if args.skip_llm else args.llm_model)
+        combined_scores["llm_components"] = ["mechanism_grounding", "cohort_identity"]
         # allow_nan=False: emit STRICT JSON or fail loudly. Python's json module writes bare
         # NaN/Infinity by default, which no strict parser accepts — three clean-run score
         # files shipped unparseable before this. A score file a consumer cannot read is a

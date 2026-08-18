@@ -72,7 +72,13 @@ def main():
     p.add_argument("--model", default=DEFAULT_JUDGE_MODEL,
                    help="judge model — NEUTRAL family (not in the benchmarked set). "
                         "deepseek-v4-pro (default) / claude-* / gpt-* all supported.")
-    p.add_argument("--save", action="store_true", help="write <episode>_supportscores.json")
+    p.add_argument("--save", action="store_true", help="write <episode><out-suffix>")
+    p.add_argument("--out-suffix", default="_supportscores.json",
+                   help="output filename suffix. Use a DISTINCT one per judge (e.g. "
+                        "_supportscores_laguna.json) so a second judge sits BESIDE the first "
+                        "instead of overwriting it. Without this the support labels — which "
+                        "carry the paper's headline claim — are destroyed by any re-run with a "
+                        "different model, silently and irreversibly.")
     p.add_argument("--dry", action="store_true", help="print judge input, no API")
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--arms", default="", help="comma list to include, e.g. g0,g1")
@@ -102,7 +108,7 @@ def main():
     # resume-safe: skip already-scored episodes (unless --dry or --rescore) so re-runs don't re-bill
     if args.save and not args.rescore and not args.dry:
         _before = len(files)
-        files = [f for f in files if not os.path.exists(f[:-5] + "_supportscores.json")]
+        files = [f for f in files if not os.path.exists(f[:-5] + args.out_suffix)]
         _skipped = _before - len(files)
         if _skipped:
             print(f"(skipping {_skipped} already-scored; --rescore to redo)")
@@ -142,10 +148,20 @@ def main():
               + f"  id:{_rt}"
               + (f"  [audit: {';'.join(flags)}]" if flags else ""))
         if args.save:
+            # judge_model is PROVENANCE, and it was missing: all 570 clean-run files carry
+            # judge_model=None, so which family produced the labels behind the headline claim is
+            # knowable only from when the run happened. Every consumer that reports a judge reads
+            # this field; without it a mixed-judge directory is indistinguishable from a uniform
+            # one. Written atomically so an interrupted pass cannot leave a half-file that parses.
             out = {"cohort": cohort, "arm": arm, "levels": levels,
                    "support_score": sc, "score_max": sum(gj.WEIGHTS.values()),
-                   "audit_flags": flags, "weights": gj.WEIGHTS}
-            json.dump(out, open(f[:-5] + "_supportscores.json", "w"), indent=2)
+                   "audit_flags": flags, "weights": gj.WEIGHTS,
+                   "judge_model": args.model}
+            _dst = f[:-5] + args.out_suffix
+            _tmp = _dst + ".tmp"
+            with open(_tmp, "w") as _fh:
+                json.dump(out, _fh, indent=2)
+            os.replace(_tmp, _dst)
 
     if args.dry or not rows:
         return
