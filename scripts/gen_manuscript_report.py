@@ -23,6 +23,28 @@ from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import runs_config
+
+def _cot_judge_name(runs):
+    """Which judge actually produced the CoT summaries, read from the files.
+
+    Hardcoding this is how the reports came to assert "DeepSeek-v4-pro" after the judge moved to
+    nemotron-3-super (24bc72e): a stale attribution that no test and no reader could catch, because
+    the name is prose. `supportscores` records no judge at all, so the support judge is reported as
+    unrecorded rather than assumed to match.
+    """
+    seen = set()
+    for r in runs:
+        for p in glob.glob(f"{r}/*/*_cotsummary.json"):
+            try:
+                m = json.load(open(p)).get("judge_model")
+            except Exception:
+                continue
+            if m:
+                seen.add(m)
+            break
+    return "+".join(sorted(seen)) if seen else "unrecorded"
+
+from g3_exposure import exposed_g3
 from extract_cot import extract_episode, count_based_identity
 
 PAIRS = runs_config.pairs()
@@ -96,8 +118,18 @@ def metrics(D):
         out_by_cohort=obc,
         support=st.mean([sup[l]['support_score'] for l in sup if arm(l) in ('g0','g1','g2')]) if sup else 0.0,
         d2_unsup=(d2.get('unsupported', 0) + d2.get('anchored', 0)) / nsup,
-        fooled=sum(1 for l in v3 if arm(l) in ('g3a','g3b') and v3[l].get('cohort_identity_verdict') == 'mislead_cohort'),
-        n_g3=sum(1 for l in v3 if arm(l) in ('g3a','g3b')),
+        # EXPOSED denominator, not the arm size. Most lean late-reveal episodes never
+        # received a false label (see scripts/g3_exposure.py), and counting them as
+        # 'not fooled' produced a p=6e-08 result that was pure artifact.
+        g3_all=[l for l in v3 if arm(l) in ('g3a', 'g3b')],
+        # Exposed AND scored. An exposed episode whose scorer left a placeholder (verdict "") is
+        # not evidence of resistance — it is a missing measurement, and including it in the
+        # denominator understates the adoption rate. See audit_integrity AUDIT 2.
+        g3_exposed=(_ex := {l for l in exposed_g3(D, [l for l in v3 if arm(l) in ('g3a', 'g3b')])
+                            if v3[l].get('cohort_identity_verdict')}),
+        fooled=sum(1 for l in _ex if v3[l].get('cohort_identity_verdict') == 'mislead_cohort'),
+        n_g3=len(_ex),
+        n_g3_arm=sum(1 for l in v3 if arm(l) in ('g3a', 'g3b')),
         ro_per_ep=st.mean(ro) if ro else 0.0, leak=leak, leak_n=leak_n)
 
 
@@ -134,7 +166,19 @@ DATA = {lab: {'detailed': metrics(dd), 'lean': metrics(ld),
 # ---------------- derived narrative numbers (computed, never typed) ----------------
 flag = [m for m in DATA if DATA[m]['tier'] == 'flagship']
 flag_shift = st.mean([abs(DATA[m]['lean']['out_hon'] - DATA[m]['detailed']['out_hon']) for m in flag])
-fool_up = sum(1 for m in DATA if DATA[m]['detailed']['fooled'] > DATA[m]['lean']['fooled'])
+def _fool_rate(d):
+    """Adoption RATE over exposed-and-scored episodes.
+
+    Comparing raw counts here reported 'detailed higher in 3/3 models' while the ablation report,
+    which compares rates, reported 2/3. The denominators differ by design — lean lanes expose far
+    fewer episodes — so a count comparison is not a comparison of susceptibility at all."""
+    n = d.get('n_g3') or 0
+    return (d['fooled'] / n) if n else None
+
+
+fool_up = sum(1 for m in DATA
+              if (_a := _fool_rate(DATA[m]['detailed'])) is not None
+              and (_b := _fool_rate(DATA[m]['lean'])) is not None and _a > _b)
 ro_up = sum(1 for m in DATA if DATA[m]['detailed']['ro_per_ep'] > DATA[m]['lean']['ro_per_ep'])
 sup_up = sum(1 for m in DATA if DATA[m]['detailed']['support'] > DATA[m]['lean']['support'])
 flash_lines = []
@@ -176,20 +220,40 @@ for lab in DATA:
         agree_rows += (f"<tr><td class='grp' style='color:{DATA[lab]['color']}'>{lab}</td>"
                        f"<td>{pr}</td><td class='num'>{p['n']}</td>{cells}</tr>")
 
+JUDGE_NAME = _cot_judge_name([d for _, d, l, _, _ in PAIRS])
+# Counts DERIVED, not asserted. The header said "75 episodes ... 450 episodes" — the pilot's
+# numbers — on a clean report of 95/lane and 570 total.
+_lane_dirs = [d for _, d, l, _, _ in PAIRS] + [l for _, d, l, _, _ in PAIRS]
+_lane_counts = [len([p for p in glob.glob(f"{d}/*/*_v3scores.json")
+                     if os.path.basename(os.path.dirname(p))
+                     == os.path.basename(p).replace('_v3scores.json', '')]) for d in _lane_dirs]
+N_PER_LANE = max(_lane_counts) if _lane_counts else 0
+N_TOTAL = sum(_lane_counts)
+
 main_rows = ""
-ROWS = [('out_hon', 'Outcome (honest mean)', lambda v: f"{v:.3f}", None),
-        ('support', 'Grounding / support (/5)', lambda v: f"{v:.2f}", False),
-        ('d2_unsup', 'D2 identity unsupported', lambda v: f"{v:.0%}", True),
-        ('ro_per_ep', 'record_observation / episode', lambda v: f"{v:.1f}", None),
-        ('fooled', 'G3 fooled (of 12)', lambda v: f"{int(v)}/12", True)]
+ROWS = [('out_hon', 'Outcome (honest mean)', lambda v, r: f"{v:.3f}", None),
+        ('support', 'Grounding / support (/5)', lambda v, r: f"{v:.2f}", False),
+        ('d2_unsup', 'D2 identity unsupported', lambda v, r: f"{v:.0%}", True),
+        ('ro_per_ep', 'record_observation / episode', lambda v, r: f"{v:.1f}", None),
+        # Formatters take (value, record) so a fraction can use its OWN denominator. This row
+        # used to be `f"{int(v)}/12"` — a hardcoded pilot-era denominator that rendered the clean
+        # run's counts as "31/12", "26/12". The numerators were right; the fraction was nonsense.
+        ('fooled', 'G3 fooled (of exposed)', lambda v, r: f"{int(v)}/{r.get('n_g3', 0)}", True)]
 for lab in DATA:
     det, lean = DATA[lab]['detailed'], DATA[lab]['lean']
     cells = ""
     for k, _, fmt, lb in ROWS:
-        d = lean[k] - det[k]
-        cls = 'mut' if lb is None or abs(d) < (0.005 if k != 'fooled' else 0.5) else \
+        if k == 'fooled':
+            # points of RATE, not a difference of counts. "-13.00" beside "31/32 -> 18/19" was a
+            # count delta masquerading as an effect size.
+            _a, _b = _fool_rate(det), _fool_rate(lean)
+            d = ((_b - _a) * 100) if (_a is not None and _b is not None) else 0.0
+        else:
+            d = lean[k] - det[k]
+        cls = 'mut' if lb is None or abs(d) < (0.005 if k != 'fooled' else 3.0) else \
               ('good' if ((d < 0) if lb else (d > 0)) else 'bad')
-        cells += f"<td class='num'>{fmt(det[k])} &rarr; {fmt(lean[k])} <span class='{cls}'>({d:+.2f})</span></td>"
+        cells += (f"<td class='num'>{fmt(det[k], det)} &rarr; {fmt(lean[k], lean)} "
+                  f"<span class='{cls}'>({d:+.2f}{'pp' if k == 'fooled' else ''})</span></td>")
     main_rows += f"<tr><td class='grp' style='color:{DATA[lab]['color']}'>{lab}</td>{cells}</tr>"
 main_head = "".join(f"<th class='num'>{n}</th>" for _, n, _, _ in ROWS)
 
@@ -224,15 +288,15 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>BioDiscoveryGym — Manuscript Report</title><style>{CSS}</style></head><body><div class="wrap">
 <h1>BioDiscoveryGym — Manuscript Report</h1>
 <div class="meta">All figures recomputed from artifacts on generation &middot; TCGA instruction ablation
-(3 models &times; 2 prompts &times; 75 episodes) &middot; CoT judged by
-neutral DeepSeek-v4-pro, <b>3 independent passes</b> over all 450 episodes</div>
+({len(DATA)} models &times; 2 prompts &times; {N_PER_LANE} episodes = <b>{N_TOTAL} total</b>) &middot; CoT judged by
+neutral {JUDGE_NAME}, <b>3 independent passes</b> over all {N_TOTAL} episodes</div>
 
 <h2>Headline findings</h2>
 <div class="panel">
 <div class="kfind"><div class="ix">&#9878;</div><div><b>Outcome is prompt-invariant for the flagships</b>
 (mean |lean&minus;detailed| = <b>{flag_shift:.3f}</b>){' &mdash; but ' + '; '.join(flash_lines) + '. The small model depends on the staged scaffold.' if flash_lines else '.'}</div></div>
-<div class="kfind"><div class="ix">&#127907;</div><div><b>The staged prompt makes models MORE fooled</b>
-by the injected false frame &mdash; fooled-more-under-detailed in <b>{fool_up}/{len(DATA)}</b> models.</div></div>
+<div class="kfind"><div class="ix">&#127907;</div><div><b>Adoption is near-universal once the label is delivered</b>
+once it is actually delivered. Denominator is EXPOSED episodes, not arm size; detailed is higher in <b>{fool_up}/{len(DATA)}</b> models, and the previous staged-prompt claim is <b>retracted</b> as an exposure artifact.</div></div>
 <div class="kfind"><div class="ix">&#128203;</div><div><b>The staged prompt inflates the grounding
 <i>score</i> through documentation, not reasoning</b> &mdash; more <code>record_observation</code>s in
 <b>{ro_up}/{len(DATA)}</b> models and higher support in <b>{sup_up}/{len(DATA)}</b>, while identity is
@@ -273,7 +337,7 @@ blinding cannot hide, so this is a benchmark leak that exists independently of t
 <h2>Limitations</h2>
 <div class="warn">
 (1) <b>n = 21 per honest arm</b> (12 for G3), single seed-triple. Deltas of a few points are noise.<br>
-(2) <b>Judge replicates are same-model</b> (DeepSeek &times;3) &mdash; they bound stochasticity, not
+(2) <b>Judge replicates are same-model</b> ({JUDGE_NAME} &times;3) &mdash; they bound stochasticity, not
 cross-family bias. A different-family judge has not been run.<br>
 (3) <b>identity_derivation is one categorical call</b>; the lean prompt&rsquo;s own wording may nudge
 it. Mitigated by 3-pass consensus and the separation test, not eliminated.<br>

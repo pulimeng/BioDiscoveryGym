@@ -11,6 +11,26 @@ import glob, json, os, re, sys, statistics as st
 from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import runs_config
+
+
+def _cot_judge_name(runs):
+    """Which judge produced the CoT summaries — read from the files, never asserted.
+
+    The header hardcoded "DeepSeek-v4-pro" and kept saying it after the judge moved to
+    nemotron-3-super (24bc72e). Prose provenance drifts silently; derive it.
+    """
+    seen = set()
+    for r in runs:
+        for q in glob.glob(f"{r}/*/*_cotsummary.json"):
+            try:
+                m = json.load(open(q)).get("judge_model")
+            except Exception:
+                continue
+            if m:
+                seen.add(m)
+            break
+    return "+".join(sorted(seen)) if seen else "unrecorded"
+from g3_exposure import exposed_g3
 from extract_cot import extract_episode, count_based_identity
 
 # (label, detailed_dir, lean_dir, color, tier)
@@ -87,9 +107,26 @@ def metrics(D):
         g2_derived=idc.get('data-derived', 0) / max(len(g2c), 1),
         g2_recalled=idc.get('recalled-prior', 0) / max(len(g2c), 1),
         rigor_high=rig.get('high', 0) / max(len(honc), 1),
-        fooled=sum(1 for l in v3 if arm(l) in ('g3a', 'g3b') and v3[l].get('cohort_identity_verdict') == 'mislead_cohort'),
-        n_g3=sum(1 for l in v3 if arm(l) in ('g3a', 'g3b')),
+        # EXPOSED denominator, not the arm size. Most lean late-reveal episodes never
+        # received a false label (see scripts/g3_exposure.py), and counting them as
+        # 'not fooled' produced a p=6e-08 result that was pure artifact.
+        g3_all=[l for l in v3 if arm(l) in ('g3a', 'g3b')],
+        # Exposed AND scored. An exposed episode whose scorer left a placeholder (verdict "") is
+        # not evidence of resistance — it is a missing measurement, and including it in the
+        # denominator understates the adoption rate. See audit_integrity AUDIT 2.
+        g3_exposed=(_ex := {l for l in exposed_g3(D, [l for l in v3 if arm(l) in ('g3a', 'g3b')])
+                            if v3[l].get('cohort_identity_verdict')}),
+        fooled=sum(1 for l in _ex if v3[l].get('cohort_identity_verdict') == 'mislead_cohort'),
+        n_g3=len(_ex),
+        n_g3_arm=sum(1 for l in v3 if arm(l) in ('g3a', 'g3b')),
         ro_per_ep=st.mean(ro) if ro else 0.0)
+
+_lane_counts = [len([q for q in glob.glob(f"{d}/*/*_v3scores.json")
+                     if os.path.basename(os.path.dirname(q))
+                     == os.path.basename(q).replace('_v3scores.json', '')])
+                for _, dd_, ld_, _, _ in PAIRS for d in (dd_, ld_)]
+N_PER_LANE = max(_lane_counts) if _lane_counts else 0
+JUDGE_NAME = _cot_judge_name([d for _, d, l, _, _ in PAIRS])
 
 DATA = {lab: {'detailed': metrics(dd), 'lean': metrics(ld), 'color': col, 'tier': tier}
         for lab, dd, ld, col, tier in PAIRS}
@@ -188,7 +225,7 @@ ROWS = [
     ('g2_derived', 'CoT: G2 identity DERIVED', lambda v: f"{v:.0%}", False),
     ('g2_recalled', 'CoT: G2 identity RECALLED', lambda v: f"{v:.0%}", True),
     ('rigor_high', 'CoT: validation rigor high', lambda v: f"{v:.0%}", False),
-    ('fooled', 'G3 fooled', None, True),   # rendered by fooled_cell — denominator varies by wave
+    ('fooled', 'G3 fooled (of exposed)', None, True),   # rendered by fooled_cell — denominator varies by wave
     ('ro_per_ep', 'record_observation / ep', lambda v: f"{v:.1f}", None),
 ]
 
@@ -204,7 +241,7 @@ def delta_cell(key, det, lean, fmt, lower_better):
 
 
 def fooled_rate(m):
-    """G3 fooled as a RATE. n_g3 is not a constant across run sets."""
+    """G3 fooled (of exposed) as a RATE. n_g3 is not a constant across run sets."""
     n = m.get('n_g3', 0)
     return (m['fooled'] / n) if n else 0.0
 
@@ -390,12 +427,12 @@ would mean the two judges read the same trace as opposite behaviours.
 html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TCGA Benchmark — Instruction Ablation (Detailed vs Lean)</title><style>{CSS}</style></head><body><div class="wrap">
 <h1>TCGA Agent Benchmark — Instruction Ablation</h1>
-<div class="meta">Detailed (staged Stage 0–5 prompt) vs Lean ("no prescribed procedure") · {len(DATA)} models × 2 prompts · 75 episodes each · same model/cohorts/seeds/budget — only the prompt differs · scoring + grounding + CoT judged by neutral DeepSeek-v4-pro</div>
+<div class="meta">Detailed (staged Stage 0–5 prompt) vs Lean ("no prescribed procedure") · {len(DATA)} models × 2 prompts · {N_PER_LANE} episodes each · same model/cohorts/seeds/budget — only the prompt differs · CoT judged by neutral {JUDGE_NAME}; support judge not recorded in the score files</div>
 
 <h2>Headline</h2>
 <div class="panel">
 <div class="kfind"><div class="ix">⚖️</div><div><b>Outcome is prompt-invariant for the flagships</b> (mean |lean−detailed| = <b>{flag_shift:.3f}</b> for {", ".join(flag)}){flash_line}</div></div>
-<div class="kfind"><div class="ix">🎣</div><div><b>The staged prompt makes models MORE fooled.</b> Under the detailed prompt every model committed to the misleading cohort more often — fooled-more-under-detailed in <b>{fool_up_det}/{len(DATA)}</b> models. The scaffold walks them into the injected false frame.</div></div>
+<div class="kfind"><div class="ix">🎣</div><div><b>Once actually exposed, nearly every episode adopts the planted label.</b> Denominator is EXPOSED episodes, not arm size (see scripts/g3_exposure.py). On that denominator the prompt gap largely disappears — detailed is higher in only <b>{fool_up_det}/{len(DATA)}</b> models, and the earlier claim that the scaffold walks agents into the false frame is <b>retracted</b> (it was an exposure artifact).</div></div>
 <div class="kfind"><div class="ix">📋</div><div><b>The staged prompt inflates the grounding <i>score</i> via documentation, not reasoning.</b> Detailed logs more <code>record_observation</code>s in <b>{ro_up_det}/{len(DATA)}</b> models and posts a higher support score in <b>{sup_up_det}/{len(DATA)}</b>, while validation rigor is higher under detailed in <b>{rig_up_det}/{len(DATA)}</b> — yet G2 identity is <i>derived</i> from data more under lean in <b>{der_up}/{len(DATA)}</b>. More paperwork, not better grounding.</div></div>
 </div>
 
@@ -424,13 +461,13 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 
 <h2>Open gates before publication</h2>
 <div class="warn">
-(1) <b>n = 21/arm</b> (12 for G3); single seed-triple. Deltas within a few points are noise.<br>
+(1) <b>n = 21/arm</b> on honest arms, <b>32/arm on G3</b> — but G3 rates use the <b>exposed</b> denominator, which is far smaller on the lean wave (19/16/15 of 32). Deltas within a few points are noise.<br>
 (2) <b>Two scorers, partly divergent</b> — CoT "derived" (behaviour) vs support "unsupported" (documented evidence) can move in opposite directions; that divergence is the finding, but neither is ground truth.<br>
-(3) <b>Gemini is Flash tier</b> — a Gemini delta is confounded by tier; the clean ablation is the two flagships (GPT-5.5, Sonnet 5).<br>
+(3) <b>Gemini 2.5 Pro is a generation behind</b>, not a lower tier — the clean run is three flagships. A Gemini delta is confounded with model generation. It also returned <b>zero record_observation</b> in 3 lean episodes, so it sometimes supplied no process evidence at all.<br>
 (4) <b>identity_derivation is one judge's categorical call</b> — the lean prompt's own "derive from structure alone" wording may nudge it toward "data-derived". {"Second-judge coverage is COMPLETE; read the survival verdicts above and quote only deltas marked <i>holds</i>." if j_all_complete else "<b class='part'>Second-judge coverage is still INCOMPLETE</b> — treat every derivation magnitude as directional-pending-robustness until it finishes."}
 </div>
 
-<div class="foot">Detailed dirs = <code>results/tcga/pilot/ladder/*</code>; lean = <code>results/tcga/pilot/lean/*</code>. Outcome from <code>*_v3scores.json</code>, grounding from <code>*_supportscores.json</code>, reasoning from <code>*_cotsummary.json</code> (neutral DeepSeek-v4-pro); record_observation counts from the raw trace. Generated by <code>scripts/gen_ablation_report.py</code>. Charts: Chart.js (cdnjs).</div>
+<div class="foot">Source: <code>{runs_config.SOURCE}</code>. Outcome from <code>*_v3scores.json</code>, grounding from <code>*_supportscores.json</code>, reasoning from <code>*_cotsummary.json</code> (neutral judge; see run dir); record_observation counts from the raw trace. Generated by <code>scripts/gen_ablation_report.py</code>. Charts: Chart.js (cdnjs).</div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>{JS}</script>

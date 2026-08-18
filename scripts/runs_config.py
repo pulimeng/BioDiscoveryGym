@@ -86,10 +86,25 @@ _announced = False
 
 
 def announce() -> None:
-    """Print which run set is in use. Called by every consumer, once."""
+    """Print which run set is in use. Called by every consumer, once.
+
+    The PILOT default gets a banner, not a line. It is path-contaminated and superseded, yet it is
+    what a bare `python scripts/gen_*.py` still reads — and this session produced two reports dated
+    today built entirely on it, one of which printed a conclusion the clean run contradicts at
+    p=2.4e-14. Nothing failed; the only signal was a single quiet stderr line that scrolled past.
+    Behaviour is unchanged (changing the default would silently repoint thirteen scripts); what
+    changes is that choosing the contaminated campaign can no longer be done by accident.
+    """
     global _announced
     if not _announced:
-        print(f"  [runs] {SOURCE}", file=sys.stderr)
+        if SOURCE.startswith('PILOT'):
+            bar = '!' * 78
+            print(f"\n{bar}\n  READING THE CONTAMINATED PILOT — results are NOT publication-safe.\n"
+                  f"  {SOURCE}\n"
+                  f"  The pilot leaked the cohort through output_dir; see docs/DATA_INTEGRITY_AUDIT.md.\n"
+                  f"  For the clean campaign:  export BDG_RUNS=clean\n{bar}\n", file=sys.stderr)
+        else:
+            print(f"  [runs] {SOURCE}", file=sys.stderr)
         _announced = True
 
 

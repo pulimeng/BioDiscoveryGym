@@ -2,6 +2,26 @@
 
 **Date:** 2026-08-12 · **Supersedes pilot numbers for every claim below.**
 
+> **⚠ CORRECTION 2026-08-13 — §2b IS RETRACTED.** The staged-prompt→more-fooled result reported
+> below (84% v 47%, p=6.0e-08) is an **exposure artifact**, not a finding. The planted label is
+> gated on the agent's Nth `record_observation` (`agents/cohort_agent.py`, g3a=3rd, g3b=5th, no
+> call-count fallback), and the lean prompt logs a median of 4 observations — so most lean episodes
+> on the late arm **never received a false label at all** and were scored as "not fooled".
+> Conditional on exposure the contrast is null (95.3% v 92.0%, p=0.468). Full analysis:
+> `scripts/reveal_mechanism.py` → `manuscript/figures/reveal_mechanism.json`; write-up in
+> `manuscript/EXPLORE_EXPLOIT_PAPER.md` R4/R5. §7's recommendation to lead with §2b is void.
+>
+> **What replaces it:** among the 135 G3 episodes that actually received a label, **127 adopted it
+> (94.1%)** — Sonnet 5 42/42 (100%), GPT-5.5 49/51 (96.1%), Gemini 36/42 (85.7%), invariant across
+> both cohort pairs (LUSC 97.1%, OV 91.0%), both reveal times (early 92.6%, late 97.5%) and both
+> prompts (staged 95.3%, lean 92.0%). Exposed-and-scored is the denominator throughout.
+>
+> *Figures updated 2026-08-13 after `g3a_ov_mislead_brca_s7` was re-scored: it had submitted an
+> empty `proposed_grouping`, and `evaluator_v2` returned before the identity gate, leaving an empty
+> verdict that read as "not fooled". Its mechanism described BREAST cancer on an OVARIAN cohort; the
+> gate now runs without a partition and returns `mislead_cohort`. All 192 G3 episodes now carry a
+> usable verdict.*
+
 The pilot (`results/tcga/pilot/*`) leaked the cohort name through `output_dir` into the arms that
 were supposed to be blind. This document reports the blinded rerun and states plainly which pilot
 findings survived it. Two did not.
@@ -24,13 +44,36 @@ Judge: `nemotron-3-super` via the St. Jude internal gateway. Not a benchmarked a
 self-preference is not available to it. The earlier DeepSeek judging is archived under
 `results/tcga/_archive_deepseek_judge_20260809/`.
 
-**Gates, all passing:**
+**Gates — one FAILS. Corrected 2026-08-13 after an audit; this block previously read "all passing".**
 
-- `audit_blinding` — 6/6 lanes, 570 episodes, no identity-bearing content reached the agent.
-  The gate carries positive controls (`--self-test`, 8/8).
-- `audit_integrity` — clean run: 0/77 path-visible, 0 errored identity gates.
-- `check_judge_integrity` — 1710 judge outputs parsed, complete, schema-valid, 0 bad.
-- `check_judge_symmetry` — no thinking TEXT in any arm; `record_observation` present in all 570.
+Every gate below must be given the clean directories explicitly. `scripts/runs_config.py` defaults
+to the **pilot**, so a bare invocation audits the contaminated campaign and its result says nothing
+about this run.
+
+- `audit_blinding` — **pass**. 6/6 lanes, 570 episodes, no identity-bearing content reached the
+  agent. Carries positive controls (`--self-test`, 8/8).
+- `audit_integrity` — **pass**. Clean run: **0/126** G2 episodes with an identity-bearing path
+  visible, **0/126** reasoned from one, 0 errored identity gates, and (after the 2026-08-13
+  re-score) 192/192 G3 episodes carrying a usable verdict. *Denominator corrected from 0/77: the
+  earlier figure predated full coverage. The "reasoned from" detector was also corrected the same
+  day — it was a bare keyword match on "directory"/"folder"/"file path" and flagged 14/126 clean
+  episodes for benign lines like "saved to the output directory" while `path visible` was 0/126.
+  It now requires an identity token beside the path mention, the rule `audit_blinding.py` adopted
+  in 933e6a9. Positive control: on the contaminated pilot it still reports 118/126 path-visible and
+  16/126 reasoned-from, so the check discriminates rather than passing everything.*
+- `check_judge_integrity` — **pass**. 1710 judge outputs parsed, complete, schema-valid (10 required
+  fields, 3 enum-checked). *Note: before 2026-08-13 this script silently fell back to checking 3 of
+  10 fields with no enum validation when `biodiscoverygym` was not importable, while still printing
+  "schema-valid". Any earlier citation of this gate was weaker than it read.*
+- `check_judge_symmetry` — **FAILS**. No thinking TEXT in any arm, but `record_observation` is
+  present in **567/570**, not 570. Three Gemini-2.5-Pro lean episodes recorded **zero** observations
+  while making 15–18 `run_code` calls and submitting:
+  `clean_lean/gemini25pro/{g0_brca_s7, g0_luad_s7, g1_ucec_s7}`.
+  **Consequence:** these three carry no belief trail and no stated-intent checkpoints, so they are
+  absent from `conf_start`/`conf_rise` (n=567, not 570) and give the CoT judge nothing to read for
+  process. All three are G0/G1, so no G3 or exposure analysis is affected. It does undercut any
+  claim that all three models supplied equivalent process evidence — Gemini sometimes supplied
+  none.
 
 Deterministic score components reproduce **bit-identically** against the DeepSeek archive across
 192 paired episodes. Only the LLM-judged component moved. The judge swap changed the judge and
@@ -42,8 +85,8 @@ nothing else.
 
 | claim | pilot | clean run | verdict |
 |---|---|---|---|
-| Staged prompt makes models more fooled | 3/3 models | 3/3, 84% v 47%, **p=6.0e-08** | **replicates, stronger** |
-| Deriving identity protects against the mislead (H2) | 25 v 75, **p=0.0002** | 66% v 65%, **p=1.0000** | **does not replicate** |
+| Staged prompt makes models more fooled | 3/3 models | ~~3/3, 84% v 47%, p=6.0e-08~~ → **exposure artifact**; conditional on exposure 95.3% v 92.0%, p=0.468 | **RETRACTED 2026-08-13** |
+| Deriving identity protects against the mislead (H2) | 25 v 75, **p=0.0002** | 65.7% v 67.3%, **p=0.87** (exposed: 95.7% v 89.7%, p=0.35) | **does not replicate** |
 | Agents take identity shortcuts via our plumbing | 45/126 G2 | **0/126** on a hand-read | **artifact of the leak** |
 | Outcome cannot see process | supported | see §7 — weakened | **qualified** |
 
@@ -52,7 +95,12 @@ than the pilot reported, and it is the one that does not depend on the derivatio
 
 ---
 
-## 2b. The staged prompt makes every model more susceptible — replicated
+## 2b. The staged prompt makes every model more susceptible — ~~replicated~~ **RETRACTED**
+
+> **Everything in this section is an artifact of unequal exposure.** The denominators below are
+> `n_g3` (episodes in the arm), not episodes that received a false label. Those differ enormously by
+> wave: detailed 85/96 exposed, lean 49/95. The lean column is mostly counting episodes that were
+> never misled. Kept for the record; do not cite. See the correction banner at the top.
 
 G3 mislead arms, 32 episodes per model per wave, denominators derived from `n_g3` (the pilot's
 hardcoded `/12` would have rendered these as `31/12`):
@@ -64,30 +112,47 @@ hardcoded `/12` would have rendered these as `31/12`):
 | Gemini 2.5 Pro | 24/32 (75%) | 11/32 (34%) | −41 pt | 0.00231 |
 | **pooled** | **81/96 (84%)** | **45/96 (47%)** | **−38 pt** | **6.0e-08** |
 
-3/3 models, same direction, each significant alone. The pilot saw the same direction at smaller
-magnitudes (92→42, 67→33, 42→17 percent).
+~~3/3 models, same direction, each significant alone.~~ The pilot saw the same direction because it
+ran the same gate — it reproduced the artifact, not the effect.
 
-The detailed prompt supplies a staged analytical scaffold. Giving a model more procedural
-structure made it **more** likely to commit to an injected false cohort, not less. This does not
-route through the derivation label, which is why it is unaffected by §6's instrument problems —
-it needs only the identity gate, and 0 of 192 gates errored.
+**Why the reasoning above failed.** The section argued this result was robust *because* it needed
+only the identity gate and no derivation label, and 0 of 192 gates errored. That is true and
+irrelevant: the gate faithfully reported that these episodes did not commit to the planted cohort.
+They did not commit to it because they were never shown it. A correct measurement of a
+non-event is still a non-event, and no amount of gate integrity detects a missing denominator.
 
 ---
 
 ## 3. H2 — derivation does not predict robustness
+
+> **Denominator note, 2026-08-13.** The table below uses all G3 episodes with a verdict, which
+> includes the ~30% that never received a false label (see the exposure correction at the top).
+> Re-run on the **exposed** denominator the conclusion is unchanged but the numbers and the sign are
+> not: derived **90/94 (95.7%)** vs not-derived **26/29 (89.7%)**, OR=2.60, **p=0.354** — still null,
+> now pointing at derived episodes being *more* often fooled. Quote the exposed figures.
+>
+> The same conditioning was applied to **C3** (support) and to the **strategy axis**; both are in
+> `manuscript/EXPLORE_EXPLOIT_PAPER.md` §6. C3 inverts to grounded 98.5% vs unwarranted 89.7%
+> (p=0.062); the strategy axis **collapses from p=0.0082 to p=1.00** and is retracted.
+> **Every candidate predictor of false-label resistance is null on the exposed denominator.**
 
 G3 mislead arms, 3-pass consensus derivation label, errored gates **excluded** (0 of them):
 
 | | not fooled | fooled | rate |
 |---|---|---|---|
 | derived | 47 | 90 | 65.7% |
-| not-derived | 19 | 36 | 65.5% |
+| not-derived | 18 | 37 | **67.3%** |
 
-Fisher exact **p = 1.0000**, odds ratio 1.01, n = 192.
+Fisher exact **p = 0.8677**, n = 192.
+
+*(Counts corrected 2026-08-14 after `g3a_ov_mislead_brca_s7` was re-scored — it had an empty verdict
+that read as "not fooled". Previously reported as 19/36 and p = 1.0000.)*
 
 The pilot's protective effect was measured on episodes where the cohort was readable from the
-output path. Under blinding the effect is not merely weaker — it is absent, and the point estimates
-differ by 0.2 percentage points.
+output path. Under blinding the effect is not merely weaker — it is absent, and the point estimate
+now sits **1.6 points in the wrong direction** (not-derived episodes are marginally *less* often
+fooled). On the exposed denominator the same inversion holds and widens; see the denominator note
+above.
 
 ---
 
@@ -177,10 +242,10 @@ validity, with pilot, defect, gate, rerun and cross-judge check all preserved.
 
 ## 8. Framing options
 
-1. **Lead with the staged-scaffold result (§2b).** It is the only strong positive: 3/3 models,
-   84% → 47%, p=6.0e-08, replicating the pilot's direction with a bigger effect. The claim —
-   *more procedural scaffolding makes an agent more susceptible to an injected false premise* —
-   is deployment-relevant, needs no derivation label, and survived the blinding that killed H2.
+1. ~~**Lead with the staged-scaffold result (§2b).**~~ **VOID 2026-08-13** — §2b is an exposure
+   artifact (see the correction banner). Lead instead with the disclosure ladder (`EXPLORE_EXPLOIT_PAPER.md`
+   R1–R3: the ladder swings identity strategy 6→68% while outcome moves 0.09–0.48 SD, and disclosure
+   degrades grounding) and, on the mislead arm, with **94.1% adoption (127/135) once actually exposed**.
    Supporting cast: the flat information ladder (§5) and the model-level process spread (§6).
 2. **Lead with the methodology.** Agent process metrics are acutely sensitive to harness leakage,
    the leak is invisible in every aggregate, and blinding reverses conclusions. H2's collapse is
@@ -217,17 +282,28 @@ be fitting the probe to this run. **Quote 0; treat the automated 1 as a conserva
 This is genuine benchmark recognition from dataset shape — an agent-side capability, not a harness
 defect, and `audit_blinding` explicitly documents that shape stays recognisable by design.
 
-**So: 0/126 attributable to our plumbing, 1/126 (0.8%) genuine shape recognition.** The pilot's
-45/126 was the leak.
+**So: 0/126 attributable to our plumbing, 1/126 (0.8%) genuine shape recognition.**
+
+*Superseded 2026-08-14 — the pilot comparison figure is **16/126**, not 45/126.* The 45 came from a
+detector that matched the bare words *directory / folder / file path* with no requirement that the
+path carry identity; it produced 14 false positives on the clean run. Requiring an identity token
+beside the path mention (the rule `audit_blinding` adopted in `933e6a9`) gives **16/126 pilot vs
+0/126 clean — same detector on both sides**, which is the only defensible comparison. Cite 45/126
+only as the superseded, false-positive-prone result.
 
 ---
 
 ## 10. Open items
 
-- The pilot's 45/126 "reasoned from path" is an upper bound with the same false-positive mode; a
-  cohort-bearing-path rule gives 10/126, and the clean-run hand-read above suggests the true figure
-  is lower still. Left at 45 pending a manual read (decision: 2026-08-11).
+- ~~The pilot's 45/126 "reasoned from path" is an upper bound … left at 45 pending a manual read.~~
+  **CLOSED 2026-08-14.** `audit_integrity.py` now requires an identity token within 120 characters of
+  the path mention, matching `audit_blinding`. Result: **pilot 16/126, clean 0/126**, one detector,
+  both campaigns. Positive control confirms the check still discriminates rather than passing
+  everything.
 - Cross-family judge agreement rests on n=42. A full second-family pass (`laguna`, same gateway)
   over all 126 G2 episodes would settle whether the empty `recalled-prior` cell is judge or data.
   This is now load-bearing for framing option 2.
-- `MANUSCRIPT_REPORT.html` and `COT_REPORT.html` not yet regenerated against the clean run.
+- ~~`MANUSCRIPT_REPORT.html` and `COT_REPORT.html` not yet regenerated against the clean run.~~
+  **DONE 2026-08-13** — all five reports (`MANUSCRIPT`, `ABLATION`, `COT`, `LADDER_3MODEL`, `COST`)
+  regenerate against the clean run, carry derived episode counts (570) and judge attribution
+  (nemotron-3-super), and use exposed-and-scored denominators on G3.

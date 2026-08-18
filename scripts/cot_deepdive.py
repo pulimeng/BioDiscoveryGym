@@ -187,6 +187,11 @@ def main():
     stats['n'] = dict(g2=len(g2), g3=len(g3))
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    # Provenance stamp. runs_config DEFAULTS TO THE CONTAMINATED PILOT, so a bare
+    # invocation silently produces pilot numbers into the same path the clean run
+    # writes. Without this field the only way to tell them apart is to infer it from
+    # which Gemini appears in the payload — which worked by luck, not by design.
+    stats['source'] = runs_config.SOURCE
     json.dump(stats, open(OUT, 'w'), indent=2)
     print(f"\nwrote {OUT}")
     print("\n" + "-" * 78)

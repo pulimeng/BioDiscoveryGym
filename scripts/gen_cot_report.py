@@ -244,12 +244,19 @@ code{background:#0b1220;padding:1px 5px;border-radius:4px;font-size:11.5px}
 """
 id_legend = "".join(f"<span><i style='background:{ID_COL[k]}'></i>{k}</span>" for k in ID_ORDER)
 
+_N_PER = ntot  # total episodes across all arms — the script's own count, not a guess
+# Judge name read from the summary files, not asserted — the report said "DeepSeek-v4-pro"
+# for weeks after the judge moved to nemotron-3-super.
+_JUDGE = '+'.join(sorted({m for _, _, r, _ in RUNS
+                          for q in glob.glob(f"{r}/*/*_cotsummary.json")[:1]
+                          for m in [json.load(open(q)).get('judge_model')] if m})) or 'unrecorded'
+
 html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Chain-of-thought — detailed report</title><style>{CSS}</style></head><body><div class="wrap">
 <h1>Chain-of-thought &mdash; detailed report</h1>
 <div class="meta">Deep-dive behind &sect;2/&sect;3 of the manuscript report &middot; {len(EP)} run arms
-&times; 75 episodes &middot; labels are the <b>3-pass consensus</b> of a neutral DeepSeek-v4-pro judge;
+&middot; {_N_PER} episodes total &middot; labels are the <b>3-pass consensus</b> of a neutral {_JUDGE} judge;
 ties are shown as <i>no majority</i> rather than silently broken</div>
 
 <h2>1 &middot; Reasoning strategy</h2>

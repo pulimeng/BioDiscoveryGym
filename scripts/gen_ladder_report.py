@@ -14,14 +14,45 @@ from extract_cot import extract_episode, count_based_identity   # deterministic,
 PAPERS = {'BRCA': 13305, 'LUAD': 2091, 'OV': 1982, 'LIHC': 1159}
 
 # (label, results_dir, color, tier). tier ∈ {'flagship','flash',...} — drives the tier caveat.
-# The tier field is REQUIRED for honest reporting: Gemini runs a Flash tier while the others
-# run flagship, so a Gemini deficit is confounded by tier (see docs/MODEL_LADDER.md §2).
-MODELS = [
-    ('Sonnet 5', 'results/tcga/pilot/ladder/sonnet5_20260713', '#7F77DD', 'flagship'),
-    ('GPT-5.5', 'results/tcga/pilot/ladder/gpt55_20260707', '#1D9E75', 'flagship'),
-    ('Gemini 3.5 Flash', 'results/tcga/pilot/ladder/gemini35flash_20260716', '#EF9F27', 'flash'),
-]
+# The tier field is REQUIRED for honest reporting: the PILOT ran Gemini at Flash tier while the
+# others ran flagship, so a Gemini deficit there is confounded by tier (docs/MODEL_LADDER.md §2).
+#
+# RESOLVED VIA runs_config, NOT HARDCODED. This script used to pin the three pilot directories
+# outright. After the clean rerun that made it emit a report dated today, built entirely on
+# path-contaminated pilot data, with no error and no way to tell from the output — including the
+# headline "no consistent early≫late gradient", which the clean run contradicts at p=2.4e-14.
+# That is the exact failure runs_config exists to prevent; this file simply never adopted it.
+#
+# `--model LABEL:DIR:#COLOR:TIER` still overrides, so a one-off comparison stays possible.
+import runs_config
+from g3_exposure import was_exposed  # noqa: E402  (after sys.path insert above)
+
+def _cot_judge_name(runs):
+    """Which judge actually produced the CoT summaries, read from the files.
+
+    Hardcoding this is how the reports came to assert "DeepSeek-v4-pro" after the judge moved to
+    nemotron-3-super (24bc72e): a stale attribution that no test and no reader could catch, because
+    the name is prose. `supportscores` records no judge at all, so the support judge is reported as
+    unrecorded rather than assumed to match.
+    """
+    seen = set()
+    for r in runs:
+        for p in glob.glob(f"{r}/*/*_cotsummary.json"):
+            try:
+                m = json.load(open(p)).get("judge_model")
+            except Exception:
+                continue
+            if m:
+                seen.add(m)
+            break
+    return "+".join(sorted(seen)) if seen else "unrecorded"
+
+
+MODELS = [(lab, det, col, tier) for lab, det, _lean, col, tier in runs_config.pairs()]
+if not MODELS:
+    sys.exit("no runs resolved — set BDG_RUNS (e.g. BDG_RUNS=clean) or pass --model")
 OUT_PATH = 'results/tcga/LADDER_3MODEL.html'
+JUDGE_NAME = None  # set after MODELS resolves
 
 _ap = argparse.ArgumentParser(description=__doc__)
 _ap.add_argument('--model', action='append', metavar='LABEL:DIR:#COLOR:TIER',
@@ -49,8 +80,16 @@ def load(root):
         vd = json.load(open(sp.replace('_supportscores.json', '_v3scores.json')))
         e = json.load(open(sp.replace('_supportscores.json', '.json')))
         mech = (e.get('discovery') or {}).get('mechanism_hypothesis', '') or ''
-        R.append(dict(lab=lab, arm=lab.split('_')[0], cohort=e.get('cohort'), seed=e.get('seed'),
+        arm = lab.split('_')[0]
+        # G3 denominators must be EXPOSED-and-SCORED episodes, never arm membership. The planted
+        # label is gated on the agent's Nth record_observation, and lean episodes usually stop
+        # first — so most "resistant" g3b/lean episodes were never shown a label. Dividing by arm
+        # size is what produced the retracted early-vs-late result. See scripts/g3_exposure.py.
+        usable = bool(vd.get('cohort_identity_verdict'))
+        R.append(dict(lab=lab, arm=arm, cohort=e.get('cohort'), seed=e.get('seed'),
             norm=vd['normalized'], verdict=vd.get('cohort_identity_verdict'), ss=d['support_score'],
+            exposed=(was_exposed(sp.replace('_supportscores.json', '.json')) and usable
+                     if arm.startswith('g3') else None),
             lvl={k: L[k] for k in ('d1_partition', 'd2_identity', 'd3_mechanism')}, mech=mech))
     return R
 
@@ -184,12 +223,13 @@ sig_txt = (f"the top-two outcome means are separated ({ranked[0]} vs {ranked[1]}
 def cav(m):
     s = S[m]; rank = ranked.index(m)
     gap = s['id_ng'] / max(S[best]['id_ng'], 0.01)
-    n3 = max(sum(1 for x in DATA[m] if x['arm'] == 'g3a'), 1)
+    n3a_ex = max(sum(1 for x in DATA[m] if x['arm'] == 'g3a' and x['exposed']), 1)
+    n3b_ex = max(sum(1 for x in DATA[m] if x['arm'] == 'g3b' and x['exposed']), 1)
     tier_note = (f" <b>Tier:</b> {TIER[m]} — a lighter tier than the flagship models here, so any "
                  f"deficit is <b>confounded by tier</b>, not attributable to the model family."
                  if TIER.get(m) != 'flagship' else "")
     id_s = f"{s['id_ng']:.0%}"
-    fool = f"fooled g3a {s['fa']}/{n3} · g3b {s['fb']}/{n3}"
+    fool = f"fooled g3a {s['fa']}/{n3a_ex} · g3b {s['fb']}/{n3b_ex} (of exposed)"
     if rank == 0:
         body = (f"Top outcome ({s['outcome']:.3f}) and best-grounded identity caller "
                 f"(unsupported {id_s}). Watch: early-mislead susceptibility ({fool}) and any lean "
@@ -283,7 +323,8 @@ def clamp(v): return max(0.0, min(1.0, v))
 # Hardest cohort = lowest pooled outcome across models (was hardcoded 'OV'). Fooling denominator
 # = actual #G3 episodes/model (was hardcoded 12), so 4- and 7-cohort runs both normalize right.
 HARD_COH = min(cohorts, key=lambda c: st.mean([S[m]['cby'][c] for m in ranked])) if cohorts else 'OV'
-G3N = {m: max(sum(1 for x in DATA[m] if x['arm'] in ('g3a', 'g3b')), 1) for m in ranked}
+G3N = {m: max(sum(1 for x in DATA[m] if x['arm'] in ('g3a', 'g3b') and x['exposed']), 1)
+       for m in ranked}   # EXPOSED-and-scored, not arm size
 RAX = ['Faithfulness', f'Hard-cohort ({HARD_COH})', 'Consistency', 'Support score', 'Fooling resist.', 'Identity grounding']
 def radar_vals(m):
     s = S[m]
@@ -439,7 +480,7 @@ for i, m in enumerate(ranked):
     cards += (f'<div class="card" style="border-top:3px solid {COL[m]}"><div class="chd"><span class="rank">#{i+1}</span><h3>{m}</h3></div>'
         f'<div class="idbox {idc}"><span>identity recall unsupported</span><b>{s["id_ng"]:.0%}</b></div>'
         f'<div class="cbars">{cb}</div>'
-        f'<div class="mini">fooled g3a {s["fa"]}/{max(sum(1 for x in DATA[m] if x["arm"]=="g3a"),1)} · g3b {s["fb"]}/{max(sum(1 for x in DATA[m] if x["arm"]=="g3b"),1)} · D1/D3 not-grounded {s["d1_ng"]:.0%}/{s["d3_ng"]:.0%}</div>'
+        f'<div class="mini">fooled g3a {s["fa"]}/{max(sum(1 for x in DATA[m] if x["arm"]=="g3a" and x["exposed"]),1)} · g3b {s["fb"]}/{max(sum(1 for x in DATA[m] if x["arm"]=="g3b" and x["exposed"]),1)} <span class="mut">(of exposed)</span> · D1/D3 not-grounded {s["d1_ng"]:.0%}/{s["d3_ng"]:.0%}</div>'
         f'<div class="cav"><b>Caveat.</b> {cav(m)}</div></div>')
 
 CSS = """
@@ -489,7 +530,7 @@ if(COTS.labels.length){var mk=function(lab,key,c){return{label:lab,data:COTS[key
 new Chart(document.getElementById('cotid'),{type:'bar',
  data:{labels:COTS.labels,datasets:[mk('data-derived','derived','#3fb950'),mk('mixed','mixed','#d29922'),mk('recalled/none','recalled','#f85149')]},
  options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{color:ink,boxWidth:11,font:{size:11}}}},
- scales:{x:{stacked:true,ticks:{color:ink,font:{size:12}},grid:{display:false}},y:{stacked:true,ticks:{color:ink},grid:{color:grid},title:{display:true,text:'G2 episodes (blinded)',color:ink}}}});}
+ scales:{x:{stacked:true,ticks:{color:ink,font:{size:12}},grid:{display:false}},y:{stacked:true,ticks:{color:ink},grid:{color:grid},title:{display:true,text:'G2 episodes (blinded)',color:ink}}}}});}
 var SCAT=__SCAT__;
 var lblP={id:'lbl',afterDatasetsDraw:function(chart){var ctx=chart.ctx;ctx.save();ctx.font='10px sans-serif';ctx.fillStyle='#9aa7b4';chart.data.datasets.forEach(function(dset,di){var meta=chart.getDatasetMeta(di);meta.data.forEach(function(pt,i){var c=dset.data[i].c;ctx.fillText(c,pt.x+6,pt.y+3);});});ctx.restore();}};
 new Chart(document.getElementById('lit'),{type:'scatter',data:{datasets:SCAT.map(function(d){return{label:d.label,borderColor:d.color,backgroundColor:d.color,data:d.points,showLine:true,borderWidth:2,pointRadius:4,tension:0};})},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return c.raw.c+': '+(c.raw.y*100).toFixed(0)+'% grounded ('+c.raw.x.toLocaleString()+' papers)';}}}},scales:{x:{type:'logarithmic',ticks:{color:ink,callback:function(v){return v>=1000?(v/1000)+'k':v;}},grid:{color:grid},title:{display:true,text:'PubMed papers ("<cancer> molecular subtypes", log)',color:ink}},y:{min:0,max:1,ticks:{color:ink,stepSize:0.25,callback:function(v){return (v*100).toFixed(0)+'%';}},grid:{color:grid},title:{display:true,text:'identity grounded rate',color:ink}}}},plugins:[lblP]});
@@ -501,6 +542,45 @@ JS = (JS.replace('__COTS__', json.dumps(cot_stack))
 leg = "".join(f'<span><i style="background:{COL[m]}"></i>{m}</span>' for m in ranked)
 gap = S[worst]['id_ng'] / max(S[best]['id_ng'], 0.01)
 ahead = "".join(f'<th class="num">{a.upper()}</th>' for a in arms)
+JUDGE_NAME = _cot_judge_name([m[1] for m in MODELS])
+
+# ---- reveal-timing gradient: NARRATED FROM THE NUMBERS, never asserted ----
+# This line used to read "no consistent early≫late gradient" as a hardcoded string. That was true
+# of the pilot and is false of the clean run (92% vs 41% adoption, p=2.4e-14), so the report
+# asserted the opposite of its own data without anything failing. Compute it instead.
+_n3a = {m: max(sum(1 for x in DATA[m] if x['arm'] == 'g3a' and x['exposed']), 1) for m in ranked}
+_n3b = {m: max(sum(1 for x in DATA[m] if x['arm'] == 'g3b' and x['exposed']), 1) for m in ranked}
+_ra = {m: S[m]['fa'] / _n3a[m] for m in ranked}
+_rb = {m: S[m]['fb'] / _n3b[m] for m in ranked}
+_fool_rates = [(S[m]['fa'] + S[m]['fb']) / max(sum(1 for x in DATA[m]
+                if x['arm'] in ('g3a', 'g3b') and x['exposed']), 1) for m in ranked]
+_fool_lo, _fool_hi = min(_fool_rates), max(_fool_rates)
+_fool_n = sum(1 for m in ranked for x in DATA[m] if x['arm'] in ('g3a', 'g3b') and x['exposed'])
+# TIES ARE COUNTED SEPARATELY. `_early_worse == 0` was read as "late is higher in every model",
+# but zero models with a strictly higher EARLY rate is not the same as every model having a higher
+# LATE rate — Sonnet sits at 100% in both arms. Saturated cells are the normal case here (adoption
+# is near-ceiling once exposed), so ties are the rule, not an edge case.
+_NM = len(ranked)
+_early_worse = sum(1 for m in ranked if _ra[m] > _rb[m])
+_late_worse = sum(1 for m in ranked if _rb[m] > _ra[m])
+_tied = _NM - _early_worse - _late_worse
+_pa = sum(S[m]['fa'] for m in ranked) / sum(_n3a.values())
+_pb = sum(S[m]['fb'] for m in ranked) / sum(_n3b.values())
+_pooled = f"pooled {_pa:.0%} early vs {_pb:.0%} late"
+_tie_note = f", tied in {_tied}/{_NM}" if _tied else ""
+if _early_worse == _NM:
+    timing_txt = (f"adoption is <b>higher when the false label lands early</b> in "
+                  f"<b>all {_NM} models</b> ({_pooled})")
+elif _late_worse == _NM:
+    timing_txt = (f"adoption is <b>higher when the label lands late</b> in <b>all {_NM} "
+                  f"models</b> ({_pooled}) — inspect before quoting")
+elif _early_worse == 0 and _late_worse:
+    timing_txt = (f"adoption is higher <b>late</b> in {_late_worse}/{_NM} models{_tie_note}, and "
+                  f"higher early in none ({_pooled}) — inspect before quoting")
+else:
+    timing_txt = (f"the early-vs-late gradient is <b>heterogeneous</b> — early is higher in "
+                  f"{_early_worse}/{_NM} models, late in {_late_worse}/{_NM}{_tie_note} "
+                  f"({_pooled})")
 
 # ---- dynamic header bits (model count, tier banner, CNA panel) ----
 NM = len(ranked)
@@ -562,7 +642,7 @@ if HAS_COT:
 <h2>How the models actually reason (chain-of-thought)</h2>
 <div class="panel">
 <p class="lead" style="margin-top:0"><b>This is the resolution to the outcome tie.</b> A neutral judge
-(DeepSeek) summarized each episode's reasoning trace — the symmetric channels only
+({JUDGE_NAME}) summarized each episode's reasoning trace — the symmetric channels only
 (<code>record_observation</code> hypothesis log + <code>#WHY</code> intent + submission; model
 "thinking" is not persisted, so it is not used). The discriminating axis is
 <b>identity_derivation on the blinded G2 arm</b>: did the agent <b>derive</b> the cancer identity
@@ -611,7 +691,7 @@ if HAS_MOD:
 html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TCGA Benchmark — {NM}-Model Detailed Report</title><style>{CSS}</style></head><body><div class="wrap">
 <h1>TCGA Agent Benchmark — {NM}-Model Detailed Report</h1>
-<div class="meta">{model_line} · {N_TYP} episodes each ({N_TOTAL} total, {len(SEEDS)} seeds) · two-part scoring: outcome (v3) + support/grounding · grounding judge = <b>DeepSeek-v4-pro</b> (neutral, not in tested set)</div>
+<div class="meta">{model_line} · {N_TYP} episodes each ({N_TOTAL} total, {len(SEEDS)} seeds) · two-part scoring: outcome (v3) + support/grounding · CoT judge = <b>{JUDGE_NAME}</b> (neutral, not in tested set); support judge not recorded in the score files</div>
 {tier_banner}
 <div class="tiles">{tiles}</div>
 
@@ -621,7 +701,7 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 <div class="kfind"><div class="ix">📏</div><div><b>The outcome ranking is not the story — its margin is thin.</b> On honest-arm outcome, {sig_txt}. Outcome means carry ±{S[best]['ci']:.3f} (95% CI, {best}); the models are separated on <b>identity grounding</b>, not outcome.</div></div>
 {cot_kfind}
 <div class="kfind"><div class="ix">📊</div><div><b>Outcome and grounding are positively correlated</b> — better models both discover and ground more. "Higher-outcome models just recall more" is <b>not</b> what's happening.</div></div>
-<div class="kfind"><div class="ix">🎣</div><div><b>All models are fooled by misleading framing</b> ({min(S[m]['fa']+S[m]['fb'] for m in ranked)}–{max(S[m]['fa']+S[m]['fb'] for m in ranked)} of {sum(1 for x in DATA[best] if x['arm'] in ('g3a','g3b'))} G3 episodes), with <b>no consistent early≫late gradient</b>.</div></div>
+<div class="kfind"><div class="ix">🎣</div><div><b>All models are fooled by misleading framing</b> ({_fool_lo:.0%}–{_fool_hi:.0%} of <b>exposed</b> G3 episodes, {_fool_n} exposed in total); {timing_txt}.</div></div>
 </div>
 
 <h2>Capability profile</h2>
@@ -688,12 +768,54 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 (4) n={N_TYP}/model across {len(SEEDS)} seeds — the outcome CIs overlap ({sig_txt}); the defensible claims are on identity grounding, not the outcome ranking. Add seeds to separate outcome.<br>
 {'(5) <b>Tier confound</b> — ' + ", ".join(_ft) + f" run a non-flagship tier; the Gemini gap is not a clean model-family result until re-run on the flagship tier.<br>" if _ft else ''}</div>
 
-<div class="foot">Outcome from <code>*_v3scores.json</code>, grounding from <code>*_supportscores.json</code> (judge: DeepSeek-v4-pro). Honest arms = G0–G2. Generated by <code>scripts/gen_ladder_report.py</code>. Charts are live Chart.js (cdnjs, online).</div>
+<div class="foot">Outcome from <code>*_v3scores.json</code>, grounding from <code>*_supportscores.json</code> (support judge not recorded; CoT judge {JUDGE_NAME}). Honest arms = G0–G2. Generated by <code>scripts/gen_ladder_report.py</code>. Charts are live Chart.js (cdnjs, online).</div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>{JS}</script>
 </body></html>"""
 
+def _check_js(src: str) -> None:
+    """Refuse to write a report whose chart script cannot parse.
+
+    WHY THIS EXISTS. A single missing brace in the chart template made the whole <script> block
+    fail to parse, so ALL FIVE canvases rendered blank while the prose, tables and key-findings
+    all looked perfect. Nothing errored; the report simply had no figures, and it stayed that way
+    across every regeneration. Same shape as this project's other two defects — a failure that
+    renders as a benign value — so it gets the same treatment: fail loudly at write time.
+
+    Bracket balance is checked with string literals skipped, which is what catches the real bug
+    (an unbalanced template) without tripping on parens inside axis titles like 'G2 (blinded)'.
+    """
+    pairs = {'}': '{', ')': '(', ']': '['}
+    stack, instr, esc, line = [], None, False, 1
+    for ch in src:
+        if ch == '\n':
+            line += 1
+        if instr:
+            if esc:
+                esc = False
+            elif ch == '\\':
+                esc = True
+            elif ch == instr:
+                instr = None
+            continue
+        if ch in '"\'':
+            instr = ch
+        elif ch in '{([':
+            stack.append((ch, line))
+        elif ch in '})]':
+            if not stack or stack[-1][0] != pairs[ch]:
+                got = f"{stack[-1][0]!r} opened on line {stack[-1][1]}" if stack else 'nothing open'
+                sys.exit(f"REFUSING TO WRITE {OUT_PATH}: chart JS is malformed — {ch!r} on JS line "
+                         f"{line} closes {got}. Every figure would be blank. Fix the JS template.")
+            stack.pop()
+    if stack:
+        sys.exit(f"REFUSING TO WRITE {OUT_PATH}: chart JS has {len(stack)} unclosed bracket(s), "
+                 f"first {stack[0][0]!r} on JS line {stack[0][1]}. Every figure would be blank.")
+
+
+_check_js(JS)
 out = OUT_PATH
 open(out, 'w').write(html)
 print("wrote", out, len(html), "bytes")
+print(f"  charts: {html.count('<canvas')} canvas, JS validated")

@@ -58,6 +58,16 @@ HYPOTHESIS_KW = re.compile(
 )
 
 # Codebook-arrival signature (tool_result text emitted at G2 reveal, or pre-revealed for G0/G1)
+# Cohort-reveal signature — the moment the harness NAMES a cohort to the agent. On G3 this is the
+# PLANTED (false) label, delivered with the fake sample codebook at --sample-codebook-ro-gate.
+# This is a DIFFERENT event from CODEBOOK_PAT, which fires on the GENE codebook. Conflating them
+# silently mis-times every "did the agent commit before it was told?" analysis, because the gene
+# codebook lands at a different observation and is not an identity claim at all.
+COHORT_REVEAL_PAT = re.compile(
+    r"(?:identified the source cohort|sample-identifier mapping|"
+    r"sample_codebook[`'\"]*\s+in your Python namespace)",
+    re.I)
+
 CODEBOOK_PAT = re.compile(
     r"(?:Your assistant has identified the gene codebook|translations loaded|"
     r"codebook is now available in your Python namespace|"
@@ -231,6 +241,8 @@ def extract_episode(path: str) -> dict:
             pre_revealed = True
 
     disease_at: Optional[int] = None        # first call mentioning a specific disease
+    cohort_reveal_at: Optional[int] = None  # first call where the harness NAMED a cohort (G3: the
+                                            # planted label). Distinct from codebook_at (genes).
     pediatric_at: Optional[int] = None      # first call doing pediatric/age-based narrowing
     n_error_calls = 0
 
@@ -299,6 +311,8 @@ def extract_episode(path: str) -> dict:
                 # G0/G1 detected from initial user message above.
                 if codebook_at is None and CODEBOOK_PAT.search(result_text):
                     codebook_at = call_idx
+                if cohort_reveal_at is None and COHORT_REVEAL_PAT.search(result_text):
+                    cohort_reveal_at = call_idx
 
                 # Disease + pediatric inference signatures — scan ONLY the agent's stated intent
                 # (WHY/EXPECTS), NOT the result blob: a MSigDB pathway or gene name containing a
@@ -421,6 +435,7 @@ def extract_episode(path: str) -> dict:
         "codebook_at":        codebook_at,                 # new: call # of codebook arrival (0 = pre-revealed)
         "codebook_pre_revealed": pre_revealed,             # new: True for G0/G1
         "disease_at":         disease_at,                  # new: first explicit disease mention
+        "cohort_reveal_at":   cohort_reveal_at,            # new: harness named a cohort (G3=planted)
         "pediatric_at":       pediatric_at,                # new: first pediatric/age-narrowing call
         "n_error_calls":      n_error_calls,               # new
     }

@@ -36,12 +36,19 @@ RUNS = [
 SUFFIXES = ["_cotsummary.json", "_cotsummary_j2.json", "_cotsummary_j3.json"]
 
 # Pulled from summarize_cot's tool schema rather than hardcoded, so the two cannot drift apart.
+# The repo root must be importable: summarize_cot imports biodiscoverygym, and without it the
+# import below fails, the fallback engages, and this checker then validates 3 of 10 fields with no
+# enum checking WHILE STILL PRINTING "complete and schema-valid". That is a weaker claim wearing a
+# stronger claim's words — the exact failure class this script exists to catch.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SCHEMA_DEGRADED = False
 try:
     from summarize_cot import _COT_TOOL, _REQUIRED
     SCHEMA = _COT_TOOL["input_schema"]["properties"]
     REQUIRED = list(_REQUIRED)
 except Exception as e:                                            # keep usable if the import moves
-    print(f"  (!) could not import schema from summarize_cot ({e}); using a fallback", file=sys.stderr)
+    SCHEMA_DEGRADED = str(e)
+    print(f"  (!) could not import schema from summarize_cot ({e})", file=sys.stderr)
     SCHEMA, REQUIRED = {}, ["reasoning_strategy", "identity_derivation", "validation_rigor"]
 ENUMS = {k: set(v["enum"]) for k, v in SCHEMA.items() if isinstance(v, dict) and "enum" in v}
 
@@ -130,7 +137,16 @@ def main():
         else:
             print("\n  Re-run with --delete-bad to remove them, then resume the panel.")
         return 1
-    print(f"  ALL CLEAN — {grand_files} judge outputs parsed, complete and schema-valid.")
+    if SCHEMA_DEGRADED:
+        print(f"  PARSED — {grand_files} judge outputs parsed and carry "
+              f"{len(REQUIRED)} spot-checked fields.")
+        print(f"  !! NOT a schema validation. The authoritative schema could not be imported "
+              f"({SCHEMA_DEGRADED}),")
+        print(f"     so {len(REQUIRED)} of 10 required fields were checked and NO enum validation ran.")
+        print(f"     Do not cite this as 'schema-valid'. Fix the import and re-run.")
+    else:
+        print(f"  ALL CLEAN — {grand_files} judge outputs parsed, complete and schema-valid "
+              f"({len(REQUIRED)} required fields, {len(ENUMS)} enum-checked).")
     return 0
 
 
