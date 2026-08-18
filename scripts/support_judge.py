@@ -260,7 +260,7 @@ def _judge_openai_compatible(user_msg: str, model: str) -> dict:
     """DeepSeek (the neutral judge) + OpenAI, via the OpenAI SDK with forced tool-calling.
     DeepSeek is served at api.deepseek.com and is OpenAI-compatible incl. tool calls."""
     import openai, json, os
-    from biodiscoverygym.scoring.judge import judge_provider
+    from biodiscoverygym.scoring.judge import judge_provider, openai_client_for
     # Routed from judge_provider — the one table. This module produced its own copy of the
     # routing chain (the sixth), and it is the one that emits d2_identity.strategy, i.e. the
     # labels the paper's headline claim rests on. Under the old prefix matching a gateway-
@@ -275,7 +275,7 @@ def _judge_openai_compatible(user_msg: str, model: str) -> dict:
         # reasoning and the tool-call JSON — too small and the args truncate mid-string
         # ("Unterminated string" on json.loads) — and rejects a forced tool_choice, so "auto"
         # with the prompt instructing it to call record_support.
-        client = openai.OpenAI(base_url=base_url, api_key=os.environ.get(env_key))
+        client = openai_client_for(model)
         tok_key, base_tokens, retry_tokens = "max_tokens", 16000, 32000
         tool_choice = "auto"
     else:                                       # openai gpt/o-series

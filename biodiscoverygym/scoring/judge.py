@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import types
 
 import anthropic
@@ -52,10 +53,50 @@ QWEN_BASE_URL = os.environ.get(
     "QWEN_BASE_URL",
     "https://qwen36-27b-fp8.austaadmin-stju-b700e7ae.serving.ai-application.stjude.org/v1")
 
-# The served model id is NOT the hostname and has not been confirmed against /v1/models (the
-# probe is blocked by the CA gap above). Override with BDG_QWEN_MODEL once confirmed; the
-# scorers preflight the id, so a wrong one fails in seconds rather than partway through a pass.
-QWEN_MODEL = os.environ.get("BDG_QWEN_MODEL", "qwen36-27b-fp8")
+# CONFIRMED against /v1/models on 2026-08-18. The served id is NOT the hostname: the host is
+# qwen36-27b-fp8..., the model is "Qwen/Qwen3.6-27B-FP8". Guessing it from the hostname would
+# have failed every call. Override with BDG_QWEN_MODEL if the deployment changes.
+QWEN_MODEL = os.environ.get("BDG_QWEN_MODEL", "Qwen/Qwen3.6-27B-FP8")
+
+# TLS verification for the AIE serving platform ONLY.
+#
+# Its root ("AIE Root CA - ai-application.stjude.org", HPE Ezmeral) is in neither the system
+# trust store, nor ~/certs/combined-ca.pem, nor any keychain; the host sends only its leaf
+# certificate (chain depth 1) and advertises no AIA URL, so the chain cannot be built
+# automatically. Verification is therefore disabled FOR THIS HOST, by explicit decision.
+#
+# SCOPE IS THE WHOLE POINT. This flag is consulted only on the qwen branch of
+# openai_client_for(); Anthropic, OpenAI, DeepSeek and bifrost keep full verification. bifrost
+# in particular verifies fine today, so a blanket setting would have thrown away working
+# security to fix an unrelated host. The connection is unauthenticated as to server identity:
+# on a trusted internal network that is a considered trade, not a safe default.
+#
+# Set BDG_QWEN_VERIFY=1 to restore verification once the root CA is installed.
+QWEN_VERIFY = os.environ.get("BDG_QWEN_VERIFY", "0").lower() not in ("0", "false", "no", "")
+_qwen_tls_warned = False
+
+
+def openai_client_for(model: str, **kw):
+    """Build an OpenAI-compatible client for a judge model: right base_url, key and TLS policy.
+
+    Centralised so the qwen TLS exception exists in exactly one place. It previously would have
+    had to be repeated at each of the three call sites that construct a client (this module,
+    summarize_cot, support_judge) — the same duplication that let routing drift.
+    """
+    import openai
+    env_key, base_url = judge_provider(model)
+    if base_url is None:
+        return openai.OpenAI(**kw)
+    if "qwen" in (model or "").lower() and not QWEN_VERIFY:
+        import httpx
+        global _qwen_tls_warned
+        if not _qwen_tls_warned:
+            print("  [tls] certificate verification DISABLED for the Qwen/AIE endpoint only "
+                  "(missing AIE root CA). All other providers still verify. "
+                  "Set BDG_QWEN_VERIFY=1 once the root is installed.", file=sys.stderr)
+            _qwen_tls_warned = True
+        kw["http_client"] = httpx.Client(verify=False, timeout=kw.pop("timeout", 600.0))
+    return openai.OpenAI(base_url=base_url, api_key=os.environ.get(env_key), **kw)
 
 
 # Families that are UNDER EVALUATION in this benchmark. A judge drawn from one of these has
@@ -121,9 +162,7 @@ class _JudgeClient:
             # the AIE serving platform (qwen), or DeepSeek.
             env_key, base_url = judge_provider(model)
             if base_url:
-                client = openai.OpenAI(base_url=base_url,
-                                       api_key=os.environ.get(env_key),
-                                       timeout=600.0, max_retries=3)
+                client = openai_client_for(model, timeout=600.0, max_retries=3)
                 # Headroom: the budget has to cover the reasoning AND the JSON verdict, or the
                 # answer truncates into unterminated JSON. SDK max_retries only covers HTTP
                 # errors, not a truncated HTTP-200 body — so "length" is detected below and

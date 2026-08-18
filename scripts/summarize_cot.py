@@ -32,9 +32,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from extract_cot import extract_episode  # deterministic distiller (no LLM)
-from biodiscoverygym.scoring.judge import (DEFAULT_JUDGE_MODEL, judge_provider,
-                                           required_key_env,
-                                           is_benchmarked_family)
+from biodiscoverygym.scoring.judge import (DEFAULT_JUDGE_MODEL, is_benchmarked_family,
+                                           judge_provider, openai_client_for,
+                                           required_key_env)
 
 # ---------------------------------------------------------------------------
 # Judge prompt + tool schema (structured fields + prose)
@@ -191,7 +191,7 @@ def call_judge(user_msg: str, model: str = DEFAULT_JUDGE_MODEL) -> dict:
     # DeepSeek. All are neutral judges: none belongs to a benchmarked agent family.
     _env_key, _base_url = judge_provider(model)
     if _base_url:
-        client = openai.OpenAI(base_url=_base_url, api_key=os.environ.get(_env_key))
+        client = openai_client_for(model)
         # tool_choice="auto": these endpoints reject the OpenAI-style forced-function object.
         tok_key, base_toks, retry_toks, tool_choice = "max_tokens", 16000, 32000, "auto"
     else:

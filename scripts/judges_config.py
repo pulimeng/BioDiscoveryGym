@@ -30,13 +30,20 @@ lane or regenerate; do not let a default decide it.
 from __future__ import annotations
 
 import os
+import sys
+
+# Import the model id rather than restating it. This file first carried its own
+# os.environ.get('BDG_QWEN_MODEL', 'qwen36-27b-fp8') default, which went stale the moment the
+# id was confirmed against /v1/models as "Qwen/Qwen3.6-27B-FP8" — the roster and the router
+# then disagreed about which model the qwen lane meant, silently.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from biodiscoverygym.scoring.judge import QWEN_MODEL as _QWEN_MODEL  # noqa: E402
 
 # (tag, model id, description). The tag becomes the filename suffix and the reporting label.
 PANEL = [
     ('nemotron', 'nemotron-3-super', 'NVIDIA Nemotron, St. Jude bifrost gateway'),
     ('laguna',   'laguna',           'Laguna, St. Jude bifrost gateway'),
-    ('qwen',     os.environ.get('BDG_QWEN_MODEL', 'qwen36-27b-fp8'),
-                 'Qwen, St. Jude AIE serving platform'),
+    ('qwen',     _QWEN_MODEL, 'Qwen, St. Jude AIE serving platform'),
 ]
 
 # artifact kind -> filename stem. `{tag}` is '' for the legacy unsuffixed files.
