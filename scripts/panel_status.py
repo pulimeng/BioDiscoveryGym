@@ -6,7 +6,12 @@ missing 3% are not random, they are the episodes whose traces break a judge, and
 around them silently changes the denominator. Print the shortfall, per judge and per artifact,
 so "done" is a number rather than an impression.
 
-Usage:  BDG_RUNS=clean python scripts/panel_status.py [--json]
+Coverage is reported for the scope you ask about. BDG_RUNS=clean spans BOTH waves — 
+results/tcga/clean ("detailed") and results/tcga/clean_lean ("lean"), 570 episodes. Pass
+--wave to scope it to one, so that finishing a wave reads as complete for that wave instead of
+half-done overall.
+
+Usage:  BDG_RUNS=clean python scripts/panel_status.py [--wave detailed|lean] [--json]
 """
 from __future__ import annotations
 
@@ -22,9 +27,9 @@ import runs_config
 BAD = ("scores", "trace", "summary", "codebook", "gene_map", "grouping")
 
 
-def episodes() -> list[str]:
+def episodes(wave=None) -> list[str]:
     out = []
-    for d in runs_config.flat():
+    for d in runs_config.flat(wave):
         for f in sorted(glob.glob(os.path.join(d, '*', 'g[0-3]*_s*.json'))):
             b = os.path.basename(f)
             if all(x not in b for x in BAD) and os.path.basename(os.path.dirname(f)) == b[:-5]:
@@ -33,7 +38,13 @@ def episodes() -> list[str]:
 
 
 def main() -> int:
-    eps = episodes()
+    wave = None
+    if '--wave' in sys.argv:
+        wave = sys.argv[sys.argv.index('--wave') + 1]
+        if wave not in ('detailed', 'lean'):
+            print(f"--wave must be 'detailed' or 'lean' (got {wave!r})", file=sys.stderr)
+            return 2
+    eps = episodes(wave)
     n = len(eps)
     rows, complete = {}, True
     for kind in ('cot', 'support', 'outcome'):
@@ -46,10 +57,11 @@ def main() -> int:
                 complete = False
 
     if '--json' in sys.argv:
-        print(json.dumps({'n_episodes': n, 'coverage': rows, 'complete': complete}, indent=2))
+        print(json.dumps({'n_episodes': n, 'wave': wave or 'both',
+                          'coverage': rows, 'complete': complete}, indent=2))
         return 0 if complete else 1
 
-    print(f"  episodes: {n}   source: {runs_config.SOURCE}")
+    print(f"  episodes: {n}   wave: {wave or 'both'}   source: {runs_config.SOURCE}")
     hdr = J.tags()
     print(f"  {'artifact':10} " + "".join(f"{h:>13}" for h in hdr))
     for kind, r in rows.items():
@@ -59,7 +71,7 @@ def main() -> int:
             mark = '' if v == n else f" (-{n - v})"
             cells.append(f"{str(v) + mark:>13}")
         print(f"  {kind:10} " + "".join(cells))
-    print(f"\n  panel complete (all 3 judges x 3 artifacts x {n}): {'YES' if complete else 'NO'}")
+    print(f"\n  panel complete for wave={wave or 'both'} (3 judges x 3 artifacts x {n}): {'YES' if complete else 'NO'}")
     if not complete:
         print("  -> stale files must NOT be removed until this reads YES.", file=sys.stderr)
     return 0 if complete else 1

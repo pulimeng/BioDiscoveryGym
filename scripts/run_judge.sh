@@ -2,8 +2,13 @@
 # Run ONE judge over an entire run set. Sequential by design — one API call at a time.
 #
 #   scripts/run_judge.sh nemotron
-#   scripts/run_judge.sh laguna
-#   scripts/run_judge.sh qwen
+#   scripts/run_judge.sh laguna --wave detailed     # only results/tcga/clean
+#   scripts/run_judge.sh qwen   --wave lean         # only results/tcga/clean_lean
+#
+# NOTE ON SCOPE. BDG_RUNS=clean resolves to BOTH waves — results/tcga/clean (the "detailed"
+# wave) AND results/tcga/clean_lean (the "lean" wave), 6 lanes and 570 episodes. To finish one
+# wave before starting the other, pass --wave. The directory is named `clean`/`clean_lean` but
+# the wave is named `detailed`/`lean`; --wave takes the wave name.
 #
 # Run the three in three terminals. That IS the parallelism: three processes, one per judge,
 # each a single stream of work. The previous driver sharded episodes across N background
@@ -23,11 +28,22 @@ cd "$(dirname "$0")/.."
 PY="${BDG_PYTHON:-$HOME/miniconda3/envs/biodiscoverygym/bin/python}"
 : "${BDG_RUNS:?set BDG_RUNS (e.g. export BDG_RUNS=clean)}"
 
-TAG="${1:-}"
+TAG="${1:-}"; shift || true
+WAVE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --wave) WAVE="${2:-}"; shift 2 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+if [ -n "$WAVE" ] && [ "$WAVE" != "detailed" ] && [ "$WAVE" != "lean" ]; then
+  echo "--wave must be 'detailed' or 'lean' (got '$WAVE')" >&2; exit 2
+fi
 if [ -z "$TAG" ]; then
   echo "usage: $0 <judge-tag>    one of: $($PY -c "
 import sys; sys.path.insert(0,'scripts'); import judges_config as J; print(' '.join(J.tags()))")" >&2
   echo "  Run one judge per terminal. There is deliberately no 'run everything' mode." >&2
+  echo "  Optional: --wave detailed|lean  (default: both waves, 6 lanes)" >&2
   exit 2
 fi
 MODEL=$($PY -c "
@@ -54,12 +70,13 @@ LOG="results/tcga/_judge_logs/${TAG}"; mkdir -p "$LOG"
 DIRS=()
 while IFS= read -r d; do [ -n "$d" ] && DIRS+=("$d"); done < <($PY -c "
 import sys; sys.path.insert(0,'scripts'); import runs_config
-print('\n'.join(runs_config.flat()))")
+w = '$WAVE' or None
+print('\n'.join(runs_config.flat(w)))")
 if [ ${#DIRS[@]} -eq 0 ]; then
   echo "ERROR: no run directories for BDG_RUNS='${BDG_RUNS}'. Refusing." >&2; exit 1
 fi
 
-echo "judge: $TAG ($MODEL)   lanes: ${#DIRS[@]}   logs: $LOG"
+echo "judge: $TAG ($MODEL)   wave: ${WAVE:-both}   lanes: ${#DIRS[@]}   logs: $LOG"
 START=$(date +%s)
 
 for d in "${DIRS[@]}"; do
@@ -89,4 +106,4 @@ for d in "${DIRS[@]}"; do
 done
 
 echo; echo "===== $TAG done in $(( ($(date +%s)-START)/60 )) min ====="
-$PY scripts/panel_status.py
+$PY scripts/panel_status.py ${WAVE:+--wave "$WAVE"}

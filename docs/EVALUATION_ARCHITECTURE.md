@@ -255,17 +255,25 @@ Home: `cot_deepdive.py`, which needs rework regardless (its stated H1/H2 are bot
 **One judge per terminal.** That is the parallelism: three processes, each a single stream of
 work. There is deliberately no "run everything" mode.
 
+**`BDG_RUNS=clean` spans BOTH waves** — `results/tcga/clean` (the *detailed* wave) and
+`results/tcga/clean_lean` (the *lean* wave): 6 lanes, 570 episodes. Note the naming mismatch —
+the directories are `clean`/`clean_lean`, the waves are `detailed`/`lean`, and `--wave` takes
+the wave name. To finish one wave before starting the other, scope both the run and the gate:
+
 ```bash
 # in each of three terminals
 export BDG_RUNS=clean
 source load_keys.sh "<keys.txt>"
 
-scripts/run_judge.sh nemotron      # terminal 1
-scripts/run_judge.sh laguna        # terminal 2
-scripts/run_judge.sh qwen          # terminal 3
+scripts/run_judge.sh nemotron --wave detailed    # terminal 1
+scripts/run_judge.sh laguna   --wave detailed    # terminal 2
+scripts/run_judge.sh qwen     --wave detailed    # terminal 3
 
-python scripts/panel_status.py     # coverage gate; non-zero exit until complete
+python scripts/panel_status.py --wave detailed   # 285 episodes; complete = that wave is done
+# then repeat all four with --wave lean
 ```
+
+Omit `--wave` to run both waves in one pass (570 episodes).
 
 Each run preflights a 1-token call first, so a bad key or model id fails in seconds rather than
 95 episodes in, and each is resume-safe: the scorers skip episodes that already have the
