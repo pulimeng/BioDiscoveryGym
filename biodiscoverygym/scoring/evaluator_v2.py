@@ -216,6 +216,22 @@ class EvaluatorV2:
         # analysis but no longer scored (Option B, 2026-06-15).
 
         if not grouping:
+            # NO PARTITION — but still judge the identity claim. An agent can commit to a cohort
+            # while producing no grouping, and that commitment is exactly what the mislead arm
+            # measures. Returning here bare left `cohort_identity_verdict = ""`, which every
+            # consumer read as "not fooled": `g3a_ov_mislead_brca_s7` submitted an empty grouping
+            # and a mechanism about BREAST cancer on an OVARIAN cohort, and was scored as a
+            # non-event. The gate needs only the mechanism text, so run it.
+            _, id_diag = score_cohort_identity(
+                mechanism_hypothesis, [], cohort, mislead_cohort, model=self.llm_model,
+            )
+            report.diagnostics["cohort_identity"] = id_diag
+            report.cohort_identity_verdict = str(id_diag.get("verdict", ""))
+            report.gated = bool(id_diag.get("fooled"))
+            report.diagnostics["no_grouping"] = {
+                "note": "empty proposed_grouping — all partition-dependent components are "
+                        "unscored (not zero-scored). The identity verdict above IS valid.",
+            }
             report.wall_time_s = time.time() - t0
             return report
 

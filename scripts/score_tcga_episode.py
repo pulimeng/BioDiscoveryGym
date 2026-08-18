@@ -201,10 +201,37 @@ def main():
     # score file and exit non-zero. score_all_tcga.sh already collects failures and tells the user
     # to re-run — that safety net existed the whole time and was bypassed only because scoring
     # reported success. This lets it work.
+    # ZERO COMPONENTS is its own failure, and the loop below cannot see it: it looks for
+    # components carrying an error, and an empty result has no components to carry one. That is how
+    # a re-score of g3a_ov_mislead_brca_s7 wrote a second placeholder — 0 components, normalized
+    # 0.0, wall_time 4e-06 — and printed "Saved". An episode with no partition is legitimate (the
+    # agent submitted no grouping); a score FILE that records nothing about it is not.
+    if not (score_report.raw_scores or {}):
+        no_group = "no_grouping" in (score_report.diagnostics or {})
+        verdict = score_report.cohort_identity_verdict
+        print("\n  !! NO COMPONENTS SCORED.", file=sys.stderr)
+        if no_group:
+            print("     The episode submitted an EMPTY proposed_grouping, so every "
+                  "partition-dependent", file=sys.stderr)
+            print(f"     component is unscorable. Identity verdict = {verdict!r} "
+                  f"(judged from the mechanism text).", file=sys.stderr)
+            print("     Saving anyway BECAUSE the identity verdict is real; downstream code must "
+                  "treat", file=sys.stderr)
+            print("     `raw_scores == {}` as UNSCORED, never as a zero.", file=sys.stderr)
+        else:
+            print("     No empty-grouping diagnostic either — this is an unexplained empty result.",
+                  file=sys.stderr)
+            print("     NOT saving; re-run and investigate.", file=sys.stderr)
+            return 1
+
     failed = []
     for comp, diag in (score_report.diagnostics or {}).items():
         if isinstance(diag, dict) and diag.get("error"):
-            failed.append((comp, str(diag["error"])[:120]))
+            # FULL error text. Truncating to 120 chars cut a provider error off mid-message
+            # — "Error code: 403 - {'type': 'virtual_key_blocked', ... 'message': 'V" — which
+            # names the failure class but discards the sentence that says what to DO about it.
+            # An error report that has to be re-derived by re-running the failure is not a report.
+            failed.append((comp, str(diag["error"])))
     if failed:
         print("\n  !! SCORING INCOMPLETE — not saving. Failed component(s):", file=sys.stderr)
         for comp, err in failed:
@@ -225,9 +252,13 @@ def main():
         combined_scores["trace_summary"] = {
             k: v for k, v in trace_report.to_dict().items() if k != "calls"
         }
-        scores_path.write_text(json.dumps(combined_scores, indent=2))
+        # allow_nan=False: emit STRICT JSON or fail loudly. Python's json module writes bare
+        # NaN/Infinity by default, which no strict parser accepts — three clean-run score
+        # files shipped unparseable before this. A score file a consumer cannot read is a
+        # broken artifact, and this turns that into an exception at write time.
+        scores_path.write_text(json.dumps(combined_scores, indent=2, allow_nan=False))
 
-        trace_path.write_text(json.dumps(trace_report.to_dict(), indent=2))
+        trace_path.write_text(json.dumps(trace_report.to_dict(), indent=2, allow_nan=False))
 
         print(f"\n  Saved → {scores_path}")
         print(f"  Saved → {trace_path}")

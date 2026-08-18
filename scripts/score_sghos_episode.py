@@ -185,7 +185,11 @@ def main():
     failed = []
     for comp, diag in (score_report.diagnostics or {}).items():
         if isinstance(diag, dict) and diag.get("error"):
-            failed.append((comp, str(diag["error"])[:120]))
+            # FULL error text. Truncating to 120 chars cut a provider error off mid-message
+            # — "Error code: 403 - {'type': 'virtual_key_blocked', ... 'message': 'V" — which
+            # names the failure class but discards the sentence that says what to DO about it.
+            # An error report that has to be re-derived by re-running the failure is not a report.
+            failed.append((comp, str(diag["error"])))
     if failed:
         print("\n  !! SCORING INCOMPLETE — not saving. Failed component(s):", file=sys.stderr)
         for comp, err in failed:
@@ -203,9 +207,13 @@ def main():
         combined_scores["trace_summary"] = {
             k: v for k, v in trace_report.to_dict().items() if k != "calls"
         }
-        scores_path.write_text(json.dumps(combined_scores, indent=2))
+        # allow_nan=False: emit STRICT JSON or fail loudly. Python's json module writes bare
+        # NaN/Infinity by default, which no strict parser accepts — three clean-run score
+        # files shipped unparseable before this. A score file a consumer cannot read is a
+        # broken artifact, and this turns that into an exception at write time.
+        scores_path.write_text(json.dumps(combined_scores, indent=2, allow_nan=False))
 
-        trace_path.write_text(json.dumps(trace_report.to_dict(), indent=2))
+        trace_path.write_text(json.dumps(trace_report.to_dict(), indent=2, allow_nan=False))
 
         print(f"\n  Saved → {scores_path}")
         print(f"  Saved → {trace_path}")

@@ -125,8 +125,13 @@ def score_clinical_signal(
             log_hr = float(abs(cph.params_["is_best"]))
             hr_score = float(np.clip(log_hr / 2.0, 0, 1))  # log HR of 2 → full score
         except Exception:
+            # None, not float("nan"). A failed Cox fit means there IS no log hazard ratio, which is
+            # `null` in JSON — whereas NaN serialises as the bare token `NaN`, which is not valid
+            # JSON and breaks any strict parser downstream. The score is unaffected either way
+            # (hr_score is 0.0), but three clean-run score files were unparseable by a strict reader
+            # because of this line.
             hr_score = 0.0
-            log_hr = float("nan")
+            log_hr = None
 
         score = 0.6 * delta_c + 0.4 * hr_score
         return float(score), {"c_index": c_idx, "delta_c": delta_c, "log_hr": log_hr, "hr_score": hr_score}
