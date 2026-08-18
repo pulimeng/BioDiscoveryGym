@@ -11,6 +11,14 @@ describe→judge.
 
 ---
 
+## → Start with `EVALUATION_ARCHITECTURE.md`
+
+**`EVALUATION_ARCHITECTURE.md` is the authoritative description of the evaluation process** —
+what each judge sees, what is computational vs a model call, the three-family judge panel, the
+episode layout, the known instrument asymmetries, and how to run it. The summary below predates
+the 2026-08-18 panel redesign and layout reorganisation; where the two disagree, the
+architecture doc is current.
+
 ## Two scoring tracks (both current, run per episode)
 
 | Track | Question | Scorer | Output | Judge / prompt | Status |
