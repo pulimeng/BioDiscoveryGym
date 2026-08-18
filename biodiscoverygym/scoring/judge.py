@@ -26,13 +26,68 @@ import anthropic
 DEFAULT_JUDGE_MODEL = os.environ.get("BDG_JUDGE_MODEL", "nemotron-3-super")
 _DEFAULT_MODEL = DEFAULT_JUDGE_MODEL
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Judge provider routing — ONE table, not a conditional repeated at every call site.
+#
+# Adding a judge family used to mean editing five copies of the same
+# `startswith(("nemotron", "laguna"))` chain: both episode scorers, the support judge, the CoT
+# judge, and this file. A missed copy does not fail loudly — it fails at the key precheck
+# demanding the WRONG environment variable, which reads as "you forgot to export your key".
+# This is the same duplication that DEFAULT_JUDGE_MODEL was introduced to kill; routing had
+# simply been left behind.
+BIFROST_BASE_URL = os.environ.get("BIFROST_BASE_URL",
+                                  "https://bifrost.ai-application.stjude.org/v1")
+
+# Qwen — a SECOND neutral judge family, added 2026-08-18 for the cross-family pass. The
+# existing cross-family check rests on n=42 episodes (DeepSeek vs Nemotron, 67% exact
+# agreement), and it is load-bearing: it is what decides whether the empty `recalled-prior`
+# cell is a property of the data or of the judge. Qwen is served by the St. Jude AIE serving
+# platform and, like nemotron/laguna, belongs to no benchmarked agent family.
+#
+# NOTE the host differs from bifrost's: it is an HPE Ezmeral serving endpoint presenting the
+# "AIE Root CA - ai-application.stjude.org" root, which is NOT in the system trust store or in
+# ~/certs/combined-ca.pem. Until that root is installed, calls fail TLS verification. Do not
+# "fix" this by disabling verification.
+QWEN_BASE_URL = os.environ.get(
+    "QWEN_BASE_URL",
+    "https://qwen36-27b-fp8.austaadmin-stju-b700e7ae.serving.ai-application.stjude.org/v1")
+
+# The served model id is NOT the hostname and has not been confirmed against /v1/models (the
+# probe is blocked by the CA gap above). Override with BDG_QWEN_MODEL once confirmed; the
+# scorers preflight the id, so a wrong one fails in seconds rather than partway through a pass.
+QWEN_MODEL = os.environ.get("BDG_QWEN_MODEL", "qwen36-27b-fp8")
+
+
+def judge_provider(model: str) -> tuple[str, str | None]:
+    """(env var holding the key, base_url) for a judge model id.
+
+    base_url None means "the SDK's own default endpoint" (Anthropic, or OpenAI proper).
+    """
+    ml = (model or "").lower()
+    if "claude" in ml:
+        return ("ANTHROPIC_API_KEY", None)
+    if ml.startswith("qwen"):
+        return ("QWEN_API_KEY", QWEN_BASE_URL)
+    if ml.startswith(("nemotron", "laguna")):
+        return ("BIFROST_API_KEY", BIFROST_BASE_URL)
+    if ml.startswith("deepseek"):
+        return ("DEEPSEEK_API_KEY", "https://api.deepseek.com")
+    return ("OPENAI_API_KEY", None)
+
+
+def required_key_env(model: str) -> str:
+    """Which API-key env var a judge model needs. Used by every scorer's preflight check."""
+    return judge_provider(model)[0]
+
 
 class _JudgeClient:
     """Provider-routing shim so the free-text judges run on a NEUTRAL model (default
-    deepseek-v4-pro) instead of Anthropic, without touching each judge function. Exposes
-    .messages.create(...) returning an object with .content[0].text. Routes by model id:
-    claude*->Anthropic; deepseek*/gpt*->OpenAI-compatible (DeepSeek at api.deepseek.com,
-    JSON mode; thinking model gets token headroom)."""
+    nemotron-3-super) instead of Anthropic, without touching each judge function. Exposes
+    .messages.create(...) returning an object with .content[0].text.
+
+    Routing comes from `judge_provider` — see the table above; do not re-derive it here. The
+    previous docstring still advertised deepseek-v4-pro as the default months after 24bc72e
+    moved it, which is the same drift the table exists to prevent."""
 
     class _Messages:
         def create(self, *, model, max_tokens, system, messages):
@@ -41,30 +96,18 @@ class _JudgeClient:
                 return anthropic.Anthropic().messages.create(
                     model=model, max_tokens=max_tokens, system=system, messages=messages)
             import openai
-            if ml.startswith(("nemotron", "laguna")):
-                # St. Jude internal OpenAI-compatible gateway (bifrost). This is the preferred
-                # judge: nemotron-3-super and laguna belong to NO benchmarked agent family, so
-                # unlike GPT/Claude/Gemini there is no self-preference exposure, and unlike
-                # DeepSeek it sits inside the network perimeter and cannot be firewalled off
-                # mid-run (which happened on 2026-08-06 and stopped scoring dead).
-                client = openai.OpenAI(
-                    base_url=os.environ.get("BIFROST_BASE_URL",
-                                            "https://bifrost.ai-application.stjude.org/v1"),
-                    api_key=os.environ.get("BIFROST_API_KEY"),
-                    timeout=600.0, max_retries=3)
-                # Same headroom rationale as DeepSeek below: the budget has to cover reasoning
-                # AND the JSON verdict, or the answer truncates into unterminated JSON.
-                max_tokens = max(max_tokens, 8000)
-                retry_tokens = 16000
-            elif ml.startswith("deepseek"):
-                # thinking model: generous timeout + retries (heavier prompts run long)
-                client = openai.OpenAI(base_url="https://api.deepseek.com",
-                                       api_key=os.environ.get("DEEPSEEK_API_KEY"),
+            # Routed from the one table above (judge_provider). A non-None base_url means a
+            # self-hosted / third-party OpenAI-compatible endpoint: bifrost (nemotron, laguna),
+            # the AIE serving platform (qwen), or DeepSeek.
+            env_key, base_url = judge_provider(model)
+            if base_url:
+                client = openai.OpenAI(base_url=base_url,
+                                       api_key=os.environ.get(env_key),
                                        timeout=600.0, max_retries=3)
-                # Budget must cover BOTH the reasoning AND the JSON answer; too small and the
-                # verdict truncates mid-string (finish_reason="length" → unterminated JSON).
-                # SDK max_retries only covers HTTP errors, not a truncated HTTP-200 body — so
-                # detect "length" and retry once with a bigger budget.
+                # Headroom: the budget has to cover the reasoning AND the JSON verdict, or the
+                # answer truncates into unterminated JSON. SDK max_retries only covers HTTP
+                # errors, not a truncated HTTP-200 body — so "length" is detected below and
+                # retried once with a bigger budget.
                 max_tokens = max(max_tokens, 8000)
                 retry_tokens = 16000
             else:

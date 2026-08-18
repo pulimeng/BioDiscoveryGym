@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from biodiscoverygym.scoring.judge import DEFAULT_JUDGE_MODEL
+from biodiscoverygym.scoring.judge import DEFAULT_JUDGE_MODEL, required_key_env
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -70,10 +70,7 @@ def main():
     # Fail-fast guard: missing judge API key silently zeros all LLM judges and looks
     # like a low real score. Which key depends on the judge model (neutral by default).
     import os
-    _m = args.llm_model.lower()
-    _need = ("BIFROST_API_KEY" if _m.startswith(("nemotron","laguna"))
-            else "DEEPSEEK_API_KEY" if _m.startswith("deepseek")
-             else "ANTHROPIC_API_KEY" if "claude" in _m else "OPENAI_API_KEY")
+    _need = required_key_env(args.llm_model)
     if not args.skip_llm and not os.environ.get(_need):
         print(f"ERROR: {_need} is not set (judge model = {args.llm_model}).", file=sys.stderr)
         print("  This script invokes LLM judges that materially affect the score.", file=sys.stderr)

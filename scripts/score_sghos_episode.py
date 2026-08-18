@@ -27,7 +27,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from biodiscoverygym.scoring.judge import DEFAULT_JUDGE_MODEL
+from biodiscoverygym.scoring.judge import DEFAULT_JUDGE_MODEL, required_key_env
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -78,10 +78,7 @@ def main():
     # Components catch the AuthenticationError defensively and return 0 — useful
     # for batch resilience but a footgun for one-off scoring runs.
     import os
-    _m = args.llm_model.lower()
-    _need = ("BIFROST_API_KEY" if _m.startswith(("nemotron","laguna"))
-            else "DEEPSEEK_API_KEY" if _m.startswith("deepseek")
-             else "ANTHROPIC_API_KEY" if "claude" in _m else "OPENAI_API_KEY")
+    _need = required_key_env(args.llm_model)
     if not args.skip_llm and not os.environ.get(_need):
         print(f"ERROR: {_need} is not set (judge model = {args.llm_model}).", file=sys.stderr)
         print("  This script invokes 3 LLM judges (~7 of 24 pts).", file=sys.stderr)

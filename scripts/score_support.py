@@ -28,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import support_judge as gj
-from biodiscoverygym.scoring.judge import DEFAULT_JUDGE_MODEL
+from biodiscoverygym.scoring.judge import DEFAULT_JUDGE_MODEL, required_key_env
 
 STRATS = ["explore", "exploit", "mixed"]
 GRDS = ["grounded", "unsupported", "anchored"]
@@ -80,10 +80,7 @@ def main():
     args = p.parse_args()
 
     if not args.dry:
-        m = args.model.lower()
-        need = ("BIFROST_API_KEY" if m.startswith(("nemotron","laguna"))
-            else "DEEPSEEK_API_KEY" if m.startswith("deepseek")
-                else "ANTHROPIC_API_KEY" if "claude" in m else "OPENAI_API_KEY")
+        need = required_key_env(args.model)
         if not os.environ.get(need):
             sys.exit(f"{need} not set for judge model {args.model} (or use --dry)")
 

@@ -32,7 +32,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from extract_cot import extract_episode  # deterministic distiller (no LLM)
-from biodiscoverygym.scoring.judge import DEFAULT_JUDGE_MODEL
+from biodiscoverygym.scoring.judge import (DEFAULT_JUDGE_MODEL, judge_provider,
+                                           required_key_env)
 
 # ---------------------------------------------------------------------------
 # Judge prompt + tool schema (structured fields + prose)
@@ -183,18 +184,14 @@ def call_judge(user_msg: str, model: str = DEFAULT_JUDGE_MODEL) -> dict:
         raise ValueError(f"no tool_use (stop_reason={r.stop_reason})")
 
     import openai
-    if ml.startswith(("nemotron", "laguna")):
-        # St. Jude internal gateway (bifrost) — OpenAI-compatible. NEUTRAL judge: not a
-        # benchmarked agent family, and inside the perimeter so it cannot be firewalled
-        # off mid-run the way DeepSeek was on 2026-08-06.
-        client = openai.OpenAI(
-            base_url=os.environ.get("BIFROST_BASE_URL",
-                                    "https://bifrost.ai-application.stjude.org/v1"),
-            api_key=os.environ.get("BIFROST_API_KEY"))
-        tok_key, base_toks, retry_toks, tool_choice = "max_tokens", 16000, 32000, "auto"
-    elif ml.startswith("deepseek"):
-        client = openai.OpenAI(base_url="https://api.deepseek.com",
-                               api_key=os.environ.get("DEEPSEEK_API_KEY"))
+    # Routed from judge_provider (biodiscoverygym/scoring/judge.py) — the one table. A non-None
+    # base_url is a self-hosted / third-party OpenAI-compatible endpoint: bifrost (nemotron,
+    # laguna), the AIE serving platform (qwen, a SEPARATE host and key from bifrost), or
+    # DeepSeek. All are neutral judges: none belongs to a benchmarked agent family.
+    _env_key, _base_url = judge_provider(model)
+    if _base_url:
+        client = openai.OpenAI(base_url=_base_url, api_key=os.environ.get(_env_key))
+        # tool_choice="auto": these endpoints reject the OpenAI-style forced-function object.
         tok_key, base_toks, retry_toks, tool_choice = "max_tokens", 16000, 32000, "auto"
     else:
         client = openai.OpenAI()
@@ -259,10 +256,7 @@ def main():
     args = ap.parse_args()
 
     if not args.dry:
-        m = args.model.lower()
-        need = ("BIFROST_API_KEY" if m.startswith(("nemotron","laguna"))
-            else "DEEPSEEK_API_KEY" if m.startswith("deepseek")
-                else "ANTHROPIC_API_KEY" if "claude" in m else "OPENAI_API_KEY")
+        need = required_key_env(args.model)
         if not os.environ.get(need):
             sys.exit(f"{need} not set for judge model {args.model} (or use --dry)")
 

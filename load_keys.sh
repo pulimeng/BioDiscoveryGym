@@ -36,6 +36,10 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         # and unlike DeepSeek it is inside the network perimeter and cannot be firewalled off
         # mid-run. Accepts several spellings because keys.txt is hand-edited.
         nemo|nemotron|bifrost|stjude) export BIFROST_API_KEY="$key" ;;
+        # Qwen — a SECOND neutral judge family, on the St. Jude AIE serving platform. This is
+        # NOT bifrost: different host, different key, and a different TLS root. Keep the two
+        # separate; exporting one as the other silently sends the wrong credential.
+        qwen) export QWEN_API_KEY="$key" ;;
         *) echo "load_keys: unknown provider '$provider' — skipped" >&2 ;;
     esac
 done < "$KEYS_FILE"
@@ -47,5 +51,5 @@ done < "$KEYS_FILE"
 # it is a default-if-empty operator, not a mask — so using it here printed all five keys in
 # plaintext. Only `${VAR:+literal}` is safe, and this helper avoids the trap entirely.
 _lk_status() { [ -n "${1:-}" ] && printf 'set' || printf '-'; }
-echo "loaded from $KEYS_FILE -> ANTHROPIC=$(_lk_status "${ANTHROPIC_API_KEY:-}") OPENAI=$(_lk_status "${OPENAI_API_KEY:-}") GEMINI=$(_lk_status "${GEMINI_API_KEY:-}") DEEPSEEK=$(_lk_status "${DEEPSEEK_API_KEY:-}") BIFROST=$(_lk_status "${BIFROST_API_KEY:-}")"
+echo "loaded from $KEYS_FILE -> ANTHROPIC=$(_lk_status "${ANTHROPIC_API_KEY:-}") OPENAI=$(_lk_status "${OPENAI_API_KEY:-}") GEMINI=$(_lk_status "${GEMINI_API_KEY:-}") DEEPSEEK=$(_lk_status "${DEEPSEEK_API_KEY:-}") BIFROST=$(_lk_status "${BIFROST_API_KEY:-}") QWEN=$(_lk_status "${QWEN_API_KEY:-}")"
 unset -f _lk_status
