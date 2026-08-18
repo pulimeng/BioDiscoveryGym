@@ -47,10 +47,10 @@ def _tag_for(model, tag=None):
                      f"(known tags: {_J.tags()})")
 
 
-def _dst_for(episode_json, args):
+def _dst_for(episode_json, args, create=False):
     import judges_config as _J
     return _J.artifact_path(os.path.dirname(os.path.abspath(episode_json)), 'support',
-                            _tag_for(args.model, args.judge_tag), create=args.save)
+                            _tag_for(args.model, args.judge_tag), create=create)
 
 
 def extract_trace(ep: dict) -> dict:
@@ -174,7 +174,7 @@ def main():
                    "support_score": sc, "score_max": sum(gj.WEIGHTS.values()),
                    "audit_flags": flags, "weights": gj.WEIGHTS,
                    "judge_model": args.model}
-            _dst = _dst_for(f, args)
+            _dst = _dst_for(f, args, create=True)
             _tmp = _dst + ".tmp"
             with open(_tmp, "w") as _fh:
                 json.dump(out, _fh, indent=2)

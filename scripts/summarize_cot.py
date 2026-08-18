@@ -166,12 +166,12 @@ def build_input(rec: dict, blind: bool = True) -> str:
 LAST_USAGE: dict | None = None
 
 
-def _outpath(episode_json: str, args) -> str:
+def _outpath(episode_json: str, args, create: bool = False) -> str:
     """<episode>/scoring/<tag>/cotsummary.json for this episode."""
     import judges_config as _J
     tag = args.judge_tag or _tag_for(args.model)
     d = os.path.dirname(os.path.abspath(episode_json))
-    return _J.artifact_path(d, 'cot', tag, create=args.save)
+    return _J.artifact_path(d, 'cot', tag, create=create)
 
 
 def _tag_for(model: str) -> str:
@@ -339,7 +339,7 @@ def main():
             # a dropped connection killing the batch) — and a truncated file still *exists*, so
             # the resume filter above skips it permanently and the episode is silently lost from
             # the panel. rename() is atomic on POSIX, so a file is either absent or complete.
-            _out = _outpath(f, args)
+            _out = _outpath(f, args, create=True)
             _tmp = _out + ".part"
             with open(_tmp, "w") as _fh:
                 json.dump(v, _fh, indent=2)
