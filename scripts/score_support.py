@@ -35,6 +35,24 @@ STRATS = ["explore", "exploit", "mixed"]
 GRDS = ["grounded", "unsupported", "anchored"]
 
 
+def _tag_for(model, tag=None):
+    """Panel tag for an output directory; falls back to the tag whose model matches."""
+    import judges_config as _J
+    if tag:
+        return tag
+    for t, m, _ in _J.PANEL:
+        if m == model:
+            return t
+    raise SystemExit(f"no panel tag for model {model!r}; pass --judge-tag explicitly "
+                     f"(known tags: {_J.tags()})")
+
+
+def _dst_for(episode_json, args):
+    import judges_config as _J
+    return _J.artifact_path(os.path.dirname(os.path.abspath(episode_json)), 'support',
+                            _tag_for(args.model, args.judge_tag), create=args.save)
+
+
 def extract_trace(ep: dict) -> dict:
     whys, ros = [], []
     for m in ep.get("messages", []):
@@ -72,13 +90,12 @@ def main():
     p.add_argument("--model", default=DEFAULT_JUDGE_MODEL,
                    help="judge model — NEUTRAL family (not in the benchmarked set). "
                         "deepseek-v4-pro (default) / claude-* / gpt-* all supported.")
-    p.add_argument("--save", action="store_true", help="write <episode><out-suffix>")
-    p.add_argument("--out-suffix", default="_supportscores.json",
-                   help="output filename suffix. Use a DISTINCT one per judge (e.g. "
-                        "_supportscores_laguna.json) so a second judge sits BESIDE the first "
-                        "instead of overwriting it. Without this the support labels — which "
-                        "carry the paper's headline claim — are destroyed by any re-run with a "
-                        "different model, silently and irreversibly.")
+    p.add_argument("--save", action="store_true",
+                   help="write <episode>/scoring/<judge-tag>/supportscores.json")
+    p.add_argument("--judge-tag", default=None,
+                   help="judge tag naming the output directory. One directory per judge, so a "
+                        "second judge can never overwrite a first. Defaults to the panel tag "
+                        "matching --model.")
     p.add_argument("--dry", action="store_true", help="print judge input, no API")
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--arms", default="", help="comma list to include, e.g. g0,g1")
@@ -108,7 +125,7 @@ def main():
     # resume-safe: skip already-scored episodes (unless --dry or --rescore) so re-runs don't re-bill
     if args.save and not args.rescore and not args.dry:
         _before = len(files)
-        files = [f for f in files if not os.path.exists(f[:-5] + args.out_suffix)]
+        files = [f for f in files if not os.path.exists(_dst_for(f, args))]
         _skipped = _before - len(files)
         if _skipped:
             print(f"(skipping {_skipped} already-scored; --rescore to redo)")
@@ -157,7 +174,7 @@ def main():
                    "support_score": sc, "score_max": sum(gj.WEIGHTS.values()),
                    "audit_flags": flags, "weights": gj.WEIGHTS,
                    "judge_model": args.model}
-            _dst = f[:-5] + args.out_suffix
+            _dst = _dst_for(f, args)
             _tmp = _dst + ".tmp"
             with open(_tmp, "w") as _fh:
                 json.dump(out, _fh, indent=2)

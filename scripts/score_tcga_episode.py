@@ -37,12 +37,10 @@ def parse_args():
                    help="Cohort name (e.g. BRCA, OS). Reads from episode JSON if omitted.")
     p.add_argument("--data-dir", default="data", help="Root data directory (default: data)")
     p.add_argument("--save", action="store_true", help="Save score + trace JSON files")
-    p.add_argument("--out-suffix", default="_v3scores.json",
-                   help="output filename suffix. Use a DISTINCT one per judge (e.g. "
-                        "_v3scores_laguna.json) so a second judge's mechanism_grounding and "
-                        "cohort-identity verdict sit BESIDE the first rather than overwriting "
-                        "it. The 6 computational components are seeded and reproduce exactly, "
-                        "so per-judge files differ only in the two LLM-derived fields.")
+    p.add_argument("--judge-tag", default=None,
+                   help="judge tag naming the output directory: "
+                        "<episode>/scoring/<tag>/v3scores.json. Defaults to the panel tag "
+                        "matching --llm-model.")
     p.add_argument("--llm-model", default=DEFAULT_JUDGE_MODEL,
                    help="judge model for outcome LLM components (NEUTRAL family). "
                         "deepseek-v4-pro (default) / claude-* / gpt-*")
@@ -69,6 +67,18 @@ def apply_sample_rename(dataset: dict, sample_id_map: dict) -> dict:
         else:
             result[key] = val
     return result
+
+
+def _tag_for(model, tag=None):
+    """Panel tag for an output directory; falls back to the tag whose model matches."""
+    import judges_config as _J
+    if tag:
+        return tag
+    for t, m, _ in _J.PANEL:
+        if m == model:
+            return t
+    raise SystemExit(f"no panel tag for model {model!r}; pass --judge-tag explicitly "
+                     f"(known tags: {_J.tags()})")
 
 
 def main():
@@ -255,8 +265,15 @@ def main():
 
     if args.save:
         stem = episode_path.stem
-        scores_path = episode_path.parent / f"{stem}{args.out_suffix}"
-        trace_path = episode_path.parent / f"{stem}_v3trace.json"
+        import judges_config as _J
+        _tag = _tag_for(args.llm_model, args.judge_tag)
+        _sdir = Path(_J.scoring_dir(str(episode_path.parent), _tag))
+        _sdir.mkdir(parents=True, exist_ok=True)
+        scores_path = _sdir / _J.ARTIFACTS["outcome"]
+        # The trace summary is derived but judge-INDEPENDENT (pure trace statistics, no model
+        # call), so it lives at the scoring root rather than under a judge, where filing it
+        # would imply a judge produced it.
+        trace_path = Path(_J.scoring_dir(str(episode_path.parent))) / _J.TRACE_FILE
 
         combined_scores = score_report.to_dict()
         combined_scores["trace_summary"] = {

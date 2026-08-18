@@ -46,21 +46,72 @@ PANEL = [
     ('qwen',     _QWEN_MODEL, 'Qwen, St. Jude AIE serving platform'),
 ]
 
-# artifact kind -> filename stem. `{tag}` is '' for the legacy unsuffixed files.
+# artifact kind -> filename inside the episode's scoring/<judge>/ directory.
 ARTIFACTS = {
-    'cot':     '_cotsummary{tag}.json',    # summarize_cot.py     identity_derivation, rigor
-    'support': '_supportscores{tag}.json',  # score_support.py     d1/d2/d3 strategy + support
-    'outcome': '_v3scores{tag}.json',       # score_tcga_episode.py mechanism_grounding + gate
+    'cot':     'cotsummary.json',      # summarize_cot.py      identity_derivation, rigor
+    'support': 'supportscores.json',   # score_support.py      d1/d2/d3 strategy + support
+    'outcome': 'v3scores.json',        # score_tcga_episode.py mechanism_grounding + gate
+}
+
+# Legacy flat filenames, kept ONLY so the migration can find and remove them.
+LEGACY_ARTIFACTS = {
+    'cot':     ['_cotsummary.json', '_cotsummary_j2.json', '_cotsummary_j3.json'],
+    'support': ['_supportscores.json'],
+    'outcome': ['_v3scores.json'],
 }
 
 LEGACY_TAG = 'unrecorded'
 
+# ── Episode directory layout ──────────────────────────────────────────────────────────────
+# An episode directory used to flatten three different provenances into one namespace:
+# harness inputs (codebook, gene_map), the AGENT's own analysis outputs (pca_plot.png,
+# de_results.csv), and SCORER outputs. Two consequences, both real:
+#
+#   1. Episode discovery was a glob plus a blocklist of substrings guessed to appear in
+#      non-episode filenames ("scores", "trace", "summary", "codebook", "gene_map",
+#      "grouping"). That is a guess about names an agent might invent, and agents do invent
+#      them — grouping_stage2.json, proposed_grouping.json, grouping_stage2_blinded.json all
+#      exist in the clean run. A directory boundary replaces a guess with a fact.
+#   2. Removing one judge's artifacts meant pattern-matching filenames rather than deleting a
+#      directory.
+#
+# Harness files stay at the episode root; everything the agent wrote goes to outputs/; every
+# scorer artifact goes to scoring/, split by judge so a judge's whole contribution is one
+# directory. _v3trace.json sits at scoring/ root because it is derived but judge-INDEPENDENT
+# (pure trace statistics, no model call) — filing it under a judge would imply otherwise.
+OUTPUTS_DIR = 'outputs'
+SCORING_DIR = 'scoring'
+TRACE_FILE = 'v3trace.json'
 
-def suffix(kind: str, tag: str | None) -> str:
-    """Filename suffix for an artifact kind and judge tag. tag=None -> the legacy unsuffixed file."""
+# Files the HARNESS writes. Everything else that is not a scorer artifact is agent-created.
+HARNESS_FILES = {'codebook.json', 'gene_map.json', 'sample_codebook.json',
+                 'grouping.json', 'grouping_blinded_k5.json'}
+
+
+def scoring_dir(episode_dir: str, tag: str | None = None) -> str:
+    """<episode>/scoring[/<tag>] — the judge's directory, or the scoring root."""
+    base = os.path.join(episode_dir, SCORING_DIR)
+    return base if tag is None else os.path.join(base, tag)
+
+
+def artifact_path(episode_dir: str, kind: str, tag: str, *, create: bool = False) -> str:
+    """Full path to one judge's artifact of one kind for one episode.
+
+    `create=True` makes the judge directory. Writers should pass it: the atomic-write pattern
+    used by these scorers opens `<path>.part` first, which fails with a bare FileNotFoundError
+    naming the .part file if the directory is absent — an error that reads like a corrupt
+    temp-file bug rather than a missing directory.
+    """
     if kind not in ARTIFACTS:
         raise ValueError(f"unknown artifact kind {kind!r}; expected one of {sorted(ARTIFACTS)}")
-    return ARTIFACTS[kind].format(tag='' if tag is None else f'_{tag}')
+    d = scoring_dir(episode_dir, tag)
+    if create:
+        os.makedirs(d, exist_ok=True)
+    return os.path.join(d, ARTIFACTS[kind])
+
+
+def outputs_dir(episode_dir: str) -> str:
+    return os.path.join(episode_dir, OUTPUTS_DIR)
 
 
 def tags() -> list[str]:

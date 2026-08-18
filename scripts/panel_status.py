@@ -38,11 +38,11 @@ def main() -> int:
     rows, complete = {}, True
     for kind in ('cot', 'support', 'outcome'):
         rows[kind] = {}
-        for tag in [None] + J.tags():
-            suf = J.suffix(kind, tag)
-            have = sum(1 for e in eps if os.path.exists(e[:-5] + suf))
-            rows[kind][tag or J.LEGACY_TAG] = have
-            if tag is not None and have != n:
+        for tag in J.tags():
+            have = sum(1 for e in eps
+                       if os.path.exists(J.artifact_path(os.path.dirname(e), kind, tag)))
+            rows[kind][tag] = have
+            if have != n:
                 complete = False
 
     if '--json' in sys.argv:
@@ -50,13 +50,13 @@ def main() -> int:
         return 0 if complete else 1
 
     print(f"  episodes: {n}   source: {runs_config.SOURCE}")
-    hdr = [J.LEGACY_TAG] + J.tags()
+    hdr = J.tags()
     print(f"  {'artifact':10} " + "".join(f"{h:>13}" for h in hdr))
     for kind, r in rows.items():
         cells = []
         for h in hdr:
             v = r.get(h, 0)
-            mark = '' if (h == J.LEGACY_TAG or v == n) else f" (-{n - v})"
+            mark = '' if v == n else f" (-{n - v})"
             cells.append(f"{str(v) + mark:>13}")
         print(f"  {kind:10} " + "".join(cells))
     print(f"\n  panel complete (all 3 judges x 3 artifacts x {n}): {'YES' if complete else 'NO'}")

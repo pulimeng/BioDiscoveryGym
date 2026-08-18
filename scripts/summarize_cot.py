@@ -166,6 +166,24 @@ def build_input(rec: dict, blind: bool = True) -> str:
 LAST_USAGE: dict | None = None
 
 
+def _outpath(episode_json: str, args) -> str:
+    """<episode>/scoring/<tag>/cotsummary.json for this episode."""
+    import judges_config as _J
+    tag = args.judge_tag or _tag_for(args.model)
+    d = os.path.dirname(os.path.abspath(episode_json))
+    return _J.artifact_path(d, 'cot', tag, create=args.save)
+
+
+def _tag_for(model: str) -> str:
+    """Fall back to the panel tag whose model matches, so --judge-tag is optional."""
+    import judges_config as _J
+    for t, m, _ in _J.PANEL:
+        if m == model:
+            return t
+    raise SystemExit(f"no panel tag for model {model!r}; pass --judge-tag explicitly "
+                     f"(known tags: {_J.tags()})")
+
+
 def call_judge(user_msg: str, model: str = DEFAULT_JUDGE_MODEL) -> dict:
     global LAST_USAGE          # declared once: Python rejects a second `global` after assignment
     LAST_USAGE = None
@@ -240,11 +258,13 @@ def main():
     ap.add_argument("run_dir")
     ap.add_argument("--model", default=DEFAULT_JUDGE_MODEL,
                     help="NEUTRAL judge (not a benchmarked family): deepseek-v4-pro / claude-* / gpt-*")
-    ap.add_argument("--save", action="store_true", help="write <episode><out-suffix>")
-    ap.add_argument("--out-suffix", default="_cotsummary.json",
-                    help="output filename suffix. Use a distinct one (e.g. _cotsummary_j2.json) "
-                         "for a SECOND judge so it doesn't clobber the first — enables the "
-                         "multi-judge robustness check (cot_compare.py --agree).")
+    ap.add_argument("--save", action="store_true",
+                    help="write <episode>/scoring/<judge-tag>/cotsummary.json")
+    ap.add_argument("--judge-tag", default=None,
+                    help="judge tag naming the output directory: "
+                         "<episode>/scoring/<tag>/cotsummary.json. One directory per judge, so "
+                         "a judge's whole contribution is one place and a second judge can "
+                         "never overwrite a first. Defaults to the panel tag matching --model.")
     ap.add_argument("--dry", action="store_true", help="print the distilled LLM input, no API call")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--arms", default="", help="comma list to include, e.g. g0,g1,g2")
@@ -280,7 +300,7 @@ def main():
         files = [f for f in files if os.path.basename(f).split("_")[0] in arms]
     if args.save and not args.rescore and not args.dry:
         before = len(files)
-        files = [f for f in files if not os.path.exists(f[:-5] + args.out_suffix)]
+        files = [f for f in files if not os.path.exists(_outpath(f, args))]
         if before - len(files):
             print(f"(skipping {before - len(files)} already-summarized; --rescore to redo)")
     if args.limit:
@@ -319,7 +339,7 @@ def main():
             # a dropped connection killing the batch) — and a truncated file still *exists*, so
             # the resume filter above skips it permanently and the episode is silently lost from
             # the panel. rename() is atomic on POSIX, so a file is either absent or complete.
-            _out = f[:-5] + args.out_suffix
+            _out = _outpath(f, args)
             _tmp = _out + ".part"
             with open(_tmp, "w") as _fh:
                 json.dump(v, _fh, indent=2)

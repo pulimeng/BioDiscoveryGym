@@ -81,9 +81,9 @@ import sys; sys.path.insert(0,'scripts'); import judges_config as J; print(J.mod
         printf '%s\n' "$EPISODES" | while IFS= read -r ep; do
           [ -z "$ep" ] && continue
           if [ $((i % JOBS)) -eq "$w" ]; then
-            out="${ep%.json}_v3scores_${tag}.json"
+            out="$(dirname "$ep")/scoring/${tag}/v3scores.json"
             [ -f "$out" ] || $PY scripts/score_tcga_episode.py "$ep" --save \
-                --llm-model "$MODEL" --out-suffix "_v3scores_${tag}.json" \
+                --llm-model "$MODEL" --judge-tag "$tag" \
                 >/dev/null 2>>"$LOGDIR/${tag}_outcome_w${w}.log" \
                 || echo "  !! $ep" >>"$LOGDIR/${tag}_outcome_w${w}.log"
           fi
@@ -92,22 +92,22 @@ import sys; sys.path.insert(0,'scripts'); import judges_config as J; print(J.mod
       ) &
     done
     wait
-    echo "  done: $(printf '%s\n' "$EPISODES" | sed "s/\.json$/_v3scores_${tag}.json/" | xargs -I{} sh -c '[ -f "{}" ] && echo 1' 2>/dev/null | wc -l | xargs)/$N_EP"
+    echo "  done: $(find "${DIRS[@]}" -path "*/scoring/${tag}/v3scores.json" | wc -l | xargs)/$N_EP"
   done
 
   # ---- per-lane artifacts (CoT, support): lanes in parallel, each scorer walks its lane --
   for art in cot support; do
     case "$art" in
-      cot)     SCRIPT=scripts/summarize_cot.py;  SUF="_cotsummary_${tag}.json" ;;
-      support) SCRIPT=scripts/score_support.py;  SUF="_supportscores_${tag}.json" ;;
+      cot)     SCRIPT=scripts/summarize_cot.py;  SUF="scoring/${tag}/cotsummary.json" ;;
+      support) SCRIPT=scripts/score_support.py;  SUF="scoring/${tag}/supportscores.json" ;;
     esac
     echo "=== [$tag] $art  (${#DIRS[@]} lanes in parallel) ==="
     for d in "${DIRS[@]}"; do
-      $PY "$SCRIPT" "$d" --model "$MODEL" --save --out-suffix "$SUF" \
+      $PY "$SCRIPT" "$d" --model "$MODEL" --save --judge-tag "$tag" \
           >>"$LOGDIR/${tag}_${art}_$(basename "$(dirname "$d")")_$(basename "$d").log" 2>&1 &
     done
     wait
-    echo "  done: $(find "${DIRS[@]}" -name "*${SUF}" | wc -l | xargs)/$N_EP"
+    echo "  done: $(find "${DIRS[@]}" -path "*/${SUF}" | wc -l | xargs)/$N_EP"
   done
 done
 
