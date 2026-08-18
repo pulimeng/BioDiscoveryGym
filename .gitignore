@@ -60,7 +60,26 @@ set_keys.sh
 # local-only provider debug tooling (not for the repo)
 scripts/debug_gemini.py
 
-# Stray agent grouping artifacts at repo root (mis-resolved output_dir)
+# Stray agent run_code artifacts at repo root (mis-resolved output_dir).
+#
+# The agent writes its analysis outputs to the process CWD. When output_dir fails to resolve,
+# that CWD is the repo root, and an episode's de_results.csv / cna_results.csv / metadata_pca.csv
+# / plots land here. The old list enumerated the three filenames we happened to have seen, so the
+# next episode's outputs (five CSVs, 2026-08-11) arrived untracked and unexplained.
+#
+# Anchored with a leading slash so ONLY the repo root is covered — episode copies under results/
+# are untouched (results/ is ignored wholesale anyway), and a future scripts/*.csv stays visible.
+# Verified before adding: no tracked .csv, .png or .json exists at repo root.
+/*.csv
+/*.png
 grouping_temp.json
 grouping.json
 test_plot.png
+
+# Manuscript — unpublished paper drafts, figures and strategy docs. Kept local.
+#
+# NOTE: the 12 files previously tracked here (drafts, PREREGISTRATION.md, figures/*.json) were
+# untracked in this commit but REMAIN in the repo's public history. Ignoring a path does not
+# unpublish what was already pushed; if these must be non-public, the history needs rewriting or
+# the repo needs to be private.
+manuscript/
