@@ -220,16 +220,36 @@ def build_user_msg(trace: dict, cohort: str) -> str:
 
 
 def _is_complete(v: dict) -> bool:
-    """All three decisions present with their required sub-fields, plus recall_type on d2.
-    DeepSeek (tool_choice='auto') doesn't enforce the schema, so we validate + retry ourselves —
-    this is what a missing 'd2_identity' (or any dropped decision) failed on before."""
+    """All three decisions present, with required sub-fields whose values are IN the enum.
+
+    The endpoints run with tool_choice='auto', which does not enforce the declared schema, so
+    validation is ours. Presence alone was checked before, and that let out-of-enum values
+    through: laguna emitted strategy='derived', 'no_identification', 'grounded_recall',
+    'bare_assertion', and once the typo 'exploloit'; support='supported'; and an invented
+    fourth decision 'd1_partition_card_ref'. None of those raise anywhere downstream — they
+    simply fail every == comparison, so the episode silently drops out of one denominator while
+    still counting in the total. 18 of 570 laguna files were affected before this check existed.
+
+    Enum membership is therefore part of completeness: a bad value triggers the same retry a
+    missing field does, and only a conforming verdict is ever written.
+    """
     if not isinstance(v, dict):
+        return False
+    # No extra decisions. An invented key is a sign the judge misread the task, and it would sit
+    # in `levels` looking like a real decision to anything that iterates it.
+    if set(v) - set(DECISIONS):
         return False
     for d in DECISIONS:
         dd = v.get(d)
         if not isinstance(dd, dict) or not all(dd.get(k) for k in _DECISION_SCHEMA["required"]):
             return False
-    return bool((v.get("d2_identity") or {}).get("recall_type"))
+        if dd.get("strategy") not in _ENUMS["strategy"]:
+            return False
+        if dd.get("support") not in _ENUMS["support"]:
+            return False
+        if dd.get("contradiction") not in _ENUMS["contradiction"]:
+            return False
+    return (v.get("d2_identity") or {}).get("recall_type") in RECALL_TYPES
 
 
 def call_judge(user_msg: str, model: str = DEFAULT_JUDGE_MODEL) -> dict:

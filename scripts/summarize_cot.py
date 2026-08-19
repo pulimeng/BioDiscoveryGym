@@ -88,6 +88,18 @@ _COT_TOOL = {
     },
 }
 _REQUIRED = _COT_TOOL["input_schema"]["required"]
+# Declared enums, enforced here. tool_choice is "auto" on the self-hosted endpoints, so the
+# schema is advisory: laguna returned identity_derivation='derived-from-priors' and
+# 'mostly data-derived', and validation_rigor='medium-high' and 'highest'. Those are not
+# errors to any consumer — they are values that match no branch, so the episode quietly leaves
+# the numerator of whatever rate is being computed. Treat them like a missing field and retry.
+_ENUM_FIELDS = {k: set(spec["enum"])
+                for k, spec in _COT_TOOL["input_schema"]["properties"].items()
+                if isinstance(spec, dict) and "enum" in spec}
+
+
+def _enums_ok(v: dict) -> bool:
+    return all(v.get(k) in allowed for k, allowed in _ENUM_FIELDS.items() if k in _REQUIRED)
 
 
 def _trunc(s, n):
@@ -241,7 +253,7 @@ def call_judge(user_msg: str, model: str = DEFAULT_JUDGE_MODEL) -> dict:
             v = _parse(r)
         except Exception:
             v = None
-        if isinstance(v, dict) and all(k in v for k in _REQUIRED):
+        if isinstance(v, dict) and all(k in v for k in _REQUIRED) and _enums_ok(v):
             _u = getattr(r, "usage", None)
             LAST_USAGE = ({"input_tokens": getattr(_u, "prompt_tokens", None),
                            "output_tokens": getattr(_u, "completion_tokens", None)} if _u else None)
