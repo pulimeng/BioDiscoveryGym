@@ -39,7 +39,10 @@ import runs_config
 
 STRAT = {'explore', 'exploit', 'mixed'}
 SUPPORT = {'grounded', 'unsupported', 'anchored'}
-VERDICT = {'true_cohort', 'mislead_cohort', 'other', 'hedged', 'error', ''}
+# NOT ''. An empty verdict was in this set and therefore passed, which is how a laguna episode
+# whose judge misspelled its own key ("verad" instead of "verdict") audited clean while being a
+# G3a mislead episode recorded as a non-event. Empty is the single most dangerous value here.
+VERDICT = {'true_cohort', 'mislead_cohort', 'other', 'hedged'}
 DERIV = {'data-derived', 'mixed', 'recalled-prior', 'not-established'}
 SEEDED = ['structure_validity', 'clinical_signal', 'genomic_coherence_drivers',
           'reference_concordance', 'marker_evidence', 'pathway_validity']
@@ -85,7 +88,11 @@ def main() -> int:
                     d = json.load(open(p))
                 except Exception as e:
                     fail(f"UNREADABLE {p}: {type(e).__name__}"); continue
-                payloads[(tag, kind)][lab] = json.dumps(d, sort_keys=True)
+                # Key by full episode PATH, not label: the same label (g2_brca_s7) exists in
+                # all six lanes, so keying by label overwrote across lanes and the independence
+                # check silently compared 95 episodes instead of 570 — a 6x under-count that
+                # reported "0/95" as though it were the whole panel.
+                payloads[(tag, kind)][ep] = json.dumps(d, sort_keys=True)
 
                 # 1 provenance
                 jm = d.get('judge_model')

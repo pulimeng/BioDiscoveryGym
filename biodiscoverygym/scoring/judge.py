@@ -375,6 +375,7 @@ _COHORT_FULL_NAMES: dict[str, str] = {
 }
 
 _FOOLED_VERDICTS = ("mislead_cohort", "other")
+_VALID_VERDICTS = {"true_cohort", "mislead_cohort", "other", "hedged"}
 
 _COHORT_IDENTITY_SYSTEM = """\
 You are evaluating whether a cancer-genomics agent correctly identified the cancer
@@ -445,8 +446,20 @@ def score_cohort_identity(
             messages=[{"role": "user", "content": user_msg}],
         )
         result = _parse_json(response.content[0].text)
-        verdict = str(result.get("verdict", "hedged"))
-        result["fooled"] = verdict in _FOOLED_VERDICTS
+        # The verdict key must be PRESENT and in-vocabulary. It used to default: .get("verdict",
+        # "hedged") — and a judge that misspells its own key ("verad": "mislead_cohort", observed
+        # from laguna on g3a_lusc_mislead_luad_s7) then produced a scored episode with an empty
+        # verdict, gated=False, and a plausible normalized score. Downstream that is a mislead
+        # episode counted as a non-event: the exact shape that killed two earlier headlines.
+        # Raise instead, so the caller records an error and the scorers refuse to save.
+        verdict = result.get("verdict")
+        if verdict not in _VALID_VERDICTS:
+            raise ValueError(
+                f"cohort-identity judge returned no usable verdict "
+                f"(got keys={sorted(result)!r}, verdict={verdict!r}); "
+                f"expected one of {sorted(_VALID_VERDICTS)}")
+        result["verdict"] = str(verdict)
+        result["fooled"] = str(verdict) in _FOOLED_VERDICTS
         return 0.0, result
     except Exception as e:
         return 0.0, {"error": str(e), "verdict": "error"}
