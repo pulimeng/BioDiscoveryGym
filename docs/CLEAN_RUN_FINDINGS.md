@@ -1,5 +1,17 @@
 # Clean-run findings — what replicated, what did not
 
+> **⚠ SUPERSEDED FOR ALL JUDGE-DERIVED NUMBERS (2026-08-21).** Every figure below comes from a
+> SINGLE judge (nemotron). The study now uses a three-family panel — nemotron / laguna / qwen,
+> one pass each over all 570 episodes — and the panel changes several of them:
+> adoption **126/133 = 94.7%** (not 127/135 = 94.1%); the G0→G2 strategy shift **+42.9 / +31.5 pt**
+> (not +50.8 / +61.9); and two sub-claims are retracted outright — "the scaffold grounds worse"
+> and "blinding improves grounding" were both single-judge artifacts. 98/570 episodes have no
+> panel consensus on the strategy label.
+>
+> This file is kept as the single-judge record and for its retraction post-mortems, which stand.
+> **For any current number use `manuscript/EXPLORE_EXPLOIT_PAPER.md` §5b and the figure JSONs.**
+
+
 **Date:** 2026-08-12 · **Supersedes pilot numbers for every claim below.**
 
 > **⚠ CORRECTION 2026-08-13 — §2b IS RETRACTED.** The staged-prompt→more-fooled result reported

@@ -43,7 +43,9 @@ def _cot_judge_name(runs):
                 continue
             if m:
                 seen.add(m)
-            break
+            # NO `break`. It stopped after the first file in each run dir, so with a panel it
+            # reported ONE family's name for a run judged by three — the same stale-attribution
+            # failure this function was written to prevent, in a new form.
     return "+".join(sorted(seen)) if seen else "unrecorded"
 
 from g3_exposure import exposed_g3
@@ -91,13 +93,37 @@ SIZES = _sizes()
 
 def metrics(D):
     """Outcome / grounding / documentation / leak for one run dir."""
+    # PANEL-REDUCED, not first-judge. These globbed J.tags()[0] — nemotron — while the report
+    # header said the results were judged by all three families. Every outcome, support,
+    # unsupported-rate and G3 fraction in the headline table was therefore a SINGLE-JUDGE value
+    # presented as a panel one, which is exactly the misattribution the panel exists to avoid.
+    # Continuous fields take the mean across judges, categorical fields the majority; an episode
+    # the families cannot agree on carries None and is excluded from that rate rather than
+    # silently taking nemotron's answer.
     v3, sup = {}, {}
     for p in glob.glob(panel_data.artifact_glob(D, 'outcome', J.tags()[0])):
-        l = panel_data.label_of(p)
-        v3[l] = json.load(open(p))
+        ed = panel_data.episode_dir_of(p)
+        per = panel_data.load_all_judges(ed, 'outcome')
+        if not per:
+            continue
+        base = dict(next(iter(per.values())))
+        base['normalized'] = panel_data.mean([v.get('normalized') for v in per.values()])
+        base['cohort_identity_verdict'] = J.consensus(
+            [v.get('cohort_identity_verdict') for v in per.values()]) or ''
+        v3[panel_data.label_of(p)] = base
     for p in glob.glob(panel_data.artifact_glob(D, 'support', J.tags()[0])):
-        l = panel_data.label_of(p)
-        sup[l] = json.load(open(p))
+        ed = panel_data.episode_dir_of(p)
+        per = panel_data.load_all_judges(ed, 'support')
+        if not per:
+            continue
+        base = dict(next(iter(per.values())))
+        base['support_score'] = panel_data.mean([x.get('support_score') for x in per.values()])
+        base['levels'] = {k: {'strategy': J.consensus([(x['levels'].get(k) or {}).get('strategy')
+                                                       for x in per.values()]),
+                              'support': J.consensus([(x['levels'].get(k) or {}).get('support')
+                                                      for x in per.values()])}
+                          for k in ('d1_partition', 'd2_identity', 'd3_mechanism')}
+        sup[panel_data.label_of(p)] = base
     hon = [l for l in v3 if arm(l) in ('g0', 'g1', 'g2')]
     d2 = Counter(sup[l]['levels']['d2_identity']['support'] for l in sup if arm(l) in ('g0', 'g1', 'g2'))
     nsup = sum(d2.values()) or 1
@@ -319,7 +345,7 @@ better on that axis, accounting for direction (lower is better for unsupported /
 <div class="panel"><div class="tblwrap"><table><thead><tr><th>arm</th><th>model</th>
 <th class="num">detailed</th><th class="num">lean</th><th class="num">&Delta; pts</th>
 <th>per-pass ranges</th></tr></thead><tbody>{deriv_rows}</tbody></table></div>
-<p class="lead">Consensus = majority of 3 independent judge passes; bracketed values are the three
+<p class="lead">Consensus = majority across {len(SUFFIXES)} independent judge FAMILIES (one pass each, NOT repeated sampling of one model); bracketed values are the three
 individual passes. <b>&ldquo;Separated&rdquo; means the two arms&rsquo; per-pass ranges do not
 overlap</b> &mdash; the delta cannot be explained by judge noise. Quote separated rows only.</p></div>
 
@@ -342,13 +368,16 @@ blinding cannot hide, so this is a benchmark leak that exists independently of t
 
 <h2>Limitations</h2>
 <div class="warn">
-(1) <b>n = 21 per honest arm</b> (12 for G3), single seed-triple. Deltas of a few points are noise.<br>
-(2) <b>Judge replicates are same-model</b> ({JUDGE_NAME} &times;3) &mdash; they bound stochasticity, not
-cross-family bias. A different-family judge has not been run.<br>
-(3) <b>identity_derivation is one categorical call</b>; the lean prompt&rsquo;s own wording may nudge
-it. Mitigated by 3-pass consensus and the separation test, not eliminated.<br>
-(4) <b>Gemini is Flash tier</b> &mdash; its deltas are confounded with model tier; the clean ablation
-is the two flagships.
+(1) <b>n = {N_PER_LANE} per lane</b> ({N_TOTAL} episodes), single seed-triple. Deltas of a few
+points are noise.<br>
+(2) <b>Judges are three DISTINCT families</b> ({JUDGE_NAME}), one pass each &mdash; this bounds
+cross-family bias but no longer bounds stochasticity, because a family is not sampled twice.
+Judge noise and family difference are confounded in the opposite direction from before.<br>
+(3) <b>identity_derivation is one categorical call.</b> Panel consensus mitigates it and does not
+eliminate it: <b>98 of {N_TOTAL} episodes have no majority</b> on the D2 strategy label and are
+excluded from every strategy rate here.<br>
+(4) <b>Gemini 2.5 Pro is a generation behind</b> (3.1 Pro and 3.5 Flash could not complete a run)
+&mdash; its deltas are confounded with model generation, not tier.
 </div>
 
 <div class="foot">Generated by <code>scripts/gen_manuscript_report.py</code> &mdash; TCGA benchmark only.
@@ -359,4 +388,4 @@ Deep-dive on the prompt ablation: <code>scripts/gen_ablation_report.py</code> &r
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 open(OUT, 'w').write(html)
 print(f"wrote {OUT}  ({len(html)} bytes)")
-print(f"  TCGA only: {len(DATA)} models x 2 prompts, {len(SUFFIXES)} judge passes")
+print(f"  TCGA only: {len(DATA)} models x 2 prompts, {len(SUFFIXES)} judge FAMILIES (one pass each)")

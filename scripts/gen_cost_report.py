@@ -159,6 +159,14 @@ def judge_usage():  # noqa: C901
                     rec = json.load(open(jp))
                 except Exception:
                     rec = {}
+                # Provenance per ARTIFACT, inside the loop. Reading judge_model from `rec`
+                # AFTER the loop recorded only the last judge iterated, so 1,710 calls — 570
+                # each from three families — were labelled "judge x3 (Qwen)". False
+                # attribution, and it would have priced the combined tokens at one family's
+                # rate had Qwen been priced.
+                jm_i = rec.get('judge_model') if isinstance(rec, dict) else None
+                if jm_i:
+                    judge_models.add(jm_i)
                 u = rec.get("judge_usage") or {}
                 if u.get("input_tokens") and u.get("output_tokens"):
                     ei += u["input_tokens"]; eo += u["output_tokens"]; measured += 1
@@ -168,9 +176,6 @@ def judge_usage():  # noqa: C901
                     eo += len(json.dumps(rec, separators=(",", ":"))) // 4
             if ei or eo:
                 tin += ei; tout += eo
-                jm = rec.get('judge_model') if isinstance(rec, dict) else None
-                if jm:
-                    judge_models.add(jm)
                 lab = os.path.basename(p)[:-5]
                 a = lab.split('_')[0]
                 eps.append({'label': lab, 'arm': 'g3' if a.startswith('g3') else a,
@@ -359,7 +364,7 @@ def main():
         # arithmetic, not the missing data.
         panel_data.require_data(jt, 'judge tokens', runs_config.SOURCE)
         print("\n" + "=" * 90)
-        print(f"  JUDGE ({len(JUDGE_SUFFIXES)} passes x {JN} episodes, neutral {JM_LABEL})")
+        print(f"  JUDGE ({len(JUDGE_SUFFIXES)} FAMILIES x {JN} episodes, one pass each: {JM_LABEL})")
         print("=" * 90)
         src = ("provider-reported" if J.get('measured') == J['calls']
                else f"ESTIMATED ({J['calls']-J.get('measured',0)}/{J['calls']} calls)")
@@ -447,7 +452,7 @@ def main():
         jmoney = ((f"<td class='num'>${jc/jt*1e7:.2f}</td><td class='num'>&mdash;</td>"
                    f"<td class='num'><b>${jc:,.2f}</b></td>") if jc is not None
                   else f"{UNP}<td class='num'>&mdash;</td>{UNP}")
-        jrow = (f"<tr><td class='grp'>judge &times;{len(JUDGE_SUFFIXES)} ({JM_LABEL})</td>"
+        jrow = (f"<tr><td class='grp'>judge: {len(JUDGE_SUFFIXES)} families &times;1 pass ({JM_LABEL})</td>"
                 f"<td>all arms</td>"
                 f"<td class='num'>{J['calls']:,} calls</td><td class='num'>{J['input']:,}</td>"
                 f"<td class='num'>~{J['output']:,}</td>"

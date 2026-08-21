@@ -37,6 +37,7 @@ from extract_cot import extract_episode
 # pilot counts, pilot model names and "no silent zeros", with no indication it had ignored the
 # variable. An integrity audit that silently audits the wrong data is the failure mode it exists
 # to catch. triples() already returns (label, prompt, path) — the shape this file wanted.
+import judges_config as J
 import runs_config
 
 RUNS = runs_config.triples()
@@ -150,17 +151,30 @@ def audit_gates():
     for model, prompt, run in RUNS:
         c = Counter()
         for p, lab in episodes(run, 'g3'):
-            sp = p[:-5] + '_v3scores.json'
-            if not os.path.exists(sp):
+            # PANEL LAYOUT. This built the legacy flat path `p[:-5] + '_v3scores.json'`, which
+            # no artifact has had since the reorganisation. Every gate file therefore failed the
+            # exists() check, the loop counted nothing, n came to 0 — and an audit whose whole
+            # purpose is to catch silent zeros reported "All gates scored — no silent zeros."
+            # A false PASS is worse than a crash: it is the failure this file exists to detect,
+            # committed by the detector.
+            ep_dir = os.path.dirname(os.path.abspath(p))
+            verdicts = [json.load(open(q)).get('cohort_identity_verdict')
+                        for q in (J.artifact_path(ep_dir, 'outcome', t) for t in J.tags())
+                        if os.path.exists(q)]
+            if not verdicts:
+                c['MISSING'] += 1
                 continue
-            c[json.load(open(sp)).get('cohort_identity_verdict')] += 1
+            # Consensus across judges; a panel that cannot agree is its own category, never
+            # silently folded into a verdict.
+            c[J.consensus(verdicts) or 'NO_CONSENSUS'] += 1
         # UNUSABLE, not just 'error'. A scorer that dies before writing anything leaves a
         # PLACEHOLDER — verdict "", empty raw_scores/diagnostics, normalized 0.0, wall_time ~4e-06 —
         # and `verdict == 'error'` does not match it. One such file
         # (clean_lean/gemini25pro/g3a_ov_mislead_brca_s7) sat inside the exposed denominator as a
         # non-fooled episode. Same silent-zero class this audit exists to catch, one level down.
         n = sum(c.values())
-        err = c.get('error', 0) + c.get('', 0) + c.get(None, 0)
+        err = (c.get('error', 0) + c.get('', 0) + c.get(None, 0)
+               + c.get('MISSING', 0))
         bad += err
         res[f"{model}/{prompt}"] = dict(n=n, verdicts=dict(c), errored=err,
                                         fooled=c.get('mislead_cohort', 0))
@@ -172,15 +186,28 @@ def audit_gates():
         print("  fooled = (verdict == 'mislead_cohort'), so these are silently counted as NOT")
         print("  fooled — inflating apparent robustness. Re-score them or exclude them explicitly;")
         print("  do not let them pass as zeros.")
+    elif sum(v['n'] for v in res.values()) == 0:
+        # "No silent zeros" over ZERO episodes is not a pass, it is the absence of evidence.
+        # This exact sentence was printed while the audit was reading paths that no longer
+        # existed. An empty check must fail, not reassure.
+        print("\n  REFUSING: 0 gate files found. This audit cannot pass on an empty set —\n"
+              "  that is the failure it exists to catch. Check BDG_RUNS and the panel layout.",
+              file=sys.stderr)
+        raise SystemExit(2)
     else:
-        print("\n  All gates scored — no silent zeros.")
+        print(f"\n  All gates scored — no silent zeros "
+              f"({sum(v['n'] for v in res.values())} episodes, panel consensus).")
     return res, bad
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--json', type=str, default=None)
+    # Default to the figure the manuscript reads. It was previously written only when --json
+    # was passed by hand, so nothing regenerated it: the checked-in file still held pre-panel
+    # single-judge counts (n=21 per lane) while panel-derived figures sat beside it, and no
+    # script owned it. A figure with no generator goes stale silently by construction.
+    ap.add_argument('--json', type=str, default='manuscript/figures/integrity_audit.json')
     args = ap.parse_args()
     leak = audit_leak()
     gates, bad = audit_gates()
@@ -190,7 +217,9 @@ def main():
         # invocation silently produces pilot numbers into the same path the clean run
         # writes. Without this field the only way to tell them apart is to infer it from
         # which Gemini appears in the payload — which worked by luck, not by design.
-        json.dump(dict(source=runs_config.SOURCE, leak=leak, gates=gates, errored_total=bad),
+        json.dump(dict(source=runs_config.SOURCE, judges=J.tags(),
+                       verdicts='panel consensus across judge families',
+                       leak=leak, gates=gates, errored_total=bad),
                   open(args.json, 'w'), indent=2)
         print(f"\nwrote {args.json}")
     return 1 if bad else 0

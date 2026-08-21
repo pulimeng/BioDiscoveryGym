@@ -58,10 +58,19 @@ def load(wave=None, judges=None):
             for tag in judges:
                 v3, sup, cot = (_read(J.artifact_path(epdir, k, tag))
                                 for k in ('outcome', 'support', 'cot'))
-                if v3 is None and sup is None and cot is None:
-                    missing[tag] += 1
+                # A judge counts as present only with ALL THREE artifacts. Treating "any one
+                # exists" as present meant a judge that had written CoT but not support or
+                # outcome still counted toward n_judges, so require_complete() — which checks
+                # the judge COUNT — would pass while the support consensus for that episode was
+                # actually a two-judge majority. Latent while the panel is complete; corrupting
+                # the moment a scorer run is interrupted partway.
+                if v3 is None or sup is None or cot is None:
+                    if v3 is None and sup is None and cot is None:
+                        missing[tag] += 1
+                    else:
+                        missing[f'{tag}:partial'] += 1
                     continue
-                per[tag] = (v3 or {}, sup or {}, cot or {})
+                per[tag] = (v3, sup, cot)
             if not per:
                 missing['episodes_with_no_judge'] += 1
                 continue
@@ -109,9 +118,12 @@ def require_complete(rows, missing, allow_partial=False):
         sys.exit(f"REFUSING: {len(rows)} episodes judged, {n_unjudged} unjudged ({by}).\n"
                  f"  Run scripts/run_judge.sh, then scripts/panel_status.py.")
     short = [r for r in rows if r['n_judges'] != expected]
-    if short and not allow_partial:
+    partial = {k: v for k, v in missing.items() if k.endswith(':partial')}
+    if (short or partial) and not allow_partial:
+        extra = (f"\n  {sum(partial.values())} judge-episode pairs are PARTIAL "
+                 f"(some artifacts present, some missing): {partial}" if partial else "")
         sys.exit(f"REFUSING: {len(short)}/{len(rows)} episodes lack the full {expected}-judge "
-                 f"panel. Run scripts/panel_status.py for the shortfall.")
+                 f"panel.{extra}\n  Run scripts/panel_status.py for the shortfall.")
     return rows
 
 
