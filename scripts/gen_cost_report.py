@@ -30,6 +30,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # the entire judge cost line silently reads zero — the cheap half of the unit-economics claim
 # ("grading is 0.3% of generating") would have been computed from nothing.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import judges_config as J
+import panel_data
 import runs_config
 
 # ---------------------------------------------------------------------------------------------
@@ -61,7 +63,9 @@ PRICES_DATE = '2026-07-28 (supplied by project owner)'
 
 _COL = {l: c for l, s, c, t in runs_config.MODELS}
 RUNS = [(m, p, r, _COL[m]) for m, p, r in runs_config.triples()]
-JUDGE_SUFFIXES = ['_cotsummary.json', '_cotsummary_j2.json', '_cotsummary_j3.json']
+# Was three passes of ONE model (stochasticity); now one pass by each of three
+# FAMILIES (cross-family agreement). Same shape, different statistic.
+JUDGE_SUFFIXES = J.tags()
 OUT = 'results/tcga/reports/COST_REPORT.html'
 
 
@@ -140,7 +144,10 @@ def judge_usage():  # noqa: C901
                 continue
             ei = eo = 0
             for sfx in JUDGE_SUFFIXES:
-                jp = p[:-5] + sfx
+                # sfx is a judge TAG now. `p[:-5] + sfx` built "<ep>nemotron" — a path that
+                # never exists, so every judge call was skipped, token totals came to zero, and
+                # the report divided by zero instead of reporting no measurements.
+                jp = J.artifact_path(os.path.dirname(p), 'cot', sfx)
                 if not os.path.exists(jp):
                     continue
                 calls += 1
@@ -191,8 +198,8 @@ def tool_usage():
     out = {}
     for model, prompt, run, col in RUNS:
         counts, calls, n = defaultdict(int), 0, 0
-        for p in glob.glob(f"{run}/*/*_v3scores.json"):
-            lab = os.path.basename(p).replace('_v3scores.json', '')
+        for p in glob.glob(panel_data.artifact_glob(run, 'outcome', J.tags()[0])):
+            lab = panel_data.label_of(p)
             if os.path.basename(os.path.dirname(p)) != lab:
                 continue
             ts = (json.load(open(p)).get('trace_summary') or {})
@@ -344,7 +351,7 @@ def main():
         print("=" * 90)
         src = ("provider-reported" if J.get('measured') == J['calls']
                else f"ESTIMATED ({J['calls']-J.get('measured',0)}/{J['calls']} calls)")
-        money = (f"${jc:.2f}   (${jc/jt*1e7:.2f} per 10M)" if jc is not None
+        money = (f"${jc:.2f}   (${jc/jt*1e7:.2f} per 10M)" if jc is not None and jt
                  else f"UNPRICED — no rate on file for {JM_LABEL}")
         print(f"  calls {J['calls']:,}   input {J['input']:,}   output {J['output']:,}   "
               f"total {jt/1e6:.1f}M   {money}")

@@ -113,3 +113,48 @@ def require_complete(rows, missing, allow_partial=False):
         sys.exit(f"REFUSING: {len(short)}/{len(rows)} episodes lack the full {expected}-judge "
                  f"panel. Run scripts/panel_status.py for the shortfall.")
     return rows
+
+
+# ── Layout helpers for scripts that glob artifacts directly ──────────────────────────────────
+# The report generators find files by globbing and then derive sibling paths by string surgery
+# (`sp.replace('_supportscores.json', '_v3scores.json')`). That worked when every artifact was a
+# suffix on the episode stem in one flat directory. Under scoring/<judge>/<kind>.json the stem
+# is gone from the filename and the judge is a directory, so the surgery silently produces paths
+# that do not exist — and a glob that matches nothing returns [], which reads as "no data" rather
+# than "wrong path". These make the relationship explicit instead.
+
+def artifact_glob(run_dir: str, kind: str, tag: str = '*') -> str:
+    """Glob pattern for one artifact kind across a run directory. tag='*' spans all judges."""
+    return os.path.join(run_dir, '*', J.SCORING_DIR, tag, J.ARTIFACTS[kind])
+
+
+def episode_dir_of(artifact_path: str) -> str:
+    """<ep>/scoring/<tag>/<kind>.json  ->  <ep>"""
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(artifact_path))))
+
+
+def label_of(artifact_path: str) -> str:
+    return os.path.basename(episode_dir_of(artifact_path))
+
+
+def episode_json_of(artifact_path: str) -> str:
+    d = episode_dir_of(artifact_path)
+    return os.path.join(d, os.path.basename(d) + '.json')
+
+
+def sibling(artifact_path: str, kind: str, tag: str | None = None) -> str:
+    """Another artifact for the SAME episode, optionally from a different judge."""
+    d = episode_dir_of(artifact_path)
+    if tag is None:
+        tag = os.path.basename(os.path.dirname(os.path.abspath(artifact_path)))
+    return J.artifact_path(d, kind, tag)
+
+
+def load_all_judges(episode_dir: str, kind: str) -> dict:
+    """{tag: parsed artifact} for one episode and kind, judges that have one."""
+    out = {}
+    for tag in J.tags():
+        p = J.artifact_path(episode_dir, kind, tag)
+        if os.path.exists(p):
+            out[tag] = json.load(open(p))
+    return out

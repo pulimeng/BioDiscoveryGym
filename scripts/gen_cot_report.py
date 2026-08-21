@@ -26,12 +26,17 @@ import glob, html as H, json, os, re, sys
 from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import judges_config as J
+import panel_data
 import runs_config
 from extract_cot import extract_episode, count_based_identity
 
 _COL = {l: c for l, s, c, t in runs_config.MODELS}
 RUNS = [(m, p, r, _COL[m]) for m, p, r in runs_config.triples()]
-SUFFIXES = ['_cotsummary.json', '_cotsummary_j2.json', '_cotsummary_j3.json']
+# Was three passes of ONE model (stochasticity); now one pass by each of three
+# FAMILIES (cross-family agreement). Same shape, different statistic — label it
+# as cross-family wherever this feeds a reported number.
+SUFFIXES = J.tags()
 OUT = 'results/tcga/reports/COT_REPORT.html'
 
 ID_ORDER = ['data-derived', 'mixed', 'recalled-prior', 'not-established']
@@ -48,10 +53,15 @@ def arm(l):
 
 def load(run, sfx):
     d = {}
-    for p in glob.glob(f"{run}/*/*{sfx}"):
-        l = os.path.basename(p).replace(sfx, '')
-        if os.path.basename(os.path.dirname(p)) == l:
-            d[l] = json.load(open(p))
+    # sfx is now a judge TAG, not a filename suffix: the artifact lives at
+    # <ep>/scoring/<tag>/cotsummary.json. Globbing the old flat name matched
+    # nothing and the report rendered with episodes=0 rather than failing.
+    for p in glob.glob(panel_data.artifact_glob(run, 'cot', sfx)):
+        # The label is the EPISODE DIRECTORY name; the filename is now just cotsummary.json,
+        # so stripping the suffix from the basename yields "cotsummary.json" and the
+        # dirname==label guard then rejected every file — 0 episodes, reported as a finding.
+        l = panel_data.label_of(p)
+        d[l] = json.load(open(p))
     return d
 
 
@@ -248,7 +258,7 @@ _N_PER = ntot  # total episodes across all arms — the script's own count, not 
 # Judge name read from the summary files, not asserted — the report said "DeepSeek-v4-pro"
 # for weeks after the judge moved to nemotron-3-super.
 _JUDGE = '+'.join(sorted({m for _, _, r, _ in RUNS
-                          for q in glob.glob(f"{r}/*/*_cotsummary.json")[:1]
+                          for q in glob.glob(panel_data.artifact_glob(r, 'cot'))[:1]
                           for m in [json.load(open(q)).get('judge_model')] if m})) or 'unrecorded'
 
 html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">

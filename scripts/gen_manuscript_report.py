@@ -22,6 +22,8 @@ import glob, html as H, json, os, statistics as st, sys
 from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import judges_config as J
+import panel_data
 import runs_config
 
 def _cot_judge_name(runs):
@@ -34,7 +36,7 @@ def _cot_judge_name(runs):
     """
     seen = set()
     for r in runs:
-        for p in glob.glob(f"{r}/*/*_cotsummary.json"):
+        for p in glob.glob(panel_data.artifact_glob(r, 'cot')):
             try:
                 m = json.load(open(p)).get("judge_model")
             except Exception:
@@ -48,7 +50,10 @@ from g3_exposure import exposed_g3
 from extract_cot import extract_episode, count_based_identity
 
 PAIRS = runs_config.pairs()
-SUFFIXES = ['_cotsummary.json', '_cotsummary_j2.json', '_cotsummary_j3.json']
+# Was three passes of ONE model (stochasticity); now one pass by each of three
+# FAMILIES (cross-family agreement). Same shape, different statistic — label it
+# as cross-family wherever this feeds a reported number.
+SUFFIXES = J.tags()
 OUT = 'results/tcga/reports/MANUSCRIPT_REPORT.html'
 
 
@@ -57,11 +62,11 @@ def cohort_of(l): return l.split('_')[1].upper() if '_' in l else '?'
 
 
 def load_sfx(run, sfx):
+    """sfx is a judge TAG now, not a filename suffix — the artifact is at
+    <ep>/scoring/<tag>/cotsummary.json and the label comes from the episode directory."""
     d = {}
-    for p in glob.glob(f"{run}/*/*{sfx}"):
-        l = os.path.basename(p).replace(sfx, '')
-        if os.path.basename(os.path.dirname(p)) == l:
-            d[l] = json.load(open(p))
+    for p in glob.glob(panel_data.artifact_glob(run, 'cot', sfx)):
+        d[panel_data.label_of(p)] = json.load(open(p))
     return d
 
 
@@ -86,12 +91,12 @@ SIZES = _sizes()
 def metrics(D):
     """Outcome / grounding / documentation / leak for one run dir."""
     v3, sup = {}, {}
-    for p in glob.glob(f"{D}/*/*_v3scores.json"):
-        l = os.path.basename(p).replace('_v3scores.json', '')
-        if os.path.basename(os.path.dirname(p)) == l: v3[l] = json.load(open(p))
-    for p in glob.glob(f"{D}/*/*_supportscores.json"):
-        l = os.path.basename(p).replace('_supportscores.json', '')
-        if os.path.basename(os.path.dirname(p)) == l: sup[l] = json.load(open(p))
+    for p in glob.glob(panel_data.artifact_glob(D, 'outcome', J.tags()[0])):
+        l = panel_data.label_of(p)
+        v3[l] = json.load(open(p))
+    for p in glob.glob(panel_data.artifact_glob(D, 'support', J.tags()[0])):
+        l = panel_data.label_of(p)
+        sup[l] = json.load(open(p))
     hon = [l for l in v3 if arm(l) in ('g0', 'g1', 'g2')]
     d2 = Counter(sup[l]['levels']['d2_identity']['support'] for l in sup if arm(l) in ('g0', 'g1', 'g2'))
     nsup = sum(d2.values()) or 1
@@ -224,9 +229,8 @@ JUDGE_NAME = _cot_judge_name([d for _, d, l, _, _ in PAIRS])
 # Counts DERIVED, not asserted. The header said "75 episodes ... 450 episodes" — the pilot's
 # numbers — on a clean report of 95/lane and 570 total.
 _lane_dirs = [d for _, d, l, _, _ in PAIRS] + [l for _, d, l, _, _ in PAIRS]
-_lane_counts = [len([p for p in glob.glob(f"{d}/*/*_v3scores.json")
-                     if os.path.basename(os.path.dirname(p))
-                     == os.path.basename(p).replace('_v3scores.json', '')]) for d in _lane_dirs]
+_lane_counts = [len(glob.glob(panel_data.artifact_glob(d, 'outcome', J.tags()[0])))
+                for d in _lane_dirs]
 N_PER_LANE = max(_lane_counts) if _lane_counts else 0
 N_TOTAL = sum(_lane_counts)
 
@@ -289,7 +293,7 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <h1>BioDiscoveryGym — Manuscript Report</h1>
 <div class="meta">All figures recomputed from artifacts on generation &middot; TCGA instruction ablation
 ({len(DATA)} models &times; 2 prompts &times; {N_PER_LANE} episodes = <b>{N_TOTAL} total</b>) &middot; CoT judged by
-neutral {JUDGE_NAME}, <b>3 independent passes</b> over all {N_TOTAL} episodes</div>
+neutral <b>{"/".join(J.tags())}</b> — <b>one pass per judge family</b> (cross-family agreement, not self-consistency) over all {N_TOTAL} episodes</div>
 
 <h2>Headline findings</h2>
 <div class="panel">

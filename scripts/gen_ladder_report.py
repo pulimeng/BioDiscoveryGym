@@ -24,6 +24,8 @@ PAPERS = {'BRCA': 13305, 'LUAD': 2091, 'OV': 1982, 'LIHC': 1159}
 # That is the exact failure runs_config exists to prevent; this file simply never adopted it.
 #
 # `--model LABEL:DIR:#COLOR:TIER` still overrides, so a one-off comparison stays possible.
+import judges_config as J
+import panel_data
 import runs_config
 from g3_exposure import was_exposed  # noqa: E402  (after sys.path insert above)
 
@@ -37,7 +39,7 @@ def _cot_judge_name(runs):
     """
     seen = set()
     for r in runs:
-        for p in glob.glob(f"{r}/*/*_cotsummary.json"):
+        for p in glob.glob(panel_data.artifact_glob(r, 'cot')):
             try:
                 m = json.load(open(p)).get("judge_model")
             except Exception:
@@ -73,24 +75,42 @@ if _args.out:
 cohorts = [c.strip().upper() for c in _args.cohorts.split(',')] if _args.cohorts else None  # None → derive post-load
 
 def load(root):
+    """Panel-reduced rows. One row per EPISODE, not per judge file.
+
+    This used to glob *_supportscores.json and derive its siblings by string surgery. Under
+    scoring/<judge>/ that would produce one row PER JUDGE — every episode counted three times,
+    with three different labels, in every table below. Reduce across judges first, then build
+    the row.
+    """
     R = []
-    for sp in glob.glob(f"{root}/**/*_supportscores.json", recursive=True):
-        lab = os.path.basename(sp).replace('_supportscores.json', '')
-        d = json.load(open(sp)); L = d['levels']
-        vd = json.load(open(sp.replace('_supportscores.json', '_v3scores.json')))
-        e = json.load(open(sp.replace('_supportscores.json', '.json')))
+    for sp in sorted(glob.glob(panel_data.artifact_glob(root, 'support', J.tags()[0]))):
+        ed = panel_data.episode_dir_of(sp)
+        lab = panel_data.label_of(sp)
+        sups = panel_data.load_all_judges(ed, 'support')
+        v3s = panel_data.load_all_judges(ed, 'outcome')
+        if not sups or not v3s:
+            continue
+        e = json.load(open(panel_data.episode_json_of(sp)))
         mech = (e.get('discovery') or {}).get('mechanism_hypothesis', '') or ''
         arm = lab.split('_')[0]
+        verdict = J.consensus([v.get('cohort_identity_verdict') for v in v3s.values()])
         # G3 denominators must be EXPOSED-and-SCORED episodes, never arm membership. The planted
         # label is gated on the agent's Nth record_observation, and lean episodes usually stop
         # first — so most "resistant" g3b/lean episodes were never shown a label. Dividing by arm
         # size is what produced the retracted early-vs-late result. See scripts/g3_exposure.py.
-        usable = bool(vd.get('cohort_identity_verdict'))
+        usable = bool(verdict)
+        L = {k: {'strategy': J.consensus([(x['levels'].get(k) or {}).get('strategy')
+                                          for x in sups.values()]),
+                 'support': J.consensus([(x['levels'].get(k) or {}).get('support')
+                                         for x in sups.values()])}
+             for k in ('d1_partition', 'd2_identity', 'd3_mechanism')}
         R.append(dict(lab=lab, arm=arm, cohort=e.get('cohort'), seed=e.get('seed'),
-            norm=vd['normalized'], verdict=vd.get('cohort_identity_verdict'), ss=d['support_score'],
-            exposed=(was_exposed(sp.replace('_supportscores.json', '.json')) and usable
+            norm=panel_data.mean([v.get('normalized') for v in v3s.values()]),
+            verdict=verdict,
+            ss=panel_data.mean([x.get('support_score') for x in sups.values()]),
+            exposed=(panel_data.was_exposed(panel_data.episode_json_of(sp)) and usable
                      if arm.startswith('g3') else None),
-            lvl={k: L[k] for k in ('d1_partition', 'd2_identity', 'd3_mechanism')}, mech=mech))
+            lvl=L, mech=mech))
     return R
 
 DATA = {name: load(root) for name, root, *_ in MODELS}
@@ -380,15 +400,23 @@ for key, wt, desc in COMP:
 DIFF_COMP = ['clinical_signal', 'genomic_coherence_drivers', 'reference_concordance', 'structure_validity', 'pathway_validity']
 coh_norm = {c: [] for c in cohorts}; coh_comp = {c: {k: [] for k in DIFF_COMP} for c in cohorts}
 for name, root, *_ in MODELS:
-    for sp in glob.glob(f"{root}/**/*_v3scores.json", recursive=True):
-        lab = os.path.basename(sp)
+    # One entry per EPISODE, averaged across judges — not one per judge file, which would
+    # triple every cohort's n and weight cohorts by how many judges happened to score them.
+    # The seeded components are identical across judges, so the component means are unaffected;
+    # only `normalized` varies, and averaging it is the same reduction used everywhere else.
+    for sp in glob.glob(panel_data.artifact_glob(root, 'outcome', J.tags()[0])):
+        lab = panel_data.label_of(sp)
         if lab.split('_')[0] not in ('g0', 'g1', 'g2'): continue
-        e = json.load(open(sp.replace('_v3scores.json', '.json'))); c = e.get('cohort')
+        e = json.load(open(panel_data.episode_json_of(sp))); c = e.get('cohort')
         if c not in cohorts: continue
-        d = json.load(open(sp)); coh_norm[c].append(d['normalized'])
+        v3s = panel_data.load_all_judges(panel_data.episode_dir_of(sp), 'outcome')
+        if not v3s: continue
+        coh_norm[c].append(panel_data.mean([v.get('normalized') for v in v3s.values()]))
+        d = next(iter(v3s.values()))
         for k in DIFF_COMP:
             if k in d['raw_scores']: coh_comp[c][k].append(d['raw_scores'][k])
-coh_order = sorted(cohorts, key=lambda c: -st.mean(coh_norm[c]))
+# A cohort with no scored episodes sorts last rather than crashing the report.
+coh_order = sorted(cohorts, key=lambda c: -(st.mean(coh_norm[c]) if coh_norm[c] else -1))
 diffrows = ""
 for c in coh_order:
     cells = ""
