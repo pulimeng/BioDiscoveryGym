@@ -31,6 +31,7 @@ import glob, json, os, re, statistics as st, sys
 from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import judges_config as J
 import runs_config
 from extract_cot import extract_episode, count_based_identity, COHORT_DIS
 
@@ -100,17 +101,24 @@ def main():
                 continue
             n += 1
             d = os.path.dirname(p)
-            votes = [json.load(open(os.path.join(d, lab + s))).get('identity_derivation')
-                     for s in SF if os.path.exists(os.path.join(d, lab + s))]
-            if len(votes) == 3 and consensus(votes) == 'data-derived':
+            # Panel consensus across judge FAMILIES, not three passes of one model. An episode
+            # the families cannot agree on counts as neither derived nor grounded — it is
+            # unresolved, and inflating either rate with a tie-break would misstate exactly the
+            # quantity this section is about.
+            votes = [json.load(open(q)).get('identity_derivation')
+                     for q in (J.artifact_path(d, 'cot', t) for t in J.tags())
+                     if os.path.exists(q)]
+            if J.consensus(votes) == 'data-derived':
                 der += 1
-            sp = os.path.join(d, lab + '_supportscores.json')
-            if os.path.exists(sp):
-                if json.load(open(sp)).get('levels', {}).get('d2_identity', {}).get('support') == 'grounded':
-                    grd += 1
-            vp = os.path.join(d, lab + '_v3scores.json')
-            if os.path.exists(vp):
-                outs.append(json.load(open(vp))['normalized'])
+            sups = [json.load(open(q)) for q in
+                    (J.artifact_path(d, 'support', t) for t in J.tags()) if os.path.exists(q)]
+            if J.consensus([(x.get('levels', {}).get('d2_identity') or {}).get('support')
+                            for x in sups]) == 'grounded':
+                grd += 1
+            v3s = [json.load(open(q)) for q in
+                   (J.artifact_path(d, 'outcome', t) for t in J.tags()) if os.path.exists(q)]
+            if v3s:
+                outs.append(sum(x['normalized'] for x in v3s) / len(v3s))
             c = pa = False
             try:
                 rec = extract_episode(p)

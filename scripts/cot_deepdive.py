@@ -24,6 +24,7 @@ from collections import Counter, defaultdict
 from scipy.stats import mannwhitneyu, spearmanr, fisher_exact
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import panel_data
 import runs_config
 
 SF = ['_cotsummary.json', '_cotsummary_j2.json', '_cotsummary_j3.json']
@@ -37,34 +38,37 @@ def consensus(votes):
 
 
 def collect(arm_prefix):
-    """Episodes on an arm with BOTH an outcome score and all three judge votes."""
-    rows = []
-    for model, prompt, run in RUNS:
-        for p in glob.glob(f"{run}/{arm_prefix}*/{arm_prefix}*_v3scores.json"):
-            lab = os.path.basename(p).replace('_v3scores.json', '')
-            if os.path.basename(os.path.dirname(p)) != lab:
-                continue
-            votes = []
-            for s in SF:
-                jp = os.path.join(os.path.dirname(p), lab + s)
-                if os.path.exists(jp):
-                    votes.append(json.load(open(jp)).get('identity_derivation'))
-            if len(votes) != 3:
-                continue
-            v3 = json.load(open(p))
-            rows.append(dict(
-                model=model, prompt=prompt, label=lab,
-                cohort=lab.split('_')[1].upper(),
-                deriv=consensus(votes), votes=votes,
-                outcome=v3.get('normalized'),
-                verdict=v3.get('cohort_identity_verdict'),
-                fooled=v3.get('cohort_identity_verdict') == 'mislead_cohort'))
-    return rows
+    """Episodes on an arm with an outcome score and a panel-consensus derivation label.
+
+    Consensus is across judge FAMILIES now, not three passes of one model, so `deriv` is None
+    for the ~5% of episodes the families label differently. Those are excluded here and the
+    count is reported, because H1/H2 are exactly the comparisons a tie-break would bias.
+    """
+    rows, unresolved = [], 0
+    allrows, missing = panel_data.load()
+    panel_data.require_complete(allrows, missing)
+    for r in allrows:
+        if not r['arm'].startswith(arm_prefix):
+            continue
+        if r['deriv'] is None:
+            unresolved += 1
+            continue
+        rows.append(dict(model=r['model'], prompt=r['prompt'], arm=r['arm'], label=r['label'],
+                         cohort=r['cohort'], outcome=r['outcome'], verdict=r['verdict'],
+                         deriv=r['deriv'], exposed=r['exposed'], votes=r['deriv_votes'],
+                         # `fooled` is derived from the CONSENSUS verdict. It is only meaningful
+                         # on the exposed set: an episode never shown a label is not "resistant".
+                         fooled=(r['verdict'] == 'mislead_cohort')))
+    return rows, unresolved
 
 
 def main():
     stats = {}
-    g2, g3 = collect('g2'), collect('g3')
+    (g2, g2_unres), (g3, g3_unres) = collect('g2'), collect('g3')
+    # Report what the panel could not resolve. Under three passes of one model this was ~0 and
+    # invisible; across families it is a real exclusion and belongs beside every n below.
+    print(f"  panel could not resolve identity_derivation: G2 {g2_unres}, G3 {g3_unres} "
+          f"(excluded from H1/H2)")
 
     # ---------------- H1: outcome cannot see the difference ----------------
     print("=" * 78)

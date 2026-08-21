@@ -49,6 +49,7 @@ from collections import Counter
 from scipy.stats import fisher_exact
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import judges_config as J
 import runs_config
 from extract_cot import extract_episode
 
@@ -63,19 +64,29 @@ def load():
             lab = os.path.basename(p)[:-5]
             if os.path.basename(os.path.dirname(p)) != lab:
                 continue
-            v3p = p[:-5] + '_v3scores.json'
-            if not os.path.exists(v3p):
+            # Panel-reduced: the verdict is the MAJORITY across judge families, and an episode
+            # the panel could not resolve is skipped rather than taking one judge's answer.
+            # Under the old single-judge layout this read one file; a bare per-judge read here
+            # would have silently used whichever tag sorted first.
+            v3s = [json.load(open(q)) for q in
+                   (J.artifact_path(os.path.dirname(p), 'outcome', t) for t in J.tags())
+                   if os.path.exists(q)]
+            if not v3s:
                 continue
-            v3 = json.load(open(v3p))
-            verdict = v3.get('cohort_identity_verdict')
+            v3 = v3s[0]
+            verdict = J.consensus([x.get('cohort_identity_verdict') for x in v3s])
             if not verdict:
                 continue
             ts = v3.get('trace_summary') or {}
             n_ro = (ts.get('tool_counts') or {}).get('record_observation', 0)
             cli = (json.load(open(p)).get('cli') or {})
-            spath = p[:-5] + '_supportscores.json'
-            sup_lv = ((json.load(open(spath)).get('levels') or {}).get('d2_identity', {})
-                      if os.path.exists(spath) else {})
+            sups = [json.load(open(q)) for q in
+                    (J.artifact_path(os.path.dirname(p), 'support', t) for t in J.tags())
+                    if os.path.exists(q)]
+            sup_lv = {'strategy': J.consensus([(x.get('levels', {}).get('d2_identity') or {})
+                                               .get('strategy') for x in sups]),
+                      'support': J.consensus([(x.get('levels', {}).get('d2_identity') or {})
+                                              .get('support') for x in sups])}
             try:
                 ep = extract_episode(p)
             except Exception:

@@ -31,6 +31,7 @@ import sys
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import panel_data
 import runs_config
 from g3_exposure import was_exposed
 
@@ -41,24 +42,16 @@ LEVELS = ['d1_partition', 'd2_identity', 'd3_mechanism']
 
 
 def load():
-    rows = []
-    for model, prompt, run in runs_config.triples():
-        for p in sorted(glob.glob(f"{run}/*/*_v3scores.json")):
-            lab = os.path.basename(p).replace('_v3scores.json', '')
-            d = os.path.dirname(p)
-            if os.path.basename(d) != lab:
-                continue
-            v3 = json.load(open(p))
-            sp = os.path.join(d, lab + '_supportscores.json')
-            sup = json.load(open(sp)) if os.path.exists(sp) else {}
-            e = (sup.get('levels') or {}).get('d2_identity', {})
-            arm = lab.split('_')[0]
-            rows.append(dict(
-                model=model, prompt=prompt, arm=arm, cohort=lab.split('_')[1].upper(),
-                outcome=v3.get('normalized'), verdict=v3.get('cohort_identity_verdict'),
-                d2_strat=e.get('strategy'), d2_sup=e.get('support'),
-                exposed=(was_exposed(os.path.join(d, lab + '.json'))
-                         if arm.startswith('g3') else None)))
+    """Panel-reduced rows. Reduction is panel_data's, so this file cannot drift from
+    explore_exploit's definition of what a strategy label or a verdict IS — which matters here
+    because these are the intervals the paper quotes."""
+    allrows, missing = panel_data.load()
+    panel_data.require_complete(allrows, missing)
+    rows = [dict(model=r['model'], prompt=r['prompt'], arm=r['arm'], cohort=r['cohort'],
+                 outcome=r['outcome'], verdict=r['verdict'],
+                 d2_strat=r['d2_identity_strat'], d2_sup=r['d2_identity_sup'],
+                 exposed=r['exposed'])
+            for r in allrows]
     return rows
 
 

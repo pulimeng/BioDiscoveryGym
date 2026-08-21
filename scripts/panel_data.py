@@ -1,0 +1,115 @@
+"""One loader for panel-reduced episode rows — the shape every paper script should consume.
+
+WHY THIS EXISTS. Five generators each had their own copy of "glob the score files, join the
+support and CoT artifacts, build a row". Under the pre-panel layout that was merely duplicated;
+under a three-judge panel it is dangerous, because each copy would also need its own idea of how
+to reduce three judges to one label — and any copy that skipped the question would silently read
+whichever judge happened to sort first.
+
+REDUCTION RULES (identical to what explore_exploit.py established):
+  categorical  -> majority across judges, or None when the panel splits
+  continuous   -> mean across judges, with the spread retained
+  no-consensus -> a RESULT, counted, never folded into a majority or dropped silently
+
+The seeded outcome components are identical across judges by construction, so a row's
+`raw_scores` may be taken from any one of them; only `normalized`, `mechanism_grounding` and the
+identity verdict actually vary.
+"""
+from __future__ import annotations
+
+import glob
+import json
+import os
+import statistics as st
+import sys
+from collections import Counter
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import judges_config as J
+import runs_config
+from g3_exposure import was_exposed
+
+LEVELS = ['d1_partition', 'd2_identity', 'd3_mechanism']
+
+
+def _read(p):
+    return json.load(open(p)) if os.path.exists(p) else None
+
+
+def mean(xs):
+    xs = [x for x in xs if x is not None]
+    return st.mean(xs) if xs else None
+
+
+def load(wave=None, judges=None):
+    """[(row dict)], Counter(missing). One row per episode, reduced across the panel."""
+    judges = judges or J.tags()
+    rows, missing = [], Counter()
+    for model, prompt, run in runs_config.triples():
+        if wave and prompt != wave:
+            continue
+        for epdir in sorted(glob.glob(f"{run}/*")):
+            lab = os.path.basename(epdir)
+            if not os.path.isdir(epdir) or lab.startswith(('_', '.')):
+                continue
+            if not os.path.exists(os.path.join(epdir, lab + '.json')):
+                continue
+            per = {}
+            for tag in judges:
+                v3, sup, cot = (_read(J.artifact_path(epdir, k, tag))
+                                for k in ('outcome', 'support', 'cot'))
+                if v3 is None and sup is None and cot is None:
+                    missing[tag] += 1
+                    continue
+                per[tag] = (v3 or {}, sup or {}, cot or {})
+            if not per:
+                missing['episodes_with_no_judge'] += 1
+                continue
+            v3s = [v for v, _, _ in per.values()]
+            sups = [s for _, s, _ in per.values()]
+            cots = [c for _, _, c in per.values()]
+            outs = [v.get('normalized') for v in v3s if v.get('normalized') is not None]
+            parts = lab.split('_')
+            r = dict(
+                model=model, prompt=prompt, arm=parts[0], label=lab, dir=epdir,
+                cohort=parts[1].upper(), seed=parts[-1],
+                n_judges=len(per), judges=sorted(per),
+                outcome=mean(outs),
+                outcome_spread=(max(outs) - min(outs)) if len(outs) > 1 else 0.0,
+                verdict=J.consensus([v.get('cohort_identity_verdict') for v in v3s]),
+                verdict_split=(len({v.get('cohort_identity_verdict') for v in v3s}) > 1),
+                deriv=J.consensus([c.get('identity_derivation') for c in cots]),
+                # Raw per-judge votes, kept so agreement/unanimity can be computed downstream.
+                # Under the old 3-passes-of-one-model panel this measured stochasticity; across
+                # families it measures cross-family agreement, which is a different statistic
+                # with the same shape — label it as such wherever it is reported.
+                deriv_votes=[c.get('identity_derivation') for c in cots],
+                verdict_votes=[v.get('cohort_identity_verdict') for v in v3s],
+                rigor=J.consensus([c.get('validation_rigor') for c in cots]),
+                support_score=mean([s.get('support_score') for s in sups]),
+                raw_scores=(v3s[0].get('raw_scores') or {}),
+                exposed=(was_exposed(os.path.join(epdir, lab + '.json'))
+                         if parts[0].startswith('g3') else None))
+            for lv in LEVELS:
+                r[lv + '_strat'] = J.consensus(
+                    [(s.get('levels', {}).get(lv) or {}).get('strategy') for s in sups])
+                r[lv + '_sup'] = J.consensus(
+                    [(s.get('levels', {}).get(lv) or {}).get('support') for s in sups])
+            rows.append(r)
+    return rows, missing
+
+
+def require_complete(rows, missing, allow_partial=False):
+    """Exit unless every episode carries the full panel. See explore_exploit for the rationale:
+    a partial panel does not raise, it just shrinks denominators and prints a plausible table."""
+    expected = len(J.tags())
+    n_unjudged = missing.get('episodes_with_no_judge', 0)
+    if not rows or n_unjudged:
+        by = ", ".join(f"{k}={v}" for k, v in sorted(missing.items())) or "n/a"
+        sys.exit(f"REFUSING: {len(rows)} episodes judged, {n_unjudged} unjudged ({by}).\n"
+                 f"  Run scripts/run_judge.sh, then scripts/panel_status.py.")
+    short = [r for r in rows if r['n_judges'] != expected]
+    if short and not allow_partial:
+        sys.exit(f"REFUSING: {len(short)}/{len(rows)} episodes lack the full {expected}-judge "
+                 f"panel. Run scripts/panel_status.py for the shortfall.")
+    return rows

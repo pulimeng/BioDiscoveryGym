@@ -36,6 +36,7 @@ from collections import defaultdict
 from scipy.stats import wilcoxon, mannwhitneyu
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import panel_data
 import runs_config
 
 OUT = 'manuscript/figures/scaffold_outcome.json'
@@ -44,26 +45,25 @@ B, SEED = 10000, 20260813
 
 
 def load():
-    """{(model, prompt, label): record} over honest arms."""
+    """{(model, prompt, label): record} over honest arms, reduced across the judge panel.
+
+    Reduction is panel_data's, not a private copy: categorical fields take the majority across
+    judges (None when they split), continuous fields the mean. `grounded` and `rigor_high`
+    therefore mean "the panel agreed it was", and an episode the panel could not resolve is
+    False on both rather than silently taking whichever judge sorted first.
+    """
     rows = {}
-    for model, prompt, run in runs_config.triples():
-        for p in sorted(glob.glob(f"{run}/*/*_v3scores.json")):
-            lab = os.path.basename(p).replace('_v3scores.json', '')
-            d = os.path.dirname(p)
-            if os.path.basename(d) != lab or lab.split('_')[0] not in HONEST:
-                continue
-            v3 = json.load(open(p))
-            sp = os.path.join(d, lab + '_supportscores.json')
-            sup = json.load(open(sp)) if os.path.exists(sp) else {}
-            e = (sup.get('levels') or {}).get('d2_identity', {})
-            cp = os.path.join(d, lab + '_cotsummary.json')
-            cot = json.load(open(cp)) if os.path.exists(cp) else {}
-            rows[(model, prompt, lab)] = dict(
-                model=model, prompt=prompt, label=lab, arm=lab.split('_')[0],
-                cohort=lab.split('_')[1].upper(), outcome=v3.get('normalized'),
-                raw=v3.get('raw_scores') or {}, support_score=sup.get('support_score'),
-                grounded=e.get('support') == 'grounded',
-                rigor_high=cot.get('validation_rigor') == 'high')
+    allrows, missing = panel_data.load()
+    panel_data.require_complete(allrows, missing)
+    for r in allrows:
+        if r['arm'] not in HONEST:
+            continue
+        rows[(r['model'], r['prompt'], r['label'])] = dict(
+            model=r['model'], prompt=r['prompt'], label=r['label'], arm=r['arm'],
+            cohort=r['cohort'], outcome=r['outcome'], raw=r['raw_scores'],
+            support_score=r['support_score'],
+            grounded=r['d2_identity_sup'] == 'grounded',
+            rigor_high=r['rigor'] == 'high')
     return rows
 
 
