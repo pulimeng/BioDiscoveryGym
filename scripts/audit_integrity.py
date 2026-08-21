@@ -148,6 +148,7 @@ def audit_gates():
     print("=" * 78)
     res, bad = {}, 0
     print(f"  {'arm':26} {'n':>3} {'fooled':>7} {'ERRORED':>8}")
+    per_judge = Counter()
     for model, prompt, run in RUNS:
         c = Counter()
         for p, lab in episodes(run, 'g3'):
@@ -158,6 +159,21 @@ def audit_gates():
             # A false PASS is worse than a crash: it is the failure this file exists to detect,
             # committed by the detector.
             ep_dir = os.path.dirname(os.path.abspath(p))
+            # PER-JUDGE first, then consensus. Reducing to consensus BEFORE testing for errors
+            # let the panel mask exactly what this audit looks for: a missing judge file still
+            # yields a two-judge consensus, and one 'error' verdict is outvoted by two valid
+            # ones. "All gates scored" then meant "every episode has SOME usable panel result",
+            # which is a weaker statement than the sentence implies. Count judge-level verdicts.
+            for t in J.tags():
+                q = J.artifact_path(ep_dir, 'outcome', t)
+                if not os.path.exists(q):
+                    per_judge['MISSING_FILE'] += 1
+                    continue
+                v = json.load(open(q)).get('cohort_identity_verdict')
+                if v in ('error', '', None):
+                    per_judge['UNUSABLE'] += 1
+                else:
+                    per_judge['ok'] += 1
             verdicts = [json.load(open(q)).get('cohort_identity_verdict')
                         for q in (J.artifact_path(ep_dir, 'outcome', t) for t in J.tags())
                         if os.path.exists(q)]
@@ -186,6 +202,19 @@ def audit_gates():
         print("  fooled = (verdict == 'mislead_cohort'), so these are silently counted as NOT")
         print("  fooled — inflating apparent robustness. Re-score them or exclude them explicitly;")
         print("  do not let them pass as zeros.")
+    # Judge-level coverage, reported separately from the consensus result so the pass sentence
+    # cannot claim more than it checked.
+    exp = sum(v['n'] for v in res.values()) * len(J.tags())
+    print(f"\n  judge-level G3 verdicts: {per_judge['ok']} usable, "
+          f"{per_judge['UNUSABLE']} unusable, {per_judge['MISSING_FILE']} missing "
+          f"(of {exp} expected = {sum(v['n'] for v in res.values())} episodes x {len(J.tags())} judges)")
+    if per_judge['UNUSABLE'] or per_judge['MISSING_FILE']:
+        bad += per_judge['UNUSABLE'] + per_judge['MISSING_FILE']
+        print("  !! Some judge-level verdicts are missing or unusable. Panel consensus can mask\n"
+              "     these — two valid judges outvote one error — so they are counted here.",
+              file=sys.stderr)
+    if bad:
+        pass
     elif sum(v['n'] for v in res.values()) == 0:
         # "No silent zeros" over ZERO episodes is not a pass, it is the absence of evidence.
         # This exact sentence was printed while the audit was reading paths that no longer
@@ -195,8 +224,9 @@ def audit_gates():
               file=sys.stderr)
         raise SystemExit(2)
     else:
-        print(f"\n  All gates scored — no silent zeros "
-              f"({sum(v['n'] for v in res.values())} episodes, panel consensus).")
+        print(f"\n  All gates scored — no silent zeros: "
+              f"{per_judge['ok']}/{exp} judge-level verdicts usable across "
+              f"{sum(v['n'] for v in res.values())} episodes x {len(J.tags())} judges.")
     return res, bad
 
 

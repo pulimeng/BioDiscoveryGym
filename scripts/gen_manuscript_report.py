@@ -24,29 +24,8 @@ from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import judges_config as J
 import panel_data
+import panel_judges
 import runs_config
-
-def _cot_judge_name(runs):
-    """Which judge actually produced the CoT summaries, read from the files.
-
-    Hardcoding this is how the reports came to assert "DeepSeek-v4-pro" after the judge moved to
-    nemotron-3-super (24bc72e): a stale attribution that no test and no reader could catch, because
-    the name is prose. `supportscores` records no judge at all, so the support judge is reported as
-    unrecorded rather than assumed to match.
-    """
-    seen = set()
-    for r in runs:
-        for p in glob.glob(panel_data.artifact_glob(r, 'cot')):
-            try:
-                m = json.load(open(p)).get("judge_model")
-            except Exception:
-                continue
-            if m:
-                seen.add(m)
-            # NO `break`. It stopped after the first file in each run dir, so with a panel it
-            # reported ONE family's name for a run judged by three — the same stale-attribution
-            # failure this function was written to prevent, in a new form.
-    return "+".join(sorted(seen)) if seen else "unrecorded"
 
 from g3_exposure import exposed_g3
 from extract_cot import extract_episode, count_based_identity
@@ -220,7 +199,7 @@ for m in [m for m in DATA if DATA[m]['tier'] != 'flagship']:
         flash_lines.append(f"{m} drops {d:.3f}&rarr;{l:.3f} (&minus;{d-l:.3f}) under lean")
 
 def sep(det, lean):
-    """Do the two arms' per-pass ranges separate? The robustness claim."""
+    """Do the two arms' per-family ranges separate? The robustness claim."""
     return (min(lean) > max(det)) or (max(lean) < min(det))
 
 deriv_rows = ""
@@ -252,7 +231,7 @@ for lab in DATA:
         agree_rows += (f"<tr><td class='grp' style='color:{DATA[lab]['color']}'>{lab}</td>"
                        f"<td>{pr}</td><td class='num'>{p['n']}</td>{cells}</tr>")
 
-JUDGE_NAME = _cot_judge_name([d for _, d, l, _, _ in PAIRS])
+JUDGE_NAME = panel_judges.panel_judge_label([d for _, d, l, _, _ in PAIRS])
 # Counts DERIVED, not asserted. The header said "75 episodes ... 450 episodes" — the pilot's
 # numbers — on a clean report of 95/lane and 570 total.
 _lane_dirs = [d for _, d, l, _, _ in PAIRS] + [l for _, d, l, _, _ in PAIRS]
@@ -341,19 +320,19 @@ once it is actually delivered. Denominator is EXPOSED episodes, not arm size; de
 <p class="lead">Each cell is <b>detailed &rarr; lean (&Delta;)</b>. Colour reflects whether lean is
 better on that axis, accounting for direction (lower is better for unsupported / fooled).</p></div>
 
-<h2>2 &middot; Identity derivation &mdash; 3-pass judge consensus</h2>
+<h2>2 &middot; Identity derivation &mdash; consensus across three judge families</h2>
 <div class="panel"><div class="tblwrap"><table><thead><tr><th>arm</th><th>model</th>
 <th class="num">detailed</th><th class="num">lean</th><th class="num">&Delta; pts</th>
-<th>per-pass ranges</th></tr></thead><tbody>{deriv_rows}</tbody></table></div>
+<th>per-family ranges</th></tr></thead><tbody>{deriv_rows}</tbody></table></div>
 <p class="lead">Consensus = majority across {len(SUFFIXES)} independent judge FAMILIES (one pass each, NOT repeated sampling of one model); bracketed values are the three
-individual passes. <b>&ldquo;Separated&rdquo; means the two arms&rsquo; per-pass ranges do not
-overlap</b> &mdash; the delta cannot be explained by judge noise. Quote separated rows only.</p></div>
+individual passes. <b>&ldquo;Separated&rdquo; means the two arms&rsquo; per-family ranges do not
+overlap</b> &mdash; the families disagree systematically about this quantity. NOTE: with ONE pass per family, judge stochasticity was not measured independently, so this does NOT establish that the delta exceeds judge noise — noise and family difference are confounded. Quote separated rows only.</p></div>
 
 <h2>3 &middot; Judge reliability</h2>
 <div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th><th>prompt</th>
 <th class="num">n</th><th class="num">identity_derivation</th><th class="num">validation_rigor</th>
 <th class="num">codebook_response</th></tr></thead><tbody>{agree_rows}</tbody></table></div>
-<p class="lead">Unanimity across 3 passes, with mean pairwise agreement beneath.
+<p class="lead">Unanimity across 3 families, with mean pairwise agreement beneath.
 <code>codebook_response</code> is near-deterministic (an observable action);
 <code>identity_derivation</code> is the interpretive one and agrees least.
 <b>Aggregate deltas are robust; per-episode labels are not &mdash; never quote a single episode&rsquo;s

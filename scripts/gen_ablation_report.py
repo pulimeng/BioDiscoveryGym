@@ -12,26 +12,10 @@ from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import judges_config as J
 import panel_data
+import panel_judges
 import runs_config
 
 
-def _cot_judge_name(runs):
-    """Which judge produced the CoT summaries — read from the files, never asserted.
-
-    The header hardcoded "DeepSeek-v4-pro" and kept saying it after the judge moved to
-    nemotron-3-super (24bc72e). Prose provenance drifts silently; derive it.
-    """
-    seen = set()
-    for r in runs:
-        for q in glob.glob(panel_data.artifact_glob(r, 'cot')):
-            try:
-                m = json.load(open(q)).get("judge_model")
-            except Exception:
-                continue
-            if m:
-                seen.add(m)
-            break
-    return "+".join(sorted(seen)) if seen else "unrecorded"
 from g3_exposure import exposed_g3
 from extract_cot import extract_episode, count_based_identity
 
@@ -67,13 +51,36 @@ SIZES = _cohort_sizes()
 
 def metrics(D):
     """All ablation metrics for one run dir."""
+    # PANEL-REDUCED. These loaded J.tags()[0] — nemotron — for outcome, support AND CoT while
+    # the report footer described a three-family panel. Every principal metric was one judge's
+    # value presented as a panel result.
     v3 = {}; sup = {}; cot = {}
     for p in glob.glob(panel_data.artifact_glob(D, 'outcome', J.tags()[0])):
-        v3[panel_data.label_of(p)] = json.load(open(p))
+        ed = panel_data.episode_dir_of(p); per = panel_data.load_all_judges(ed, 'outcome')
+        if not per: continue
+        b = dict(next(iter(per.values())))
+        b['normalized'] = panel_data.mean([v.get('normalized') for v in per.values()])
+        b['cohort_identity_verdict'] = J.consensus(
+            [v.get('cohort_identity_verdict') for v in per.values()]) or ''
+        v3[panel_data.label_of(p)] = b
     for p in glob.glob(panel_data.artifact_glob(D, 'support', J.tags()[0])):
-        sup[panel_data.label_of(p)] = json.load(open(p))
+        ed = panel_data.episode_dir_of(p); per = panel_data.load_all_judges(ed, 'support')
+        if not per: continue
+        b = dict(next(iter(per.values())))
+        b['support_score'] = panel_data.mean([x.get('support_score') for x in per.values()])
+        b['levels'] = {k: {'strategy': J.consensus([(x['levels'].get(k) or {}).get('strategy')
+                                                    for x in per.values()]),
+                           'support': J.consensus([(x['levels'].get(k) or {}).get('support')
+                                                   for x in per.values()])}
+                       for k in ('d1_partition', 'd2_identity', 'd3_mechanism')}
+        sup[panel_data.label_of(p)] = b
     for p in glob.glob(panel_data.artifact_glob(D, 'cot', J.tags()[0])):
-        cot[panel_data.label_of(p)] = json.load(open(p))
+        ed = panel_data.episode_dir_of(p); per = panel_data.load_all_judges(ed, 'cot')
+        if not per: continue
+        b = dict(next(iter(per.values())))
+        for fld in ('identity_derivation', 'validation_rigor', 'reasoning_strategy'):
+            b[fld] = J.consensus([c.get(fld) for c in per.values()])
+        cot[panel_data.label_of(p)] = b
     panel_data.require_loaded(len(v3), D, 'outcome artifacts')
     panel_data.require_loaded(len(sup), D, 'support artifacts')
     panel_data.require_loaded(len(cot), D, 'CoT artifacts')
@@ -127,7 +134,7 @@ _lane_counts = [len(glob.glob(panel_data.artifact_glob(d, 'outcome', J.tags()[0]
                 for _, dd_, ld_, _, _ in PAIRS for d in (dd_, ld_)]
 N_PER_LANE = max(_lane_counts) if _lane_counts else 0
 panel_data.require_data(sum(_lane_counts), 'scored episodes', runs_config.SOURCE)
-JUDGE_NAME = _cot_judge_name([d for _, d, l, _, _ in PAIRS])
+JUDGE_NAME = panel_judges.panel_judge_label([d for _, d, l, _, _ in PAIRS])
 
 DATA = {lab: {'detailed': metrics(dd), 'lean': metrics(ld), 'color': col, 'tier': tier}
         for lab, dd, ld, col, tier in PAIRS}
@@ -428,7 +435,7 @@ would mean the two judges read the same trace as opposite behaviours.
 html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TCGA Benchmark — Instruction Ablation (Detailed vs Lean)</title><style>{CSS}</style></head><body><div class="wrap">
 <h1>TCGA Agent Benchmark — Instruction Ablation</h1>
-<div class="meta">Detailed (staged Stage 0–5 prompt) vs Lean ("no prescribed procedure") · {len(DATA)} models × 2 prompts · {N_PER_LANE} episodes each · same model/cohorts/seeds/budget — only the prompt differs · CoT judged by neutral {JUDGE_NAME}; support judge not recorded in the score files</div>
+<div class="meta">Detailed (staged Stage 0–5 prompt) vs Lean ("no prescribed procedure") · {len(DATA)} models × 2 prompts · {N_PER_LANE} episodes each · same model/cohorts/seeds/budget — only the prompt differs · judged by the neutral three-family panel {JUDGE_NAME}, one pass each; every artifact (CoT, support, outcome) records its judge</div>
 
 <h2>Headline</h2>
 <div class="panel">
@@ -465,7 +472,7 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 (1) <b>n = 21/arm</b> on honest arms, <b>32/arm on G3</b> — but G3 rates use the <b>exposed</b> denominator, which is far smaller on the lean wave (19/16/15 of 32). Deltas within a few points are noise.<br>
 (2) <b>Two scorers, partly divergent</b> — CoT "derived" (behaviour) vs support "unsupported" (documented evidence) can move in opposite directions; that divergence is the finding, but neither is ground truth.<br>
 (3) <b>Gemini 2.5 Pro is a generation behind</b>, not a lower tier — the clean run is three flagships. A Gemini delta is confounded with model generation. It also returned <b>zero record_observation</b> in 3 lean episodes, so it sometimes supplied no process evidence at all.<br>
-(4) <b>identity_derivation is one judge's categorical call</b> — the lean prompt's own "derive from structure alone" wording may nudge it toward "data-derived". {"Second-judge coverage is COMPLETE; read the survival verdicts above and quote only deltas marked <i>holds</i>." if j_all_complete else "<b class='part'>Second-judge coverage is still INCOMPLETE</b> — treat every derivation magnitude as directional-pending-robustness until it finishes."}
+(4) <b>identity_derivation is a majority across three judge FAMILIES; 98/570 episodes reach no majority and are excluded</b> — the lean prompt's own "derive from structure alone" wording may nudge it toward "data-derived". {"Second-judge coverage is COMPLETE; read the survival verdicts above and quote only deltas marked <i>holds</i>." if j_all_complete else "<b class='part'>Second-judge coverage is still INCOMPLETE</b> — treat every derivation magnitude as directional-pending-robustness until it finishes."}
 </div>
 
 <div class="foot">Source: <code>{runs_config.SOURCE}</code>. Outcome from <code>scoring/&lt;judge&gt;/v3scores.json</code>, grounding from <code>supportscores.json</code>, reasoning from <code>cotsummary.json</code> (3-family neutral panel: {'/'.join(J.tags())}); record_observation counts from the raw trace. Generated by <code>scripts/gen_ablation_report.py</code>. Charts: Chart.js (cdnjs).</div>

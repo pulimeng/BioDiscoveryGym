@@ -13,7 +13,12 @@ import os
 import sys
 import types
 
-import anthropic
+# `anthropic` is imported lazily, inside the one branch that uses it. At module scope it made
+# the whole scoring package — and therefore judges_config, panel_data and every analysis and
+# audit script that imports them — unimportable without the SDK installed. Reviewers could not
+# run audit_panel.py to check the data, which is exactly backwards: a read-only audit over JSON
+# files should not need an LLM client. No Anthropic model is used as a judge by default.
+
 
 # THE judge default, for every track. Previously this string was duplicated in eight places
 # (both scorers, the support judge, the CoT judge, two shell drivers, the cost report), so
@@ -154,6 +159,7 @@ class _JudgeClient:
         def create(self, *, model, max_tokens, system, messages):
             ml = (model or "").lower()
             if "claude" in ml:
+                import anthropic          # imported HERE, not at module load
                 return anthropic.Anthropic().messages.create(
                     model=model, max_tokens=max_tokens, system=system, messages=messages)
             import openai
