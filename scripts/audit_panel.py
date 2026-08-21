@@ -113,10 +113,20 @@ def main() -> int:
                     seen[(tag, 'validation_rigor')][d.get('validation_rigor')] += 1
                 elif kind == 'support':
                     lv = d.get('levels') or {}
+                    if not isinstance(lv, dict):
+                        fail(f"levels NOT AN OBJECT ({type(lv).__name__}) {p}"); continue
                     if set(lv) != {'d1_partition', 'd2_identity', 'd3_mechanism'}:
                         fail(f"MISSING DECISIONS {p}: got {sorted(lv)}")
                     for name, e in lv.items():
-                        st_, su = (e or {}).get('strategy'), (e or {}).get('support')
+                        # A decision must be an OBJECT. qwen returned a bare string for one,
+                        # which crashed this audit rather than being reported — an auditor that
+                        # dies on malformed input is worse than one that flags it, because the
+                        # run looks like a tooling failure instead of a data failure.
+                        if not isinstance(e, dict):
+                            fail(f"DECISION NOT AN OBJECT at {name} ({type(e).__name__}) {p}")
+                            seen[(tag, name + '.strategy')]['<malformed>'] += 1
+                            continue
+                        st_, su = e.get('strategy'), e.get('support')
                         if st_ not in STRAT:
                             fail(f"BAD strategy={st_!r} at {name} {p}")
                         if su not in SUPPORT:
