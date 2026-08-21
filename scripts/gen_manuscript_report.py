@@ -67,6 +67,7 @@ def load_sfx(run, sfx):
     d = {}
     for p in glob.glob(panel_data.artifact_glob(run, 'cot', sfx)):
         d[panel_data.label_of(p)] = json.load(open(p))
+    panel_data.require_loaded(len(d), run, f'CoT artifacts for judge {sfx}')
     return d
 
 
@@ -233,6 +234,7 @@ _lane_counts = [len(glob.glob(panel_data.artifact_glob(d, 'outcome', J.tags()[0]
                 for d in _lane_dirs]
 N_PER_LANE = max(_lane_counts) if _lane_counts else 0
 N_TOTAL = sum(_lane_counts)
+panel_data.require_data(N_TOTAL, 'scored episodes', runs_config.SOURCE)
 
 main_rows = ""
 ROWS = [('out_hon', 'Outcome (honest mean)', lambda v, r: f"{v:.3f}", None),

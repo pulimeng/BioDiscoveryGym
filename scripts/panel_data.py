@@ -158,3 +158,67 @@ def load_all_judges(episode_dir: str, kind: str) -> dict:
         if os.path.exists(p):
             out[tag] = json.load(open(p))
     return out
+
+
+# ── Emptiness guards for report generators ───────────────────────────────────────────────────
+# Every HTML generator was silently broken by the layout move, and three of the five did not
+# fail — they rendered a complete, styled page in which every number was zero ("0 episodes
+# each"). An empty glob returns [], and [] formats fine: nothing in those scripts ever asserted
+# how many episodes it expected to find. The two that did crash only did so incidentally, by
+# dividing by an empty collection.
+#
+# These make the expectation explicit. `expected_episodes` counts episode DIRECTORIES, which
+# exist independently of any judge artifact, so it is a ground truth the loaders can be checked
+# against rather than a number derived from the same broken glob.
+
+def expected_episodes(run_dir: str) -> int:
+    """Episodes present on disk in a run directory, judged or not."""
+    n = 0
+    for e in glob.glob(os.path.join(run_dir, '*')):
+        lab = os.path.basename(e)
+        if os.path.isdir(e) and not lab.startswith(('_', '.')) \
+           and os.path.exists(os.path.join(e, lab + '.json')):
+            n += 1
+    return n
+
+
+def require_loaded(n_loaded: int, run_dir: str, what: str, *, tolerate_partial: bool = False):
+    """Refuse to build a report from nothing, or from a fraction, without saying so.
+
+    A report is a claim about a dataset. Rendering one from zero episodes states that claim
+    about nothing at all, and every generator here did exactly that after the layout changed.
+    """
+    want = expected_episodes(run_dir)
+    if want and n_loaded == 0:
+        sys.exit(f"REFUSING to build a report: loaded 0 {what} from {run_dir}, "
+                 f"which holds {want} episodes.\n"
+                 f"  This is a path/layout mismatch, not an empty dataset. Reporting zeros here\n"
+                 f"  would render a complete-looking page describing nothing.")
+    if want and n_loaded < want and not tolerate_partial:
+        sys.exit(f"REFUSING to build a report: loaded {n_loaded}/{want} {what} from {run_dir}.\n"
+                 f"  A partial load silently shrinks every denominator below. Run\n"
+                 f"  scripts/panel_status.py, or pass tolerate_partial where a gap is expected.")
+    return n_loaded
+
+
+def require_data(n: int, what: str, run_dir: str = '', expected: int | None = None) -> int:
+    """Exit loudly when a loader found nothing (or fewer rows than expected).
+
+    Every HTML generator was broken by the layout move and only two of them noticed — and those
+    two only because they happened to divide by an empty collection. The other three rendered a
+    complete, styled page in which every number was zero: an empty glob returns [], and []
+    formats fine. Nothing asserted "I expect 570 episodes", so nothing could tell the difference
+    between a run with no data and a run that found no data.
+
+    Call this immediately after loading, before any formatting.
+    """
+    where = f" under {run_dir}" if run_dir else ""
+    if n == 0:
+        sys.exit(f"REFUSING: found 0 {what}{where}.\n"
+                 f"  A report over zero episodes renders as a page of zeros, not as an error.\n"
+                 f"  Check BDG_RUNS and that the panel has been run "
+                 f"(scripts/panel_status.py).")
+    if expected is not None and n < expected:
+        print(f"  WARNING: {n} {what}{where}, expected {expected} — the report below covers a "
+              f"SUBSET and every denominator in it is short.", file=sys.stderr)
+    return n

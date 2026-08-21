@@ -111,9 +111,12 @@ def load(root):
             exposed=(panel_data.was_exposed(panel_data.episode_json_of(sp)) and usable
                      if arm.startswith('g3') else None),
             lvl=L, mech=mech))
+    panel_data.require_loaded(len(R), root, 'scored episodes')
     return R
 
 DATA = {name: load(root) for name, root, *_ in MODELS}
+panel_data.require_data(sum(len(v) for v in DATA.values()), 'scored episodes',
+                        runs_config.SOURCE)
 COL = {t[0]: t[2] for t in MODELS}
 TIER = {t[0]: t[3] for t in MODELS}
 ROOT = {t[0]: t[1] for t in MODELS}

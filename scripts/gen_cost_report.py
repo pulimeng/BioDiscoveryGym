@@ -137,6 +137,10 @@ def judge_usage():  # noqa: C901
     judge_models = set()
     eps = []                       # one record per EPISODE (all judge passes summed)
     for _, _, run, _ in RUNS:
+        # Guard the episode enumeration itself. When the judge paths went stale, every artifact
+        # was skipped, `calls` stayed 0 and the totals divided by zero — the crash was
+        # incidental, not a check. If the tokens genuinely cannot be measured, say so.
+        panel_data.require_loaded(len(list(episode_paths(run))), run, 'episodes')
         for p in episode_paths(run):
             try:
                 per_call_in = len(sc.build_input(extract_episode(p))) // 4 + overhead
@@ -330,6 +334,10 @@ def main():
     per10 = {}
     for (m, pr), d in A.items():
         t = d['input'] + d['output']
+        # A lane with zero tokens means the episodes were not found, not that they were free.
+        # Every percentage below divides by t, so without this the report dies on arithmetic
+        # and names the division rather than the missing data.
+        panel_data.require_data(t, f'agent tokens for {m}/{pr}', runs_config.SOURCE)
         c = cost(m, d['input'], d['output'], prices)
         if c is None:
             # Same rule as the table above: show the shape, refuse to invent the price.
@@ -346,6 +354,10 @@ def main():
     if J:
         jc = cost(JM, J['input'], J['output'], prices)
         jt = J['input'] + J['output']
+        # Zero judge tokens means no judge artifact was found, not a free judge. Say so rather
+        # than dividing by it — the ZeroDivisionError that used to surface here named the
+        # arithmetic, not the missing data.
+        panel_data.require_data(jt, 'judge tokens', runs_config.SOURCE)
         print("\n" + "=" * 90)
         print(f"  JUDGE ({len(JUDGE_SUFFIXES)} passes x {JN} episodes, neutral {JM_LABEL})")
         print("=" * 90)

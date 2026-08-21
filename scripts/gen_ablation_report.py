@@ -74,6 +74,9 @@ def metrics(D):
         sup[panel_data.label_of(p)] = json.load(open(p))
     for p in glob.glob(panel_data.artifact_glob(D, 'cot', J.tags()[0])):
         cot[panel_data.label_of(p)] = json.load(open(p))
+    panel_data.require_loaded(len(v3), D, 'outcome artifacts')
+    panel_data.require_loaded(len(sup), D, 'support artifacts')
+    panel_data.require_loaded(len(cot), D, 'CoT artifacts')
     hon = [l for l in v3 if arm(l) in ('g0', 'g1', 'g2')]
     def om(a):
         xs = [v3[l]['normalized'] for l in v3 if arm(l) == a]; return st.mean(xs) if xs else 0.0
@@ -123,6 +126,7 @@ def metrics(D):
 _lane_counts = [len(glob.glob(panel_data.artifact_glob(d, 'outcome', J.tags()[0])))
                 for _, dd_, ld_, _, _ in PAIRS for d in (dd_, ld_)]
 N_PER_LANE = max(_lane_counts) if _lane_counts else 0
+panel_data.require_data(sum(_lane_counts), 'scored episodes', runs_config.SOURCE)
 JUDGE_NAME = _cot_judge_name([d for _, d, l, _, _ in PAIRS])
 
 DATA = {lab: {'detailed': metrics(dd), 'lean': metrics(ld), 'color': col, 'tier': tier}

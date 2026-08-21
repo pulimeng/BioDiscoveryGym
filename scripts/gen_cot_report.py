@@ -204,6 +204,9 @@ for (m, pr), d in EP.items():
                          f"<td>{' / '.join(H.escape(str(x)) for x in v)}</td>"
                          f"<td class='vd'>{H.escape((r['verdict'] or '')[:180])}</td></tr>")
 ntot = sum(len(d['rows']) for d in EP.values())
+# Guard on the SAME number the report prints. An earlier guard summed len() over EP's
+# values, which counts dict KEYS rather than episodes and so was never zero.
+panel_data.require_data(ntot, 'judged episodes', runs_config.SOURCE)
 
 # ---- §7 verbatim shape-leak evidence ------------------------------------------------------
 quotes = ""
@@ -325,6 +328,7 @@ fact</b> &mdash; per-episode labels are the least reliable level of this data.</
 <th>episode</th><th>the three votes</th><th>pass-1 verdict</th></tr></thead>
 <tbody>{dis_rows or "<tr><td colspan=5 class='mut'>no unresolved episodes</td></tr>"}</tbody></table></div>
 <p class="lead">Episodes where all three passes disagreed, so no majority exists
+
 ({ndis} of {ntot} episodes had any disagreement at all). These are not judge failures &mdash; they
 are the genuinely ambiguous cases, where the trace supports more than one reading. They are the
 honest place to look when deciding how much weight the label can carry.</p></div>
