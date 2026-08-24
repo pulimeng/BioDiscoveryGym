@@ -394,6 +394,21 @@ CH = {
 flag = [m for m in DATA if DATA[m]['tier'] == 'flagship']
 flash = [m for m in DATA if DATA[m]['tier'] != 'flagship']
 flag_shift = st.mean([abs(DATA[m]['lean']['out_hon'] - DATA[m]['detailed']['out_hon']) for m in flag]) if flag else 0
+# staged-buys-score: per-model staged advantage (detailed - lean); +ve = staged scores higher
+_stadv = {m: DATA[m]['detailed']['out_hon'] - DATA[m]['lean']['out_hon'] for m in DATA}
+_helped = [m for m in DATA if _stadv[m] >= 0.02]
+_inv = [m for m in DATA if abs(_stadv[m]) < 0.02]
+# A model where LEAN wins by >=0.02 falls in neither list above, and the sentence would then
+# report "staged helped N/3 ... M are flat" with a model silently missing — the reader cannot
+# tell that N+M < 3. No model does this on the current data; say so explicitly rather than
+# depend on it.
+_hurt = [m for m in DATA if _stadv[m] <= -0.02]
+assert len(_helped) + len(_inv) + len(_hurt) == len(DATA), 'staged-advantage buckets lost a model'
+_helped_str = '; '.join(f"{m} +{_stadv[m]:.2f}" for m in _helped) or 'none'
+_inv_str = (', '.join(_inv) + (' is' if len(_inv) == 1 else ' are') + ' flat') if _inv else 'none flat'
+if _hurt:
+    _inv_str += ('; lean scores HIGHER for '
+                 + '; '.join(f"{m} -{abs(_stadv[m]):.2f}" for m in _hurt))
 der_up = sum(1 for m in DATA if DATA[m]['lean']['g2_derived'] > DATA[m]['detailed']['g2_derived'])
 sup_up_det = sum(1 for m in DATA if DATA[m]['detailed']['support'] > DATA[m]['lean']['support'] + 1e-9)
 ro_up_det = sum(1 for m in DATA if DATA[m]['detailed']['ro_per_ep'] > DATA[m]['lean']['ro_per_ep'])
@@ -507,9 +522,9 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 
 <h2>Headline</h2>
 <div class="panel">
-<div class="kfind"><div class="ix">⚖️</div><div><b>Outcome is prompt-invariant for the flagships</b> (mean |lean−detailed| = <b>{flag_shift:.3f}</b> for {", ".join(flag)}){flash_line}</div></div>
+<div class="kfind"><div class="ix">⚖️</div><div><b>Procedural scaffolding buys outcome score — unevenly.</b> Staged scores higher than lean for <b>{len(_helped)}/{len(DATA)}</b> models ({_helped_str}); {_inv_str}. Not invariance — the scaffold raises the grade for the models that lean on it. What that gain is made of — documentation vs. reasoning — is the next line.{flash_line}</div></div>
 <div class="kfind"><div class="ix">🎣</div><div><b>Once actually exposed, nearly every episode adopts the planted label.</b> Denominator is EXPOSED episodes, not arm size (see scripts/g3_exposure.py). On that denominator the prompt gap largely disappears — detailed is higher in only <b>{fool_up_det}/{len(DATA)}</b> models, and the earlier claim that the scaffold walks agents into the false frame is <b>retracted</b> (it was an exposure artifact).</div></div>
-<div class="kfind"><div class="ix">📋</div><div><b>The staged prompt inflates the grounding <i>score</i> via documentation, not reasoning.</b> Detailed logs more <code>record_observation</code>s in <b>{ro_up_det}/{len(DATA)}</b> models and posts a higher support score in <b>{sup_up_det}/{len(DATA)}</b>, while validation rigor is higher under detailed in <b>{rig_up_det}/{len(DATA)}</b> — yet G2 identity is <i>derived</i> from data more under lean in <b>{der_up}/{len(DATA)}</b>. More paperwork, not better grounding.</div></div>
+<div class="kfind"><div class="ix">📋</div><div><b>The staged prompt logs more and scores higher on grounding.</b> Detailed posts more <code>record_observation</code>s in <b>{ro_up_det}/{len(DATA)}</b> models, a higher support score in <b>{sup_up_det}/{len(DATA)}</b>, and higher validation rigor in <b>{rig_up_det}/{len(DATA)}</b>; G2 derivation rises under lean in only <b>{der_up}/{len(DATA)}</b>. Documentation volume plausibly inflates support — <b>but not merely paperwork</b>: detailed also validates more and scores better in 2/3, so a clean documentation-vs-reasoning split is not established here.</div></div>
 </div>
 
 <h2>Outcome, derivation, and documentation — detailed vs lean</h2>
@@ -519,7 +534,7 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 <div><div class="chartbox"><canvas id="c_der"></canvas></div></div>
 <div><div class="chartbox"><canvas id="c_ro"></canvas></div></div>
 </div>
-<p class="lead">Faded bar = detailed, solid = lean. <b>Outcome</b> barely moves; <b>identity-derivation</b> tends to rise under lean; <b>record_observation count</b> falls under lean (less documentation) — the three-way signature of "instruction inflates the grounding metric without improving the reasoning."</p></div>
+<p class="lead">Faded bar = detailed, solid = lean. <b>Outcome</b> is higher under detailed for <b>{len(_helped)}/{len(DATA)}</b> models (flat for the rest); <b>G2 derivation</b> rises under lean in only <b>{der_up}/{len(DATA)}</b> (unchanged or lower for the others); <b>record_observation count</b> falls under lean (less documentation). Detailed buys score and documentation — whether it buys better <i>reasoning</i> is not resolved here.</p></div>
 
 <h2>Per-model paired metrics</h2>
 <div class="cards">{cards}</div>

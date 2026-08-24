@@ -177,6 +177,21 @@ DATA = {lab: {'detailed': metrics(dd), 'lean': metrics(ld),
 # ---------------- derived narrative numbers (computed, never typed) ----------------
 flag = [m for m in DATA if DATA[m]['tier'] == 'flagship']
 flag_shift = st.mean([abs(DATA[m]['lean']['out_hon'] - DATA[m]['detailed']['out_hon']) for m in flag])
+# staged-buys-score: per-model staged advantage (detailed - lean); +ve = staged scores higher
+_stadv = {m: DATA[m]['detailed']['out_hon'] - DATA[m]['lean']['out_hon'] for m in DATA}
+_helped = [m for m in DATA if _stadv[m] >= 0.02]
+_inv = [m for m in DATA if abs(_stadv[m]) < 0.02]
+# A model where LEAN wins by >=0.02 falls in neither list above, and the sentence would then
+# report "staged helped N/3 ... M are flat" with a model silently missing — the reader cannot
+# tell that N+M < 3. No model does this on the current data; say so explicitly rather than
+# depend on it.
+_hurt = [m for m in DATA if _stadv[m] <= -0.02]
+assert len(_helped) + len(_inv) + len(_hurt) == len(DATA), 'staged-advantage buckets lost a model'
+_helped_str = '; '.join(f"{m} &plus;{_stadv[m]:.2f}" for m in _helped) or 'none'
+_inv_str = (', '.join(_inv) + (' is' if len(_inv) == 1 else ' are') + ' flat') if _inv else 'none flat'
+if _hurt:
+    _inv_str += ('; lean scores HIGHER for '
+                 + '; '.join(f"{m} &minus;{abs(_stadv[m]):.2f}" for m in _hurt))
 def _fool_rate(d):
     """Adoption RATE over exposed-and-scored episodes.
 
@@ -304,14 +319,15 @@ neutral <b>{"/".join(J.tags())}</b> — <b>one pass per judge family</b> (cross-
 
 <h2>Headline findings</h2>
 <div class="panel">
-<div class="kfind"><div class="ix">&#9878;</div><div><b>Outcome is prompt-invariant for the flagships</b>
-(mean |lean&minus;detailed| = <b>{flag_shift:.3f}</b>){' &mdash; but ' + '; '.join(flash_lines) + '. The small model depends on the staged scaffold.' if flash_lines else '.'}</div></div>
-<div class="kfind"><div class="ix">&#127907;</div><div><b>Adoption is near-universal once the label is delivered</b>
-once it is actually delivered. Denominator is EXPOSED episodes, not arm size; detailed is higher in <b>{fool_up}/{len(DATA)}</b> models, and the previous staged-prompt claim is <b>retracted</b> as an exposure artifact.</div></div>
-<div class="kfind"><div class="ix">&#128203;</div><div><b>The staged prompt inflates the grounding
-<i>score</i> through documentation, not reasoning</b> &mdash; more <code>record_observation</code>s in
-<b>{ro_up}/{len(DATA)}</b> models and higher support in <b>{sup_up}/{len(DATA)}</b>, while identity is
-<i>derived</i> more often under lean.</div></div>
+<div class="kfind"><div class="ix">&#9878;</div><div><b>Procedural scaffolding buys outcome score &mdash; unevenly.</b>
+Staged scores higher than lean for <b>{len(_helped)}/{len(DATA)}</b> models ({_helped_str}); {_inv_str}. Not a prompt-invariance &mdash; the scaffold raises the grade for the models that lean on it. What the gain is <i>made of</i> is the third finding below, and it is not settled.</div></div>
+<div class="kfind"><div class="ix">&#127907;</div><div><b>Adoption is near-universal once the label is actually delivered.</b>
+Denominator is EXPOSED episodes, not arm size; detailed is higher in <b>{fool_up}/{len(DATA)}</b> models, and the previous staged-prompt claim is <b>retracted</b> as an exposure artifact.</div></div>
+<div class="kfind"><div class="ix">&#128203;</div><div><b>The staged prompt logs more and scores higher on support</b>
+&mdash; more <code>record_observation</code>s in <b>{ro_up}/{len(DATA)}</b> models and higher support in
+<b>{sup_up}/{len(DATA)}</b>. Documentation volume plausibly lifts the support score, but <b>not merely
+paperwork</b>: detailed also validates more and, in 2/3 models, scores better &mdash; a clean
+documentation-vs-reasoning split is not established here.</div></div>
 </div>
 
 <h2>1 &middot; Prompt ablation &mdash; outcome, grounding, documentation, fooling</h2>

@@ -130,8 +130,8 @@ def stats(R):
         cby={c: st.mean([x['norm'] for x in hon if x['cohort'] == c] or [0]) for c in cohorts},
         csd={c: st.pstdev([x['norm'] for x in hon if x['cohort'] == c] or [0]) for c in cohorts},
         id_ng=ng('d2_identity'), d1_ng=ng('d1_partition'), d3_ng=ng('d3_mechanism'),
-        fa=sum(1 for x in R if x['arm'] == 'g3a' and x['verdict'] == 'mislead_cohort'),
-        fb=sum(1 for x in R if x['arm'] == 'g3b' and x['verdict'] == 'mislead_cohort'))
+        fa=sum(1 for x in R if x['arm'] == 'g3a' and x['exposed'] and x['verdict'] == 'mislead_cohort'),
+        fb=sum(1 for x in R if x['arm'] == 'g3b' and x['exposed'] and x['verdict'] == 'mislead_cohort'))
 
 def _tcrit(df):
     # two-sided 95% t critical, small table + normal floor — avoids a scipy dependency.
@@ -255,13 +255,17 @@ sig_txt = (f"the top-two outcome means are separated ({ranked[0]} vs {ranked[1]}
 def cav(m):
     s = S[m]; rank = ranked.index(m)
     gap = s['id_ng'] / max(S[best]['id_ng'], 0.01)
-    n3a_ex = max(sum(1 for x in DATA[m] if x['arm'] == 'g3a' and x['exposed']), 1)
-    n3b_ex = max(sum(1 for x in DATA[m] if x['arm'] == 'g3b' and x['exposed']), 1)
+    # `max(..., 1)` here turned a lane with ZERO exposed episodes into "0/1 fooled" — an
+    # untested arm rendering as a tested-and-resistant one. Keep the true count and say n/a.
+    n3a_ex = sum(1 for x in DATA[m] if x['arm'] == 'g3a' and x['exposed'])
+    n3b_ex = sum(1 for x in DATA[m] if x['arm'] == 'g3b' and x['exposed'])
     tier_note = (f" <b>Tier:</b> {TIER[m]} — a lighter tier than the flagship models here, so any "
                  f"deficit is <b>confounded by tier</b>, not attributable to the model family."
                  if TIER.get(m) != 'flagship' else "")
     id_s = f"{s['id_ng']:.0%}"
-    fool = f"fooled g3a {s['fa']}/{n3a_ex} · g3b {s['fb']}/{n3b_ex} (of exposed)"
+    _fa_txt = f"{s['fa']}/{n3a_ex}" if n3a_ex else "n/a — no exposed episodes"
+    _fb_txt = f"{s['fb']}/{n3b_ex}" if n3b_ex else "n/a — no exposed episodes"
+    fool = f"fooled g3a {_fa_txt} · g3b {_fb_txt} (of exposed)"
     if rank == 0:
         body = (f"Top outcome ({s['outcome']:.3f}) and best-grounded identity caller "
                 f"(unsupported {id_s}). Watch: early-mislead susceptibility ({fool}) and any lean "
@@ -660,26 +664,35 @@ JUDGE_NAME = panel_judges.panel_judge_label([m[1] for m in MODELS])
 # This line used to read "no consistent early≫late gradient" as a hardcoded string. That was true
 # of the pilot and is false of the clean run (92% vs 41% adoption, p=2.4e-14), so the report
 # asserted the opposite of its own data without anything failing. Compute it instead.
-_n3a = {m: max(sum(1 for x in DATA[m] if x['arm'] == 'g3a' and x['exposed']), 1) for m in ranked}
-_n3b = {m: max(sum(1 for x in DATA[m] if x['arm'] == 'g3b' and x['exposed']), 1) for m in ranked}
-_ra = {m: S[m]['fa'] / _n3a[m] for m in ranked}
-_rb = {m: S[m]['fb'] / _n3b[m] for m in ranked}
-_fool_rates = [(S[m]['fa'] + S[m]['fb']) / max(sum(1 for x in DATA[m]
-                if x['arm'] in ('g3a', 'g3b') and x['exposed']), 1) for m in ranked]
+_n3a = {m: sum(1 for x in DATA[m] if x['arm'] == 'g3a' and x['exposed']) for m in ranked}
+_n3b = {m: sum(1 for x in DATA[m] if x['arm'] == 'g3b' and x['exposed']) for m in ranked}
+# A model with no exposed episodes in an arm has NO rate for it — not a rate of zero. Drop it
+# from the early-vs-late comparison and say how many were dropped, rather than letting an empty
+# denominator vote in the timing claim.
+_timing_ok = [m for m in ranked if _n3a[m] and _n3b[m]]
+_timing_skipped = [m for m in ranked if m not in _timing_ok]
+_ra = {m: S[m]['fa'] / _n3a[m] for m in _timing_ok}
+_rb = {m: S[m]['fb'] / _n3b[m] for m in _timing_ok}
+_fool_rates = [(S[m]['fa'] + S[m]['fb']) / _d for m in ranked
+               if (_d := sum(1 for x in DATA[m]
+                             if x['arm'] in ('g3a', 'g3b') and x['exposed']))]
 _fool_lo, _fool_hi = min(_fool_rates), max(_fool_rates)
 _fool_n = sum(1 for m in ranked for x in DATA[m] if x['arm'] in ('g3a', 'g3b') and x['exposed'])
 # TIES ARE COUNTED SEPARATELY. `_early_worse == 0` was read as "late is higher in every model",
 # but zero models with a strictly higher EARLY rate is not the same as every model having a higher
 # LATE rate — Sonnet sits at 100% in both arms. Saturated cells are the normal case here (adoption
 # is near-ceiling once exposed), so ties are the rule, not an edge case.
-_NM = len(ranked)
-_early_worse = sum(1 for m in ranked if _ra[m] > _rb[m])
-_late_worse = sum(1 for m in ranked if _rb[m] > _ra[m])
+_NM = len(_timing_ok)
+_early_worse = sum(1 for m in _timing_ok if _ra[m] > _rb[m])
+_late_worse = sum(1 for m in _timing_ok if _rb[m] > _ra[m])
 _tied = _NM - _early_worse - _late_worse
-_pa = sum(S[m]['fa'] for m in ranked) / sum(_n3a.values())
-_pb = sum(S[m]['fb'] for m in ranked) / sum(_n3b.values())
+_pa = sum(S[m]['fa'] for m in _timing_ok) / max(sum(_n3a[m] for m in _timing_ok), 1)
+_pb = sum(S[m]['fb'] for m in _timing_ok) / max(sum(_n3b[m] for m in _timing_ok), 1)
 _pooled = f"pooled {_pa:.0%} early vs {_pb:.0%} late"
 _tie_note = f", tied in {_tied}/{_NM}" if _tied else ""
+if _timing_skipped:
+    _tie_note += (f" &mdash; {len(_timing_skipped)} model(s) excluded for having no exposed "
+                  f"episodes in one arm: {', '.join(_timing_skipped)}")
 if _early_worse == _NM:
     timing_txt = (f"adoption is <b>higher when the false label lands early</b> in "
                   f"<b>all {_NM} models</b> ({_pooled})")
