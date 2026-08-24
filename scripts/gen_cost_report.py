@@ -63,13 +63,27 @@ PRICES = {
     # under-costed by up to 2x otherwise, which is exactly the kind of plausible-looking number
     # this table exists to prevent.
     'Gemini 2.5 Pro': {'in': 1.25, 'out': 10.00},
-    # UNPRICED — the clean run swapped in a judge this table predates:
-    #   'nemotron-3-super' CoT judge, replaced deepseek-v4-pro (commit 24bc72e)
-    # They are deliberately ABSENT rather than guessed. The last time this table was filled from
-    # recollection it was wrong by 3-5x and inverted the model ranking; see the note above. Supply
-    # them with --prices, ideally from an invoice. Until then the report shows their token counts
-    # and marks the dollars UNPRICED — it no longer folds them in as $0.
+
+    # JUDGE PANEL — $0, and the zero is a FACT about this project, not a missing price.
+    # All three run on infrastructure the project owner already has (bifrost for laguna and
+    # nemotron, the St. Jude AIE serving platform for Qwen); there is no per-token charge to this
+    # work. $0 here means "measured at zero", which is why these entries are present rather than
+    # absent — an absent price is what UNPRICED means and the two must not look alike.
+    #
+    # CAUTION for the paper: a $0 judge makes "grading costs a fraction of generating" true by
+    # construction and therefore uninformative to a reader who would pay list price. Report the
+    # $0 as ours AND the JUDGE_LIST_REFERENCE counterfactual below, which is the number that
+    # generalises.
+    'laguna':               {'in': 0.0, 'out': 0.0},
+    'nemotron-3-super':     {'in': 0.0, 'out': 0.0},
+    'Qwen/Qwen3.6-27B-FP8': {'in': 0.0, 'out': 0.0},
 }
+
+# What the SAME measured judge tokens would cost on a commodity hosted endpoint. Used only for the
+# counterfactual sentence; it never enters a total. Rate is a mid-market open-weights serving price
+# and is labelled as an illustration, not a quote.
+JUDGE_LIST_REFERENCE = {'label': 'a commodity hosted endpoint at $0.30/M in, $0.60/M out',
+                        'in': 0.30, 'out': 0.60}
 # Per-request prompt-size tiers, USD/1M. Only models that actually tier appear here.
 PRICE_TIERS = {
     'Gemini 2.5 Pro': {'threshold': 200_000, 'above': {'in': 2.50, 'out': 15.00}},
@@ -427,6 +441,8 @@ def main():
     if J:
         jc = cost(JM, J['input'], J['output'], prices)
         jt = J['input'] + J['output']
+        JREF = (J['input'] / 1e6 * JUDGE_LIST_REFERENCE['in']
+                + J['output'] / 1e6 * JUDGE_LIST_REFERENCE['out'])
         # Zero judge tokens means no judge artifact was found, not a free judge. Say so rather
         # than dividing by it — the ZeroDivisionError that used to surface here named the
         # arithmetic, not the missing data.
@@ -444,13 +460,25 @@ def main():
               + ("" if J.get('measured') == J['calls'] else
                  f"  — chars//4 + {J['overhead_per_call']} tok/call system+tool overhead;"
                  f" a LOWER BOUND on input"))
-        if jc is not None:
+        if jc:
             print(f"  judge is {jc/max(tot_cost,1e-9)*100:.1f}% of agent spend — the evaluation "
                   f"layer is")
             print(f"  far cheaper than generating the episodes it grades.")
+        elif jc == 0:
+            # $0 is our REAL cost — all three families are self-hosted. But it makes the paper's
+            # "process evaluation is a fraction of generation" claim true by construction, and a
+            # ratio that cannot come out any other way is not evidence. State both: what it cost
+            # US, and what the same measured tokens would cost someone who pays for them.
+            print("  judge cost to this project: $0.00 — all three families run on infrastructure")
+            print("  already available here, with no per-token charge.")
+            print("  That makes the ratio 0% BY CONSTRUCTION, so it is not the number to quote.")
+            print(f"  Counterfactual on the same measured {jt/1e6:.1f}M tokens, "
+                  f"{JUDGE_LIST_REFERENCE['label']}:")
+            print(f"    ${JREF:,.2f}  =  {JREF/max(tot_cost,1e-9)*100:.2f}% of the "
+                  f"${tot_cost:,.2f} agent spend  (${JREF/max(JN,1):.4f} per episode graded)")
+            print("  That is the figure that generalises to a reader who pays for judging.")
         else:
-            # The "process evaluation is ~0.3% of generation" claim is a PAPER claim. It must not
-            # be printed from an unpriced judge, and it must not be silently omitted either.
+            # An unpriced judge must not print the claim, and must not silently omit it either.
             print(f"  !! CANNOT state the judge-vs-agent cost ratio: {JM_LABEL} is unpriced.")
             print(f"     The paper's 'process evaluation is a fraction of generation' claim needs")
             print(f"     this rate. Judge tokens are measured ({jt/1e6:.1f}M); only the price is missing.")
@@ -517,9 +545,18 @@ def main():
     if J:
         jc = cost(JM, J['input'], J['output'], prices)
         jt = J['input'] + J['output']
-        jmoney = ((f"<td class='num'>${jc/jt*1e7:.2f}</td><td class='num'>&mdash;</td>"
-                   f"<td class='num'><b>${jc:,.2f}</b></td>") if jc is not None
-                  else f"{UNP}<td class='num'>&mdash;</td>{UNP}")
+        JREF = (J['input'] / 1e6 * JUDGE_LIST_REFERENCE['in']
+                + J['output'] / 1e6 * JUDGE_LIST_REFERENCE['out'])
+        # $0 is a measured fact (self-hosted judges), not a missing price. Render it as such —
+        # a bare "$0.00" beside real dollars reads as a broken cell.
+        if jc:
+            jmoney = (f"<td class='num'>${jc/jt*1e7:.2f}</td><td class='num'>&mdash;</td>"
+                      f"<td class='num'><b>${jc:,.2f}</b></td>")
+        elif jc == 0:
+            jmoney = ("<td class='num good' colspan='3' title='self-hosted judge panel; "
+                      "no per-token charge'>$0 &mdash; self-hosted</td>")
+        else:
+            jmoney = f"{UNP}<td class='num'>&mdash;</td>{UNP}"
         jrow = (f"<tr><td class='grp'>judge: {len(JUDGE_SUFFIXES)} families &times;1 pass ({JM_LABEL})</td>"
                 f"<td>all arms</td>"
                 f"<td class='num'>{J['calls']:,} calls</td><td class='num'>{J['input']:,}</td>"
@@ -560,6 +597,31 @@ length: <b>every extra tool call re-sends the whole conversation.</b></p></div>'
         f"<tr><td>{k}</td><td class='num'>${v['in']:.2f}</td><td class='num'>${v['out']:.2f}</td></tr>"
         for k, v in prices.items())
 
+    # The paper's "process evaluation is a fraction of generation" claim, stated so it survives
+    # a free judge. $0/$1,262 = 0% is true and worthless; the counterfactual is the number a
+    # reader who pays for judging can use.
+    if J and jc == 0:
+        judge_ratio_note = (
+            f"<div class='warn'><b>Judging cost this project $0.</b> All three judge families run "
+            f"on infrastructure already available here, with no per-token charge &mdash; so "
+            f"&ldquo;evaluation is a fraction of generation&rdquo; is true here <b>by "
+            f"construction</b>, and 0% is not a figure to quote.<br>"
+            f"<b>The number that generalises:</b> the same measured "
+            f"{(J['input']+J['output'])/1e6:.1f}M judge tokens on "
+            f"{JUDGE_LIST_REFERENCE['label']} would cost <b>${JREF:,.2f}</b> &mdash; "
+            f"<b>{JREF/max(tot_cost,1e-9)*100:.2f}%</b> of the ${tot_cost:,.2f} spent generating "
+            f"the episodes, or <b>${JREF/max(JN,1):.4f} per episode graded</b> against "
+            f"${tot_cost/max(sum(d['n'] for d in A.values()),1):.2f} to produce one. The reference "
+            f"rate is an illustration, not a quote.</div>")
+    elif J and jc:
+        judge_ratio_note = (
+            f"<div class='lead'>Judging cost <b>${jc:,.2f}</b> &mdash; "
+            f"<b>{jc/max(tot_cost,1e-9)*100:.2f}%</b> of the ${tot_cost:,.2f} agent spend.</div>")
+    else:
+        judge_ratio_note = ("<div class='warn'>The judge is unpriced, so the judge-vs-agent cost "
+                            "ratio cannot be stated. Judge tokens are measured; the price is "
+                            "missing.</div>")
+
     # ---- token mix: what "% input" means, and why it decides the effective rate ----
     mix_rows = ""
     for (m, pr), d in A.items():
@@ -582,12 +644,20 @@ length: <b>every extra tool call re-sends the whole conversation.</b></p></div>'
         jfi, jfo = J['input'] / jt, J['output'] / jt
         jp = prices.get(JM)
     if J and jp:
-        jb = jfi * jp['in'] + jfo * jp['out']
-        mix_rows += (f"<tr><td class='grp'>{JM_LABEL}</td><td>judge &times;3</td>"
+        # The MIX (70/30 vs the agent's 99/1) is measured and is the point of this row — keep it.
+        # The price columns are not: a self-hosted judge is $0, and "0.704x0.00 + 0.296x0.00"
+        # is arithmetic theatre. Show the mix against the reference rate instead, labelled, so
+        # the row still demonstrates what the mix does to an effective rate.
+        free = not (jp['in'] or jp['out'])
+        rp = JUDGE_LIST_REFERENCE if free else jp
+        jb = jfi * rp['in'] + jfo * rp['out']
+        note = " <span class='sub'>ref. rate</span>" if free else ""
+        mix_rows += (f"<tr><td class='grp'>{JM_LABEL}{' (self-hosted, $0)' if free else ''}</td>"
+                     f"<td>judge &times;3</td>"
                      f"<td class='num'>{jfi*100:.1f}%</td>"
                      f"<td class='num'>{jfo*100:.1f}%<span class='sub'>approx</span></td>"
-                     f"<td class='num'>${jp['in']:.2f}</td><td class='num'>${jp['out']:.2f}</td>"
-                     f"<td class='num'>{jfi:.3f}&times;{jp['in']:.2f} + {jfo:.3f}&times;{jp['out']:.2f}</td>"
+                     f"<td class='num'>${rp['in']:.2f}{note}</td><td class='num'>${rp['out']:.2f}</td>"
+                     f"<td class='num'>{jfi:.3f}&times;{rp['in']:.2f} + {jfo:.3f}&times;{rp['out']:.2f}</td>"
                      f"<td class='num'><b>${jb*10:.2f}</b></td></tr>")
     # counterfactual: same prices, an even mix — shows how much the mix (not the model) is doing
     cf_rows = ""
@@ -603,7 +673,11 @@ length: <b>every extra tool call re-sends the whole conversation.</b></p></div>'
         cf_rows += (f"<tr><td class='grp' style='color:{d['color']}'>{m}</td>"
                     f"<td class='num'>${actual:.2f}</td><td class='num'>${even:.2f}</td>"
                     f"<td class='num bad'>&times;{even/actual:.1f}</td></tr>")
-    if J and prices.get(JM):
+    # This table asks "what would a 50/50 input:output mix cost relative to the real mix?" — a
+    # RATIO. At $0 both sides are $0 and the ratio is 0/0: it crashed with ZeroDivisionError, and
+    # a crash here leaves the PREVIOUS report on disk looking current. A free model has no mix
+    # sensitivity to show, so say that instead of computing it.
+    if J and prices.get(JM) and (prices[JM]['in'] or prices[JM]['out']):
         jt = J['input'] + J['output']
         jp = prices[JM]
         ja = (J['input'] / jt * jp['in'] + J['output'] / jt * jp['out']) * 10
@@ -611,6 +685,10 @@ length: <b>every extra tool call re-sends the whole conversation.</b></p></div>'
         cf_rows += (f"<tr><td class='grp'>{JM_LABEL} <span class='mut'>(judge)</span></td>"
                     f"<td class='num'>${ja:.2f}</td><td class='num'>${je:.2f}</td>"
                     f"<td class='num good'>&times;{je/ja:.1f}</td></tr>")
+    elif J and prices.get(JM):
+        cf_rows += (f"<tr><td class='grp'>{JM_LABEL} <span class='mut'>(judge)</span></td>"
+                    f"<td class='num mut' colspan='3'>$0 &mdash; self-hosted, so the "
+                    f"input:output mix costs nothing either way</td></tr>")
 
     # ---- per-episode cost: distribution, not just the mean ----
     ep_rows = ""
@@ -636,11 +714,19 @@ length: <b>every extra tool call re-sends the whole conversation.</b></p></div>'
                     f"<td class='num'>&times;{hi/max(lo,1e-9):.1f}</td></tr>")
     if J and J.get('eps') and JM in prices:
         jcs = sorted(cost(JM, e['in'], e['out'], prices) for e in J['eps'])
-        ep_rows += (f"<tr><td class='grp'>{JM_LABEL}</td><td>judge &times;3</td>"
-                    f"<td class='num'>{len(jcs)}</td><td class='num'>${st.mean(jcs):.4f}</td>"
-                    f"<td class='num'>${st.median(jcs):.4f}</td><td class='num'>${jcs[0]:.4f}</td>"
-                    f"<td class='num'>${jcs[-1]:.4f}</td>"
-                    f"<td class='num'>&times;{jcs[-1]/max(jcs[0],1e-9):.1f}</td></tr>")
+        if any(jcs):
+            ep_rows += (f"<tr><td class='grp'>{JM_LABEL}</td><td>judge &times;3</td>"
+                        f"<td class='num'>{len(jcs)}</td><td class='num'>${st.mean(jcs):.4f}</td>"
+                        f"<td class='num'>${st.median(jcs):.4f}</td><td class='num'>${jcs[0]:.4f}</td>"
+                        f"<td class='num'>${jcs[-1]:.4f}</td>"
+                        f"<td class='num'>&times;{jcs[-1]/max(jcs[0],1e-9):.1f}</td></tr>")
+        else:
+            # A spread table for a $0 model would print min $0.0000, max $0.0000, spread x0.0 —
+            # identical to how it renders a model whose prices are missing.
+            ep_rows += (f"<tr><td class='grp'>{JM_LABEL}</td><td>judge &times;3</td>"
+                        f"<td class='num'>{len(jcs)}</td>"
+                        f"<td class='num good' colspan='5'>$0 &mdash; self-hosted, no spread to "
+                        f"show</td></tr>")
     elif J and J.get('eps'):
         ep_rows += (f"<tr><td class='grp'>{JM_LABEL}</td><td>judge &times;3</td>"
                     f"<td class='num'>{len(J['eps'])}</td>{UNPRICED_ROW}</tr>")
@@ -661,7 +747,7 @@ length: <b>every extra tool call re-sends the whole conversation.</b></p></div>'
                       if cs else "<td class='num mut'>&mdash;</td>")
         cells += f"<td class='num'><b>${sum(cost(m, e['in'], e['out'], prices) for e in d['eps']):,.2f}</b></td>"
         arm_rows += (f"<tr><td class='grp' style='color:{d['color']}'>{m}</td><td>{pr}</td>{cells}</tr>")
-    if J and J.get('eps') and JM in prices:
+    if J and J.get('eps') and JM in prices and (prices[JM]['in'] or prices[JM]['out']):
         cells = ""
         for a in ARMS:
             cs = [cost(JM, e['in'], e['out'], prices)
@@ -722,7 +808,8 @@ model.</span></div>
 <tbody>{rows}{jrow}</tbody></table></div>
 <p class="lead"><b>$/10M tokens</b> is the blended unit price actually paid, which differs from
 sticker price because each run has its own input/output mix. It is the number to use when comparing
-models, since per-episode cost is dominated by how many turns a model takes.</p></div>
+models, since per-episode cost is dominated by how many turns a model takes.</p>
+{judge_ratio_note}</div>
 
 <h2>Where the money goes</h2>
 <div class="panel">
