@@ -79,11 +79,17 @@ def load(root):
         # first — so most "resistant" g3b/lean episodes were never shown a label. Dividing by arm
         # size is what produced the retracted early-vs-late result. See scripts/g3_exposure.py.
         usable = bool(verdict)
-        L = {k: {'strategy': J.consensus([(x['levels'].get(k) or {}).get('strategy')
-                                          for x in sups.values()]),
-                 'support': J.consensus([(x['levels'].get(k) or {}).get('support')
-                                         for x in sups.values()])}
-             for k in ('d1_partition', 'd2_identity', 'd3_mechanism')}
+        # `evidence` is free text and cannot be averaged, so the panel reduction dropped it —
+        # and every verbatim-quote cell in this report then rendered as an empty pair of quotes,
+        # including the section headed "verbatim from the grounding judge's evidence field".
+        # Keep it PER JUDGE and let the renderer pick; a quote must be attributable to the family
+        # that wrote it, never merged.
+        L = {}
+        for k in ('d1_partition', 'd2_identity', 'd3_mechanism'):
+            lv = {t: (x['levels'].get(k) or {}) for t, x in sups.items()}
+            L[k] = {'strategy': J.consensus([v.get('strategy') for v in lv.values()]),
+                    'support': J.consensus([v.get('support') for v in lv.values()]),
+                    'evidence': {t: (v.get('evidence') or '') for t, v in lv.items()}}
         R.append(dict(lab=lab, arm=arm, cohort=e.get('cohort'), seed=e.get('seed'),
             norm=panel_data.mean([v.get('normalized') for v in v3s.values()]),
             verdict=verdict,
@@ -272,8 +278,19 @@ def cav(m):
 
 def esc(t): return H.escape(str(t or ''))
 CH = {'grounded': ('g', 'gr'), 'unsupported': ('m', 'un'), 'anchored': ('b', 'an')}
+N_NOCONS = 0            # levels where the three families reached no majority
+
+
 def chip(sup):
-    c, ab = CH.get(sup, ('n', '?')); return f'<span class="chip {c}" title="{sup}">{ab}</span>'
+    # A no-consensus level used to render as `?` with title="None" — visually identical to a
+    # missing value. It is neither missing nor unknown: three families read the trace and split.
+    # Label it as the result it is, and count it so the caption can report the total.
+    global N_NOCONS
+    if sup is None:
+        N_NOCONS += 1
+        return '<span class="chip n" title="no panel consensus — the three judge families split">nc</span>'
+    c, ab = CH.get(sup, ('n', '?'))
+    return f'<span class="chip {c}" title="{sup}">{ab}</span>'
 
 # ---- per-model × arm table ----
 arms = ['g0', 'g1', 'g2', 'g3a', 'g3b']
@@ -285,6 +302,22 @@ for m in ranked:
         o = st.mean([x['norm'] for x in es]); ss = st.mean([x['ss'] for x in es])
         cells += f'<td class="num">{o:.3f}<span class="sub">s{ss:.1f}</span></td>'
     armtab += f'<tr><td class="grp" style="color:{COL[m]}">{m}</td>{cells}</tr>'
+
+def quotes(level):
+    """[(judge_tag, text)] for one level, panel order, families that wrote evidence.
+
+    Empty list when NO family did, so callers can say so instead of printing empty quotation
+    marks — which is exactly what this report did before the field was carried through.
+    """
+    ev = level.get('evidence') or {}
+    return [(t, ev[t].strip()) for t in J.tags() if ev.get(t, '').strip()]
+
+
+def quote(level):
+    """The first family with evidence, panel order. For the compact per-episode cell only."""
+    q = quotes(level)
+    return q[0] if q else ('', '')
+
 
 # ---- identity deep-dive: grounded vs unsupported evidence ----
 def d2_examples(support, k=3):
@@ -310,13 +343,27 @@ uns_pick = pick(uns, ['Gemini 2.5','GPT-5.5','Sonnet 5'], 3)
 grd_pick = pick(grd, ['Sonnet 5','GPT-5.5','Gemini 2.5'], 2)
 def ev_card(m, x, kind):
     d2 = x['lvl']['d2_identity']
+    qs = quotes(d2)
+    # ALL three families, not the first one. Showing a single family's words under a heading that
+    # says "three judge families" is how this report was single-judge in the first place, and the
+    # families are exactly what a reader wants to compare here.
+    body = ("".join(f'<div class="evq">&ldquo;{esc(t)}&rdquo;'
+                    f'<span class="sub"> &mdash; {esc(tag)}</span></div>' for tag, t in qs)
+            if qs else '<div class="evq mut">no judge recorded evidence for this level</div>')
     return (f'<div class="ev {kind}"><div class="evh"><b style="color:{COL[m]}">{m}</b> · <code>{x["lab"]}</code> '
-            f'<span class="chip {CH[d2["support"]][0]}">{d2["support"]}</span></div>'
-            f'<div class="evq">“{esc(d2.get("evidence"))}”</div></div>')
+            f'<span class="chip {CH.get(d2["support"], ("n",))[0]}">'
+            f'{d2["support"] or "no consensus"}</span></div>{body}</div>')
 uns_html = "".join(ev_card(m, x, 'bad') for m, x in uns_pick)
 grd_html = "".join(ev_card(m, x, 'good') for m, x in grd_pick)
 
 # ---- per-episode collapsible tables ----
+def ep_quote(level, n=160):
+    tag, txt = quote(level)
+    if not txt:
+        return '<span class="mut">no evidence recorded</span>'
+    return f'{esc(txt[:n])}<span class="sub"> &mdash; {esc(tag)}</span>'
+
+
 def ep_rows(R):
     rows = ""
     for x in sorted(R, key=lambda z: (z['arm'], str(z['cohort']), str(z['seed']))):
@@ -324,7 +371,7 @@ def ep_rows(R):
         rows += (f'<tr><td>{x["arm"]}{fooled}</td><td>{x["cohort"]}</td><td class="num">{x["seed"]}</td>'
                  f'<td class="num">{x["norm"]:.3f}</td><td class="num">{x["ss"]:.1f}</td>'
                  f'<td>{chip(L["d1_partition"]["support"])}{chip(L["d2_identity"]["support"])}{chip(L["d3_mechanism"]["support"])}</td>'
-                 f'<td class="evq2">{esc(L["d2_identity"].get("evidence"))[:160]}</td></tr>')
+                 f'<td class="evq2">{ep_quote(L["d2_identity"])}</td></tr>')
     return rows
 epsections = ""
 for m in ranked:
@@ -333,6 +380,9 @@ for m in ranked:
         f'<div class="tblwrap"><table class="ep"><thead><tr><th>arm</th><th>cohort</th><th class="num">seed</th>'
         f'<th class="num">outcome</th><th class="num">support</th><th>D1·D2·D3</th><th>D2 identity — judge evidence</th></tr></thead>'
         f'<tbody>{ep_rows(DATA[m])}</tbody></table></div></details>')
+
+# chip() counts as it renders, so both totals are only final once every table is built.
+n_chips = sum(len(DATA[m]) for m in ranked) * 3
 
 # ---- charts data ----
 out_ds = [{'label': m, 'color': COL[m], 'data': [round(S[m]['cby'][c], 3) for c in cohorts], 'errors': [round(S[m]['csd'][c], 3) for c in cohorts]} for m in ranked]
@@ -807,7 +857,10 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 
 <h2>What "unsupported" vs "grounded" identity actually looks like</h2>
 <div class="panel">
-<p class="lead" style="margin-top:0">Same-episode contrast, verbatim from the grounding judge's <code>evidence</code> field.</p>
+<p class="lead" style="margin-top:0">Same-episode contrast, verbatim from each judge family's
+<code>evidence</code> field &mdash; all three are shown and attributed, so a quote can be traced to
+the family that wrote it. Where they read the same trace differently, that difference is the
+point.</p>
 <div style="font-weight:600;color:var(--bad);font-size:12px;margin:4px 0">Unsupported — identity recalled / never established from data</div>{uns_html}
 <div style="font-weight:600;color:var(--good);font-size:12px;margin:10px 0 4px">Grounded — identity inferred from this cohort's computed data</div>{grd_html}
 </div>
@@ -822,7 +875,13 @@ html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name
 <p class="lead">Each cell: mean outcome, with mean support-score (/5) below. G3a/G3b are the mislead arms.</p></div>
 
 <h2>Per-episode detail (all {N_TOTAL})</h2>
-<p class="lead">Chips = grounding verdict per decision (D1·D2·D3): <span class="chip g">gr</span> grounded · <span class="chip m">un</span> unsupported · <span class="chip b">an</span> anchored. 🎣 = fooled (mislead cohort).</p>
+<p class="lead">Chips = grounding verdict per decision (D1&middot;D2&middot;D3):
+<span class="chip g">gr</span> grounded &middot; <span class="chip m">un</span> unsupported &middot;
+<span class="chip b">an</span> anchored &middot; <span class="chip n">nc</span> <b>no panel
+consensus</b> &mdash; the three judge families split and no majority exists ({N_NOCONS} of
+{n_chips} decision-level verdicts across these tables). <b>nc is a result, not a gap</b>: those
+levels are counted in every denominator and never folded into a neighbouring category.
+&#127907; = fooled (mislead cohort).</p>
 {epsections}
 
 <h2>Open gates before publication</h2>
