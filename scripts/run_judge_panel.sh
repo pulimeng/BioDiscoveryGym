@@ -1,4 +1,27 @@
 #!/usr/bin/env bash
+# RETIRED 2026-08-21 — superseded by scripts/run_judge.sh (one judge FAMILY per invocation).
+#
+# This ran three replicates of ONE judge model and wrote them to the flat filenames
+# _cotsummary.json / _j2 / _j3. Neither the design nor the paths survive: the study now runs one
+# pass by each of three families into <ep>/scoring/<judge>/. Running this would write artifacts
+# no reader looks at, into a layout that no longer exists, while appearing to work.
+#
+if [ "${BDG_ALLOW_RETIRED:-}" != "1" ]; then
+  cat >&2 <<'RETIRED'
+run_judge_panel.sh is RETIRED — it writes the pre-panel flat filenames and would judge into a
+layout nothing reads. Use instead, one terminal per judge family:
+
+    scripts/run_judge.sh nemotron --wave detailed
+    scripts/run_judge.sh laguna   --wave detailed
+    scripts/run_judge.sh qwen     --wave detailed
+
+Set BDG_ALLOW_RETIRED=1 only to reproduce the historical three-replicate panel.
+RETIRED
+  exit 2
+fi
+#
+# --- historical documentation below; describes the retired three-replicate design ---
+#
 # Three-replicate CoT judge panel over every arm (G0/G1/G2 honest + G3a/G3b mislead).
 #
 # WHY replicates rather than three different families: identity_derivation is one categorical

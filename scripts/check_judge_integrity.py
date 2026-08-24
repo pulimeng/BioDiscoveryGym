@@ -7,7 +7,7 @@ resume will never regenerate — it looks "done" to the resume logic and fails s
 time, or worse, parses but is missing fields. This finds those files so they can be deleted and
 re-judged.
 
-Checks, per judge suffix:
+Checks, per judge family:
   1. parses as JSON at all              (truncated write)
   2. is a dict, non-empty               (garbage write)
   3. has every schema-required field    (partial tool call)
@@ -17,13 +17,15 @@ Checks, per judge suffix:
 
 Usage:
   python scripts/check_judge_integrity.py                       # all suffixes, the 6 live runs
-  python scripts/check_judge_integrity.py --suffix _cotsummary_j2.json
+  python scripts/check_judge_integrity.py --suffix laguna       # one judge family
   python scripts/check_judge_integrity.py --delete-bad          # remove corrupt files so a
                                                                 # resume re-judges them
 """
 import argparse, glob, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import judges_config as J
+import panel_data
 import runs_config
 
 # Resolved from runs_config, not hardcoded. This list used to name the six PILOT lanes, so a
@@ -31,7 +33,12 @@ import runs_config
 # is not the one under analysis — passing loudly while saying nothing about the clean run.
 # runs_config defaults to the clean campaign and announces whatever it picked.
 RUNS = runs_config.flat()
-SUFFIXES = ["_cotsummary.json", "_cotsummary_j2.json", "_cotsummary_j3.json"]
+# Judge TAGS on the panel, not the retired flat filename suffixes. Globbing `*/*_cotsummary.json`
+# after the layout move matched nothing, so this printed
+#     "ALL CLEAN - 0 judge outputs parsed, complete and schema-valid"
+# and exited 0. A gate that certifies an empty set is worse than no gate: it is the exact
+# "non-event rendering as a benign value" failure it was written to catch, in the catcher.
+SUFFIXES = J.tags()
 
 # Pulled from summarize_cot's tool schema rather than hardcoded, so the two cannot drift apart.
 # The repo root must be importable: summarize_cot imports biodiscoverygym, and without it the
@@ -64,9 +71,14 @@ def episodes(run):
 def check_file(p, sfx):
     """Return a list of problem strings for one judge output ([] == healthy)."""
     probs = []
-    label = os.path.basename(p).replace(sfx, "")
-    if label != os.path.basename(os.path.dirname(p)):
-        return [f"filename/dir mismatch (label={label})"]
+    # Under scoring/<judge>/ the filename is a constant (cotsummary.json) and the EPISODE dir is
+    # two levels up. The old basename-vs-dirname test compared "cotsummary" against the judge tag
+    # and rejected every real file.
+    label = panel_data.label_of(p)
+    if label != os.path.basename(panel_data.episode_dir_of(p)):
+        return [f"artifact/episode-dir mismatch (label={label})"]
+    if os.path.basename(os.path.dirname(p)) != sfx:
+        return [f"judge-dir mismatch (in {os.path.basename(os.path.dirname(p))!r}, expected {sfx!r})"]
     if os.path.getsize(p) == 0:
         return ["ZERO BYTES"]
     try:
@@ -97,8 +109,9 @@ def main():
     sfxs = args.suffixes or SUFFIXES
 
     grand_bad, grand_files = [], 0
+    covgaps = []
     for sfx in sfxs:
-        found = any(glob.glob(f"{r}/*/*{sfx}") for r in runs)
+        found = any(glob.glob(panel_data.artifact_glob(r, 'cot', sfx)) for r in runs)
         if not found:
             print(f"\n{'='*74}\n  {sfx}   — none on disk, skipping\n{'='*74}")
             continue
@@ -107,7 +120,9 @@ def main():
         tot_f = tot_bad = 0
         for r in runs:
             eps = episodes(r)
-            fs = sorted(glob.glob(f"{r}/*/*{sfx}"))
+            fs = sorted(glob.glob(panel_data.artifact_glob(r, 'cot', sfx)))
+            if len(fs) < len(eps):
+                covgaps.append((r, sfx, len(fs), len(eps)))
             bad = []
             for p in fs:
                 probs = check_file(p, sfx)
@@ -115,13 +130,29 @@ def main():
                     bad.append((p, probs))
             tot_f += len(fs); tot_bad += len(bad)
             grand_bad.extend(bad)
-            flag = "  <-- CORRUPT" if bad else ""
+            flag = ("  <-- CORRUPT" if bad else
+                    ("  <-- INCOMPLETE" if len(fs) < len(eps) else ""))
             lbl = f"{os.path.basename(os.path.dirname(r))}/{os.path.basename(r)}"
             print(f"  {lbl:40} {len(fs):>6} {len(eps):>5} {len(bad):>4}{flag}")
         grand_files += tot_f
         print(f"  {'TOTAL':40} {tot_f:>6} {'':>5} {tot_bad:>4}")
 
     print(f"\n{'='*74}")
+    # An empty check is a FAILED check. Nothing below can distinguish "every file is healthy"
+    # from "no file was looked at" unless this says so first.
+    if grand_files == 0:
+        print(f"  FAILED — 0 judge outputs found under {len(runs)} run dir(s) for "
+              f"{', '.join(sfxs)}.\n"
+              f"  This is a path/layout mismatch, not a clean panel. Expected\n"
+              f"    <run>/<episode>/scoring/<judge>/cotsummary.json\n"
+              f"  Nothing was validated; do not read this as a pass.")
+        return 1
+    if covgaps:
+        print(f"  INCOMPLETE — {len(covgaps)} run x judge lane(s) missing judge outputs:")
+        for r, sfx, nf, ne in covgaps:
+            print(f"    {r}  [{sfx}]  {nf}/{ne} episodes judged  ({ne - nf} missing)")
+        print("  The missing episodes are not random — they are the ones whose traces break a\n"
+              "  judge — so analysing around them moves every denominator silently.")
     if grand_bad:
         print(f"  {len(grand_bad)} CORRUPT FILE(S) of {grand_files} checked:\n")
         for p, probs in grand_bad:

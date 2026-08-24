@@ -38,7 +38,6 @@ from extract_cot import extract_episode, count_based_identity, COHORT_DIS
 from scipy.stats import spearmanr
 
 RUNS = runs_config.triples()
-SF = ['_cotsummary.json', '_cotsummary_j2.json', '_cotsummary_j3.json']
 OUT = 'manuscript/figures/shortcut_stats.json'
 # the agent INVOKING the path as a source — not a file merely being saved to it
 PATH_CITED = re.compile(

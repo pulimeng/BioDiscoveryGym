@@ -27,7 +27,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import panel_data
 import runs_config
 
-SF = ['_cotsummary.json', '_cotsummary_j2.json', '_cotsummary_j3.json']
 RUNS = runs_config.triples()
 OUT = 'manuscript/figures/cot_stats.json'
 

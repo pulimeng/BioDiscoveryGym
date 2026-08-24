@@ -139,26 +139,46 @@ S = {m: stats(DATA[m]) for m in DATA}
 ranked = sorted(S, key=lambda m: -S[m]['outcome'])
 best, worst = ranked[0], ranked[-1]
 
-# ---- Chain-of-thought layer (from summarize_cot.py's _cotsummary.json, neutral DeepSeek) ----
+# ---- Chain-of-thought layer (panel-reduced cotsummary.json, three neutral judge families) ----
 # The outcome scores tie; the CoT summary shows HOW the models diverge. Key signal =
 # identity_derivation on the BLINDED G2 arm (derive the cancer from anonymized data vs recall it).
+#
+# This globbed the pre-reorg flat name `*_cotsummary.json`, which matches NOTHING now that the
+# artifact lives at <ep>/scoring/<judge>/cotsummary.json. `HAS_COT` went False and the whole
+# section — the derivation chart, the count-leak probe, the CoT prose — vanished from the report
+# silently. An empty glob is not a finding; it renders as "this model has no CoT data".
 ID_ORDER = ['data-derived', 'mixed', 'recalled-prior', 'not-established']
 def load_cot(root):
+    """One row per EPISODE, reduced across the judge panel — never one row per judge file."""
     out = []
-    for p in glob.glob(f"{root}/**/*_cotsummary.json", recursive=True):
-        try: j = json.load(open(p))
-        except Exception: continue
-        j['arm'] = os.path.basename(p).split('_')[0]
-        out.append(j)
+    for p in sorted(glob.glob(panel_data.artifact_glob(root, 'cot', J.tags()[0]))):
+        ed = panel_data.episode_dir_of(p)
+        cots = panel_data.load_all_judges(ed, 'cot')
+        if not cots:
+            continue
+        out.append({
+            'arm': panel_data.label_of(p).split('_')[0],
+            # Majority across families; None when the three split 1/1/1. A no-consensus episode
+            # is a real outcome and is counted in the denominator, never dropped.
+            'identity_derivation': J.consensus([c.get('identity_derivation') for c in cots.values()]),
+            'validation_rigor': J.consensus([c.get('validation_rigor') for c in cots.values()]),
+            'num_pivots': panel_data.mean([c.get('num_pivots') for c in cots.values()]) or 0.0,
+            'n_judges': len(cots)})
     return out
 COT = {m: load_cot(ROOT[m]) for m in ranked}
 HAS_COT = any(COT.values())
+if not HAS_COT:
+    sys.exit("no panel cotsummary.json found under any run — refusing to emit a report with the "
+             "chain-of-thought section silently missing (run scripts/run_judge.sh first)")
 def cot_stats(R):
     g2  = [x for x in R if x['arm'] == 'g2']
     hon = [x for x in R if x['arm'] in ('g0', 'g1', 'g2')]
     idc = Counter(x.get('identity_derivation') for x in g2)
     return dict(
         n_g2=len(g2), g2_id=idc,
+        # None = the three families reached no majority. Kept in the denominator so the derived
+        # rate is a share of ALL G2 episodes, not of the ones the panel happened to agree on.
+        n_g2_nocons=idc.get(None, 0),
         g2_derived=idc.get('data-derived', 0) / max(len(g2), 1),
         g2_recalled=(idc.get('recalled-prior', 0)) / max(len(g2), 1),
         rigor_high=Counter(x.get('validation_rigor') for x in hon).get('high', 0) / max(len(hon), 1),
@@ -166,6 +186,9 @@ def cot_stats(R):
 CS = {m: cot_stats(COT[m]) for m in ranked} if HAS_COT else {}
 # rank models by how much they DERIVE identity on G2 (the CoT thesis axis)
 cot_ranked = sorted(ranked, key=lambda m: -CS[m]['g2_derived']) if HAS_COT else ranked
+nocons_txt = ("no G2 episode lacked a majority" if not any(CS[m]['n_g2_nocons'] for m in ranked)
+              else "; ".join(f"{m}: {CS[m]['n_g2_nocons']}/{CS[m]['n_g2']}"
+                             for m in cot_ranked if CS[m]['n_g2_nocons']))
 cot_best, cot_worst = (cot_ranked[0], cot_ranked[-1]) if HAS_COT else (best, worst)
 
 # ---- Benchmark-recognition probe: count-based pre-codebook cohort identity ----
@@ -358,24 +381,44 @@ COMP = [
     ('mechanism_grounding', 2, 'Hypothesis coherence &amp; data-grounding (LLM-judged)'),
     ('pathway_validity', 1, 'Submitted pathways valid &amp; enriched (ORA)'),
 ]
-# per-component means (honest) from v3scores
+# Per-component means (honest arms), panel-reduced. The flat glob this replaced matched zero
+# files and `st.mean(acc[k]) if acc[k] else 0.0` turned that into a component score of 0.000 —
+# a missing file rendering as a real, terrible number in every row of the component table.
 comp_vals = {m: {} for m in ranked}
 for name, root, *_ in MODELS:
     acc = {k: [] for k, _, _ in COMP}
-    for sp in glob.glob(f"{root}/**/*_v3scores.json", recursive=True):
-        lab = os.path.basename(sp)
-        if lab.split('_')[0] not in ('g0', 'g1', 'g2'): continue
-        rs = json.load(open(sp))['raw_scores']
+    n_ep = n_hon = 0
+    for sp in sorted(glob.glob(panel_data.artifact_glob(root, 'outcome', J.tags()[0]))):
+        v3s = panel_data.load_all_judges(panel_data.episode_dir_of(sp), 'outcome')
+        if not v3s:
+            continue
+        # Count EVERY episode for the completeness guard, then filter to the honest arms. Guarding
+        # on the post-filter count would trip on the g3 episodes that are excluded by design.
+        n_ep += 1
+        if panel_data.label_of(sp).split('_')[0] not in ('g0', 'g1', 'g2'):
+            continue
+        n_hon += 1
         for k, _, _ in COMP:
-            if k in rs: acc[k].append(rs[k])
+            v = panel_data.mean([(x.get('raw_scores') or {}).get(k) for x in v3s.values()])
+            if v is not None:
+                acc[k].append(v)
+    panel_data.require_loaded(n_ep, root, 'outcome scores')
+    if not n_hon:
+        sys.exit(f"no honest-arm (g0/g1/g2) outcome scores in {root} — component table would be empty")
     for k, _, _ in COMP:
-        comp_vals[name][k] = st.mean(acc[k]) if acc[k] else 0.0
+        comp_vals[name][k] = st.mean(acc[k]) if acc[k] else None
 comprows = ""
 for key, wt, desc in COMP:
     cells = ""
+    # A component with no data prints "n/a", never 0.00. The previous `else 0.0` fallback made
+    # an absent file indistinguishable from a model that scored zero on the component.
+    peak = max([comp_vals[mm][key] for mm in ranked if comp_vals[mm][key] is not None] or [0])
     for m in ranked:
         v = comp_vals[m][key]
-        lo = v < 0.75 * max(comp_vals[mm][key] for mm in ranked)  # flag notably-below-peer
+        if v is None:
+            cells += '<td class="num mut">n/a</td>'
+            continue
+        lo = v < 0.75 * peak                                   # flag notably-below-peer
         cells += f'<td class="num{" mis" if lo else ""}">{v:.2f}</td>'
     comprows += f'<tr><td class="grp">{key.replace("_", " ")}</td><td class="num">{wt}×</td><td class="lead" style="margin:0">{desc}</td>{cells}</tr>'
 
@@ -414,12 +457,20 @@ id_grounded = {m: {} for m in ranked}
 for name, root, *_ in MODELS:
     for c in cohorts:
         vs = []
-        for sp in glob.glob(f"{root}/**/*_supportscores.json", recursive=True):
-            lab = os.path.basename(sp)
-            if lab.split('_')[0] not in ('g0', 'g1', 'g2'): continue
-            e = json.load(open(sp.replace('_supportscores.json', '.json')))
-            if e.get('cohort') != c: continue
-            vs.append(1 if json.load(open(sp))['levels']['d2_identity']['support'] == 'grounded' else 0)
+        for sp in sorted(glob.glob(panel_data.artifact_glob(root, 'support', J.tags()[0]))):
+            if panel_data.label_of(sp).split('_')[0] not in ('g0', 'g1', 'g2'):
+                continue
+            e = json.load(open(panel_data.episode_json_of(sp)))
+            if e.get('cohort') != c:
+                continue
+            sups = panel_data.load_all_judges(panel_data.episode_dir_of(sp), 'support')
+            if not sups:
+                continue
+            # Panel majority on d2_identity support, then the grounded indicator. Reducing AFTER
+            # the indicator would let one family's dissent move a whole episode.
+            sup = J.consensus([(x['levels'].get('d2_identity') or {}).get('support')
+                               for x in sups.values()])
+            vs.append(1 if sup == 'grounded' else 0)
         id_grounded[name][c] = round(st.mean(vs), 3) if vs else None
 # Only cohorts with a known PubMed count go in the scatter (no fabricated x-values).
 lit_order = sorted(LIT_COHORTS, key=lambda c: PAPERS[c])
@@ -669,8 +720,11 @@ episodes; <b>{cot_worst}</b> only <b>{wsp}</b> — the rest it recalls or guesse
 scores by <b>recalling rather than deriving</b>. This is the process-level mechanism behind the
 support-grounding gap above (D2 unsupported identity), now visible in the reasoning itself.
 Bars = episode counts (n={CS[cot_best]['n_g2']} G2 episodes/model); <code>identity_derivation</code>
-is a neutral-judge label (evidence, not ground truth — see the multi-judge check in
-<code>cot_compare.py --agree</code>).</p>
+is the MAJORITY label across three neutral judge families (evidence, not ground truth). Episodes
+where the three families split 1/1/1 have no majority and appear in none of the three bars, but
+they remain in the denominator — {nocons_txt}. Each family judged each episode ONCE, so a
+disagreement here mixes family bias with ordinary judge stochasticity and the two cannot be
+separated from this design.</p>
 {leak_callout}</div>"""
 
 cna_panel = ""   # now a full multi-modality panel

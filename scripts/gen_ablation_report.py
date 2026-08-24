@@ -139,90 +139,151 @@ JUDGE_NAME = panel_judges.panel_judge_label([d for _, d, l, _, _ in PAIRS])
 DATA = {lab: {'detailed': metrics(dd), 'lean': metrics(ld), 'color': col, 'tier': tier}
         for lab, dd, ld, col, tier in PAIRS}
 
-# ---- inter-judge robustness: judge A (DeepSeek, neutral) vs judge B (_cotsummary_j2) ----
-# The whole explore/exploit axis rides on ONE label (identity_derivation) from ONE judge. This
-# re-reads the same G2 traces under a second judge. Judge B may be mid-run, so every judge-A
-# comparison is ALSO computed on judge B's exact episode subset — otherwise a cohort-subset
-# effect (G2 files are written cohort-alphabetically) is indistinguishable from a judge effect.
-J2 = '_cotsummary_j2.json'
+# ---- inter-judge robustness: three judge FAMILIES, one pass each -------------------------
+# The whole explore/exploit axis rides on ONE label (identity_derivation). This re-reads the same
+# G2 traces under every family on the panel.
+#
+# This block used to compare judge A against a single judge B, loading both by the pre-reorg flat
+# filenames (`{D}/g2_*/*_cotsummary_j2.json`). Under scoring/<judge>/ that glob matches nothing,
+# so `n_both` was 0 for every arm, `JP_ANY` was False, and the ENTIRE section — the one that
+# answers "does this survive a different judge?" — was dropped from the report with no message.
+# It now reads the panel and compares all three families.
 JFIELDS = ['identity_derivation', 'validation_rigor', 'codebook_response']
+JTAGS = J.tags()
 
-def _load_sfx(D, sfx):
+
+def _load_tag(D, tag):
+    """{label: summary} for the G2 episodes this judge family has scored."""
     out = {}
-    for p in glob.glob(f"{D}/g2_*/*{sfx}"):
-        l = panel_data.label_of(p)
-        out[l] = json.load(open(p))
+    for p in glob.glob(panel_data.artifact_glob(D, 'cot', tag)):
+        lab = panel_data.label_of(p)
+        if not lab.startswith('g2_'):
+            continue
+        try:
+            out[lab] = json.load(open(p))
+        except Exception:
+            continue
     return out
+
 
 def _der(summaries):
     """fraction 'data-derived' over a list of summaries (the explore/exploit proxy)."""
-    if not summaries: return None
+    if not summaries:
+        return None
     return sum(1 for x in summaries if x.get('identity_derivation') == 'data-derived') / len(summaries)
 
-def judge_pair(D):
-    A, B = _load_sfx(D, J.tags()[0]), _load_sfx(D, J2)
-    both = sorted(set(A) & set(B))
-    agree = {f: (sum(1 for l in both if A[l].get(f) == B[l].get(f)), len(both)) for f in JFIELDS}
-    flips = Counter((A[l].get('identity_derivation'), B[l].get('identity_derivation'))
-                    for l in both if A[l].get('identity_derivation') != B[l].get('identity_derivation'))
-    return dict(n_a=len(A), n_both=len(both), agree=agree, flips=flips,
-                der_a_all=_der(list(A.values())),
-                der_a_match=_der([A[l] for l in both]),   # judge A on judge B's subset
-                der_b=_der([B[l] for l in both]),
-                complete=len(both) == len(A) and len(A) > 0)
 
-JP = {lab: {'detailed': judge_pair(dd), 'lean': judge_pair(ld)} for lab, dd, ld, _, _ in PAIRS}
-JP_ANY = any(JP[m][p]['n_both'] for m in JP for p in ('detailed', 'lean'))
+def judge_panel(D):
+    per = {t: _load_tag(D, t) for t in JTAGS}
+    # Compare on the episodes EVERY family scored. A family-specific subset would confound a
+    # judge effect with a cohort effect: G2 artifacts are written cohort-alphabetically, so a
+    # partial lane over-represents BRCA/LIHC/LUAD and omits OV, the difficulty floor.
+    common = sorted(set.intersection(*[set(v) for v in per.values()])) if all(per.values()) else []
+    n_any = max((len(v) for v in per.values()), default=0)
+    unan, pair = {}, {}
+    for f in JFIELDS:
+        unan[f] = (sum(1 for l in common if len({per[t][l].get(f) for t in JTAGS}) == 1), len(common))
+        pair[f] = {}
+        for i, a in enumerate(JTAGS):
+            for b in JTAGS[i + 1:]:
+                pair[f][(a, b)] = sum(1 for l in common if per[a][l].get(f) == per[b][l].get(f))
+    flips = Counter()
+    for l in common:
+        vs = [per[t][l].get('identity_derivation') for t in JTAGS]
+        for i in range(len(vs)):
+            for k in range(i + 1, len(vs)):
+                if vs[i] != vs[k]:
+                    flips[tuple(sorted((str(vs[i]), str(vs[k]))))] += 1
+    return dict(n_any=n_any, n_common=len(common), unan=unan, pair=pair, flips=flips,
+                der={t: _der([per[t][l] for l in common]) for t in JTAGS},
+                complete=bool(common) and all(len(v) == len(common) for v in per.values()))
+
+
+JP = {lab: {'detailed': judge_panel(dd), 'lean': judge_panel(ld)} for lab, dd, ld, _, _ in PAIRS}
+JP_ANY = any(JP[m][p]['n_common'] for m in JP for p in ('detailed', 'lean'))
+if not JP_ANY:
+    sys.exit("no G2 episode was scored by all three judge families — refusing to emit the ablation "
+             "report with the inter-judge robustness section silently missing")
 
 # agreement table
 j_rows = ""
 for lab in DATA:
     for prompt in ('detailed', 'lean'):
         j = JP[lab][prompt]
-        if not j['n_both']:
+        if not j['n_common']:
             j_rows += (f'<tr><td class="grp" style="color:{DATA[lab]["color"]}">{lab}</td><td>{prompt}</td>'
-                       f'<td class="num mut" colspan="4">not yet judged by B</td></tr>'); continue
-        cov = f"{j['n_both']}/{j['n_a']}" + ('' if j['complete'] else ' <span class="part">partial</span>')
+                       f'<td class="num mut" colspan="4">no episode scored by all three families</td></tr>')
+            continue
+        cov = f"{j['n_common']}/{j['n_any']}" + ('' if j['complete'] else ' <span class="part">partial</span>')
         cells = ""
         for f in JFIELDS:
-            a, n = j['agree'][f]
+            a, n = j['unan'][f]
             cls = 'good' if a / n >= 0.8 else ('bad' if a / n < 0.6 else 'mut')
-            cells += f'<td class="num {cls}">{a}/{n}<span class="sub">{a/n*100:.0f}%</span></td>'
+            cells += f'<td class="num {cls}">{a}/{n}<span class="sub">{a/n*100:.0f}% unanimous</span></td>'
         j_rows += (f'<tr><td class="grp" style="color:{DATA[lab]["color"]}">{lab}</td><td>{prompt}</td>'
                    f'<td class="num">{cov}</td>{cells}</tr>')
 
-# does the lean−detailed derivation delta SURVIVE the second judge?
-def _fmt_d(x): return '—' if x is None else f"{x*100:+.1f}"
-surv_rows = ""; surv_verdicts = []
+# does the lean-detailed derivation delta SURVIVE under every family?
+def _fmt_d(x):
+    return '&mdash;' if x is None else f"{x*100:+.1f}"
+
+
+surv_rows = ""
+surv_verdicts = []
 for lab in DATA:
     d, l = JP[lab]['detailed'], JP[lab]['lean']
-    dA = (DATA[lab]['lean']['g2_derived'] - DATA[lab]['detailed']['g2_derived'])
-    dAm = (l['der_a_match'] - d['der_a_match']) if (l['der_a_match'] is not None and d['der_a_match'] is not None) else None
-    dB = (l['der_b'] - d['der_b']) if (l['der_b'] is not None and d['der_b'] is not None) else None
-    partial = not (d['complete'] and l['complete'])
-    if dB is None:
-        verdict, vcls = 'judge B incomplete', 'part'
-    elif partial:
-        verdict, vcls = f"partial coverage ({l['n_both']}/{l['n_a']} lean)", 'part'
+    deltas = {t: (l['der'][t] - d['der'][t]) if (l['der'][t] is not None and d['der'][t] is not None)
+              else None for t in JTAGS}
+    vals = [v for v in deltas.values() if v is not None]
+    if len(vals) < len(JTAGS):
+        verdict, vcls = 'panel incomplete', 'part'
+    elif all(abs(v) < 0.05 for v in vals):
+        verdict, vcls = 'no effect, all families', 'mut'
+    elif len({v > 0 for v in vals}) > 1:
+        # A sign flip between families is the finding that matters: the effect is not a property
+        # of the episodes, it is a property of who is reading them.
+        verdict, vcls = 'SIGN FLIPS across families', 'bad'
+    elif max(abs(v) for v in vals) and min(abs(v) for v in vals) >= 0.5 * max(abs(v) for v in vals):
+        verdict, vcls = 'holds under all three', 'good'
     else:
-        ref = dAm if dAm is not None else dA
-        if abs(ref) < 0.05 and abs(dB) < 0.05: verdict, vcls = 'no effect, both judges', 'mut'
-        elif (dB > 0) != (ref > 0): verdict, vcls = 'FLIPS under judge B', 'bad'
-        elif abs(dB) >= 0.5 * abs(ref): verdict, vcls = 'holds', 'good'
-        else: verdict, vcls = 'attenuated', 'part'
-        surv_verdicts.append(verdict)
+        verdict, vcls = 'same sign, magnitude varies', 'part'
+    surv_verdicts.append(verdict)
     surv_rows += (f'<tr><td class="grp" style="color:{DATA[lab]["color"]}">{lab}</td>'
-                  f'<td class="num">{_fmt_d(dA)}</td><td class="num">{_fmt_d(dAm)}</td>'
-                  f'<td class="num">{_fmt_d(dB)}</td><td class="{vcls}">{verdict}</td></tr>')
+                  + "".join(f'<td class="num">{_fmt_d(deltas[t])}</td>' for t in JTAGS)
+                  + f'<td class="{vcls}">{verdict}</td></tr>')
 
-# the most common cross-judge confusion, pooled (is disagreement adjacent or sign-flipping?)
+# the most common cross-family confusion, pooled (is disagreement adjacent or sign-flipping?)
 pool = Counter()
 for m in JP:
-    for p in ('detailed', 'lean'): pool.update(JP[m][p]['flips'])
-ADJ = {('mixed', 'data-derived'), ('data-derived', 'mixed'), ('mixed', 'recalled-prior'), ('recalled-prior', 'mixed')}
-n_flip = sum(pool.values()); n_adj = sum(v for k, v in pool.items() if k in ADJ)
-flip_txt = "  ·  ".join(f"{a}→{b} ×{n}" for (a, b), n in pool.most_common(5)) or "none"
+    for p in ('detailed', 'lean'):
+        pool.update(JP[m][p]['flips'])
+# ADJACENT = the two families agree on the direction of the evidence and differ on where to put
+# the threshold (one says `mixed` where the other commits). Everything else is POLAR: they read
+# the same trace as different behaviours. `data-derived` vs `not-established` is polar — one
+# family found a data-grounded identity derivation where another found no identity claim at all.
+ADJ = {tuple(sorted(x)) for x in
+       (('mixed', 'data-derived'), ('mixed', 'recalled-prior'), ('mixed', 'not-established'))}
+n_flip = sum(pool.values())
+n_adj = sum(v for k, v in pool.items() if k in ADJ)
+n_pol = n_flip - n_adj
+# The prose used to assert that disagreement is "largely adjacent". That is a claim about the
+# data, so read it off the data instead of asserting it.
+adj_frac = n_adj / n_flip if n_flip else 0.0
+adj_txt = (
+    "Most disagreement is <b>adjacent</b>: the families agree on the <i>direction</i> of the "
+    "evidence and differ on where to put the threshold. That degrades the precision of any single "
+    "episode's label but largely preserves an aggregate delta."
+    if adj_frac >= 0.6 else
+    f"<b>Fewer than half are adjacent.</b> The remaining <b>{n_pol}</b> are <b>polar</b> &mdash; "
+    "the families read the same trace as different behaviours, not as the same behaviour at "
+    "different thresholds. The largest single bucket is <code>data-derived</code> vs "
+    "<code>not-established</code>: one family found a data-grounded identity derivation where "
+    "another found no identity claim at all. This is not threshold noise, and an aggregate delta "
+    "built on this label inherits it.")
+flip_txt = "  &middot;  ".join(f"{a} vs {b} &times;{n}" for (a, b), n in pool.most_common(5)) or "none"
 j_all_complete = all(JP[m][p]['complete'] for m in JP for p in ('detailed', 'lean'))
+jth = "".join('<th class="num">&Delta; ' + t + '</th>' for t in JTAGS)
+n_pairs_judged = sum(JP[m][p]['n_common'] for m in JP for p in ('detailed', 'lean')) * 3
 
 # ---- metric rows: (key, label, fmt, lower_is_better) ----
 ROWS = [
@@ -390,46 +451,53 @@ paired('c_ro',CH.ro_det,CH.ro_lean,'record_observation / episode',false);
 """
 JS = JS.replace('__CH__', json.dumps(CH))
 
-interjudge_section = "" if not JP_ANY else f"""
-<h2>Inter-judge robustness — does the derivation finding survive a second judge?</h2>
+interjudge_section = f"""
+<h2>Inter-judge robustness &mdash; does the derivation finding survive a different judge?</h2>
 <div class="panel">
-<p class="lead">The explore↔exploit axis rests on a <b>single categorical label</b> (<code>identity_derivation</code>)
-from a <b>single judge</b>, on n=21 G2 episodes per arm — and the lean prompt's own "derive from structure alone"
-wording could plausibly nudge that label. So the same G2 traces were re-judged by a second model
-(<code>{J2}</code>). This panel is the foundation for every derivation claim above, not a footnote.</p>
-<div class="tblwrap"><table><thead><tr><th>model</th><th>prompt</th><th class="num">judged by both</th>
-<th class="num">identity_derivation</th><th class="num">validation_rigor</th><th class="num">codebook_response</th></tr></thead>
+<p class="lead">The explore&harr;exploit axis rests on a <b>single categorical label</b>
+(<code>identity_derivation</code>) &mdash; and the lean prompt's own "derive from structure alone"
+wording could plausibly nudge that label. So every G2 trace was judged independently by
+<b>three different model families</b> ({JUDGE_NAME}), one pass each.
+This panel is the foundation for every derivation claim above, not a footnote.</p>
+<div class="tblwrap"><table><thead><tr><th>model</th><th>prompt</th>
+<th class="num">judged by all three</th>
+<th class="num">identity_derivation</th><th class="num">validation_rigor</th>
+<th class="num">codebook_response</th></tr></thead>
 <tbody>{j_rows}</tbody></table></div>
-<p class="lead">Per-episode agreement between the two judges. <code>codebook_response</code> is near-deterministic
-(an observable action); <code>identity_derivation</code> is the <b>interpretive</b> one and agrees least — which is
-exactly why the delta table below matters more than any single-judge percentage.</p>
+<p class="lead">Share of episodes where all three families gave the <b>same</b> label.
+<code>codebook_response</code> is near-deterministic (an observable action) and its high agreement is
+largely a <b>ceiling effect</b> &mdash; the label is almost always <i>annotated-existing</i>, so
+agreeing on it costs nothing. <code>identity_derivation</code> is the <b>interpretive</b> one and
+agrees least, which is exactly why the delta table below matters more than any single-family
+percentage.</p>
 </div>
 
 <div class="panel">
-<h3>Does the lean−detailed derivation delta survive?</h3>
+<h3>Does the lean&minus;detailed derivation delta survive?</h3>
 <div class="tblwrap"><table><thead><tr><th>model</th>
-<th class="num">Δ judge A<span class="sub">all episodes</span></th>
-<th class="num">Δ judge A<span class="sub">matched subset</span></th>
-<th class="num">Δ judge B<span class="sub">same subset</span></th><th>verdict</th></tr></thead>
+{jth}
+<th>verdict</th></tr></thead>
 <tbody>{surv_rows}</tbody></table></div>
-<p class="lead">Δ = (lean − detailed) percentage points of G2 episodes judged <b>data-derived</b>. The
-<b>matched-subset</b> column re-computes judge A on <i>exactly</i> the episodes judge B has scored — without it,
-partial judge-B coverage is confounded with a cohort effect, since G2 summaries are written cohort-alphabetically
-(so an incomplete run over-represents BRCA/LIHC/LUAD and omits OV, the difficulty floor). Compare
-<b>matched vs judge B</b>; the all-episodes column is context only. "Holds" = same sign and ≥50% of the magnitude.</p>
+<p class="lead">&Delta; = (lean &minus; detailed) percentage points of G2 episodes labelled
+<b>data-derived</b>, computed separately under each judge family on the <i>same</i> episode set.
+"Holds under all three" = same sign in every column and the smallest magnitude at least half the
+largest. A <b>sign flip</b> between columns would mean the effect is a property of who is reading
+the traces, not of the traces.</p>
 </div>
 
 <div class="panel">
-<h3>Where the judges disagree</h3>
-<p class="lead">Pooled G2 <code>identity_derivation</code> disagreements ({n_flip} of
-{sum(JP[m][p]['n_both'] for m in JP for p in ('detailed','lean'))} co-judged episodes), judge A → judge B:</p>
+<h3>Where the families disagree</h3>
+<p class="lead">Pooled G2 <code>identity_derivation</code> disagreements across the three pairwise
+comparisons ({n_flip} disagreeing pairs of {n_pairs_judged} judged pairs):</p>
 <p><code>{flip_txt}</code></p>
-<p class="lead"><b>{n_adj}/{n_flip}</b> disagreements are <b>adjacent</b> (mixed↔data-derived or mixed↔recalled-prior)
-rather than polar (data-derived↔recalled-prior). Adjacent disagreement means the judges agree on the
-<i>direction</i> of the evidence and differ on where to put the threshold — it degrades the precision of any
-single episode's label but largely preserves an aggregate delta. Polar flips would be far more damaging: they
-would mean the two judges read the same trace as opposite behaviours.
-{"" if j_all_complete else '<br><b class="part">Judge B coverage is still incomplete — every number in this panel is provisional until all arms are re-judged.</b>'}</p>
+<p class="lead"><b>{n_adj}/{n_flip}</b> disagreements are <b>adjacent</b> (one family says
+<i>mixed</i> where another commits). {adj_txt}<br>
+<b>What this does and does not establish.</b> Each family judged each episode <b>once</b>. A
+disagreement therefore mixes genuine cross-family bias with ordinary per-judge stochasticity, and
+this design cannot separate them &mdash; agreement here does <i>not</i> bound judge noise, because
+no family was asked the same question twice. Separating the two needs a second pass from at least
+one family.
+{"" if j_all_complete else '<br><b class="part">Some episodes are missing from at least one family &mdash; every number in this panel is computed on the intersection and is provisional until the panel is complete.</b>'}</p>
 </div>"""
 
 html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

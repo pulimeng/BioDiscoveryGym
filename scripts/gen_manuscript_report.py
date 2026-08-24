@@ -53,7 +53,7 @@ def load_sfx(run, sfx):
 
 
 def consensus(votes):
-    """Majority label over N passes; None on a tie (with 3 replicates a tie = all three differ)."""
+    """Majority label across the judge families; None on a tie (with 3 families, all three differ)."""
     c = Counter(votes).most_common()
     return None if len(c) > 1 and c[0][1] == c[1][1] else c[0][0]
 
@@ -145,11 +145,11 @@ def metrics(D):
 
 
 def panel(D):
-    """3-pass judge panel for one run dir: consensus + per-pass rates + agreement."""
+    """Judge panel for one run dir: consensus + per-family rates + cross-family agreement."""
     L = [load_sfx(D, s) for s in SUFFIXES]
     if not all(L): return None
     keys = sorted(set(L[0]) & set(L[1]) & set(L[2]))
-    res = {'n_passes': len(L), 'n': len(keys)}
+    res = {'n_families': len(L), 'n': len(keys)}
     for fld in ('identity_derivation', 'validation_rigor', 'codebook_response'):
         votes = {k: [d[k].get(fld) for d in L] for k in keys}
         unan = sum(1 for v in votes.values() if len(set(v)) == 1)
@@ -165,7 +165,7 @@ def panel(D):
         per = [sum(1 for k in ks if d[k].get('identity_derivation') == 'data-derived') / len(ks) for d in L]
         cons = [consensus([d[k].get('identity_derivation') for d in L]) for k in ks]
         res[grp] = {'consensus': sum(1 for c in cons if c == 'data-derived') / len(ks),
-                    'per_pass': per, 'n': len(ks),
+                    'per_family': per, 'n': len(ks),
                     'unresolved': sum(1 for c in cons if c is None)}
     return res
 
@@ -208,12 +208,12 @@ for grp, name in (('g2', 'G2 blind'), ('g3', 'G3 mislead')):
         pd_, pl = DATA[lab]['p_det'], DATA[lab]['p_lean']
         if not pd_ or not pl or grp not in pd_ or grp not in pl: continue
         cd, cl = pd_[grp]['consensus'], pl[grp]['consensus']
-        s = sep(pd_[grp]['per_pass'], pl[grp]['per_pass'])
+        s = sep(pd_[grp]['per_family'], pl[grp]['per_family'])
         fmt = lambda c, p: (f"{c*100:.0f}% <span class='pp'>[" +
                             ",".join(f"{x*100:.0f}" for x in p) + "]</span>")
         deriv_rows += (f"<tr><td>{name}</td><td class='grp' style='color:{DATA[lab]['color']}'>{lab}</td>"
-                       f"<td class='num'>{fmt(cd, pd_[grp]['per_pass'])}</td>"
-                       f"<td class='num'>{fmt(cl, pl[grp]['per_pass'])}</td>"
+                       f"<td class='num'>{fmt(cd, pd_[grp]['per_family'])}</td>"
+                       f"<td class='num'>{fmt(cl, pl[grp]['per_family'])}</td>"
                        f"<td class='num {'good' if s else 'mut'}'>{(cl-cd)*100:+.0f}</td>"
                        f"<td class='{'good' if s else 'part'}'>{'separated' if s else 'overlap'}</td></tr>")
 
@@ -324,9 +324,15 @@ better on that axis, accounting for direction (lower is better for unsupported /
 <div class="panel"><div class="tblwrap"><table><thead><tr><th>arm</th><th>model</th>
 <th class="num">detailed</th><th class="num">lean</th><th class="num">&Delta; pts</th>
 <th>per-family ranges</th></tr></thead><tbody>{deriv_rows}</tbody></table></div>
-<p class="lead">Consensus = majority across {len(SUFFIXES)} independent judge FAMILIES (one pass each, NOT repeated sampling of one model); bracketed values are the three
-individual passes. <b>&ldquo;Separated&rdquo; means the two arms&rsquo; per-family ranges do not
-overlap</b> &mdash; the families disagree systematically about this quantity. NOTE: with ONE pass per family, judge stochasticity was not measured independently, so this does NOT establish that the delta exceeds judge noise — noise and family difference are confounded. Quote separated rows only.</p></div>
+<p class="lead">Consensus = majority across {len(SUFFIXES)} independent judge FAMILIES (one pass
+each, NOT repeated sampling of one model); bracketed values are the three <b>per-family</b> rates.
+<b>&ldquo;Separated&rdquo; means the two arms&rsquo; per-family ranges do not overlap.</b>
+<b>NOTE — what separation does and does not mean here.</b> Each family judged each episode
+<b>once</b>, so a spread between families mixes genuine family difference with ordinary per-judge
+stochasticity and this design cannot tell them apart. Separation therefore does <b>not</b> establish
+that the delta exceeds judge noise, and non-separation does not establish that it does not.
+Separating the two needs a second pass from at least one family. Quote separated rows only, and
+quote them as robust <i>across the panel we ran</i>, not as noise-bounded.</p></div>
 
 <h2>3 &middot; Judge reliability</h2>
 <div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th><th>prompt</th>
@@ -349,12 +355,20 @@ blinding cannot hide, so this is a benchmark leak that exists independently of t
 <div class="warn">
 (1) <b>n = {N_PER_LANE} per lane</b> ({N_TOTAL} episodes), single seed-triple. Deltas of a few
 points are noise.<br>
-(2) <b>Judges are three DISTINCT families</b> ({JUDGE_NAME}), one pass each &mdash; this bounds
-cross-family bias but no longer bounds stochasticity, because a family is not sampled twice.
-Judge noise and family difference are confounded in the opposite direction from before.<br>
+(2) <b>Judges are three DISTINCT families</b> ({JUDGE_NAME}), <b>one pass each</b> &mdash; which
+bounds neither cross-family bias nor stochasticity on its own. A family is never sampled twice, so
+every observed disagreement is a mixture of the two and this design cannot separate them. The
+previous panel had the opposite blind spot (three passes of one model bounded stochasticity and
+said nothing about family). Resolving both needs a second pass from at least one family.<br>
 (3) <b>identity_derivation is one categorical call.</b> Panel consensus mitigates it and does not
 eliminate it: <b>98 of {N_TOTAL} episodes have no majority</b> on the D2 strategy label and are
 excluded from every strategy rate here.<br>
+(3b) <b>Three episodes were judged with no observation trail.</b>
+<code>check_judge_symmetry</code> fails on <code>g0_brca_s7</code>, <code>g0_luad_s7</code> and
+<code>g1_ucec_s7</code> (Gemini/lean), which logged zero <code>record_observation</code> calls; the
+judge labelled them from the WHY headers and the submission alone. All three are <b>G0/G1</b>, so
+G2 and every G3 result are untouched, and they inflate the G0/G1 derived baseline &mdash; which
+makes the reported G0&rarr;G2 shift <i>conservative</i>.<br>
 (4) <b>Gemini 2.5 Pro is a generation behind</b> (3.1 Pro and 3.5 Flash could not complete a run)
 &mdash; its deltas are confounded with model generation, not tier.
 </div>

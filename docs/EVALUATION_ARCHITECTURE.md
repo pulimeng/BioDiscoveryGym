@@ -308,10 +308,41 @@ ones whose traces break a judge — so analysing around them changes the denomin
 
 ## 10. Outstanding
 
-- **27 reader scripts still expect the pre-reorg flat filenames.** They do not fail loudly: most
-  glob, find nothing, and report empty tables and zero denominators as though that were the result.
-  This is the gating item before `remove_stale_judges.py` will run.
-- The analysis layer assumes 3-passes-of-one-model (`explore_exploit.py` still reads
-  `[_cotsummary, _j2, _j3]`); it must be taught the panel, including how to report no-consensus.
-- `check_judge_symmetry` currently **fails**: 3 Gemini-lean episodes logged zero observations.
+*Last verified against the code 2026-08-21. Two items previously listed here are CLOSED; they are
+kept, struck through, because the failure each describes is the one this project keeps repeating.*
+
+- ~~**27 reader scripts still expect the pre-reorg flat filenames.**~~ **CLOSED.** Every reader that
+  feeds a rendered report or a figure JSON now reads `scoring/<judge>/`. Three that did not were
+  found on a second sweep and had all produced *plausible output from an empty glob*:
+  - `gen_ladder_report.py` — the flat CoT glob left `HAS_COT` false, so the entire
+    chain-of-thought section, the derivation chart and the count-leak probe were **omitted from the
+    report with no message**; two further flat globs printed component means of `0.00` and an empty
+    literature-vs-grounding scatter.
+  - `gen_ablation_report.py` — the inter-judge block loaded judge A and judge B by flat name, got
+    zero for both, and dropped the **entire "does this survive a different judge?" section**.
+  - `gen_report.py` — rendered a complete-looking comparison page reporting `honest outcome 0.000`.
+
+  All three now read the panel and **refuse rather than render** when a loader comes back empty.
+  Files that still name the flat suffixes do so legitimately (`judges_config.LEGACY_ARTIFACTS`,
+  `migrate_episode_layout.py`, `remove_stale_judges.py`) or are retired and now exit non-zero
+  (`run_judge_panel.sh`).
+- ~~The analysis layer assumes 3-passes-of-one-model (`explore_exploit.py` …).~~ **CLOSED** —
+  `explore_exploit.py` reads `J.tags()` and reports no-consensus explicitly.
+- **`check_judge_integrity` was passing vacuously.** It globbed the flat names, checked nothing, and
+  printed `ALL CLEAN — 0 judge outputs parsed, complete and schema-valid` with exit 0 — the
+  "non-event rendering as a benign value" failure, inside the gate written to catch it. It now reads
+  the panel (1710 outputs, 0 corrupt), fails on an empty check, and reports per-lane coverage gaps.
+- **`check_judge_symmetry` still fails**, and the failure is real rather than cosmetic: **3
+  Gemini-lean episodes logged zero `record_observation` calls** — `g0_brca_s7`, `g0_luad_s7`,
+  `g1_ucec_s7`. The judge has no observation trail for them and labels them from the WHY headers
+  and the submission alone; two of three families call all three `data-derived`. Exposure is
+  bounded and its direction is known:
+  - 3/570 episodes (0.5%), **all on G0/G1** — none on G2, so the blinded derived rate and every
+    G3 result are untouched.
+  - They inflate the G0/G1 derived baseline, which **shrinks** the G0→G2 strategy shift. The effect
+    on that claim is conservative, not inflationary.
+  This must be stated in the manuscript's limitations; do not fix it by loosening the gate.
 - The verification layer (§8) is designed and feasibility-tested, not built.
+- **One pass per family measures a mixture.** Cross-family disagreement and per-judge stochasticity
+  are confounded and cannot be separated from this design; no report may claim a delta "exceeds
+  judge noise". Separating them needs a second pass from at least one family (~570 calls).

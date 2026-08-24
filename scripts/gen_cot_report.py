@@ -17,8 +17,9 @@ SECTIONS
   6 Judge disagreements     the episodes with no majority — where the label is genuinely ambiguous
   7 Verbatim evidence       pre-reveal sample-count naming, quoted, via the TIGHTENED probe
 
-All labels are the 3-pass CONSENSUS unless a section says otherwise; ties are shown as unresolved
-rather than silently broken.
+All labels are the CROSS-FAMILY CONSENSUS (one pass by each of three judge families) unless a
+section says otherwise; ties are shown as unresolved rather than silently broken. A tie is a real
+result here, not a defect: it marks an episode the families read differently.
 
 Usage: python scripts/gen_cot_report.py   ->  results/tcga/reports/COT_REPORT.html
 """
@@ -81,14 +82,22 @@ for model, prompt, run, col in RUNS:
     rows = []
     for k in keys:
         votes = {f: [d[k].get(f) for d in L]
-                 for f in ('identity_derivation', 'validation_rigor', 'codebook_response')}
+                 for f in ('identity_derivation', 'validation_rigor', 'codebook_response',
+                           'reasoning_strategy')}
+        # strategy / pivots / verdict used to be read off L[0] — the FIRST judge family —
+        # while the table header called them "pass 1". With one pass per family that is not a
+        # replicate, it is one family's opinion standing in for the panel. Reduce them like
+        # every other panel quantity: all votes for the categorical, mean for the count.
+        pv = [d[k].get('num_pivots') for d in L]
+        pv = [x for x in pv if isinstance(x, (int, float))]
         rows.append({
             'label': k, 'arm': arm(k), 'cohort': L[0][k].get('cohort', '?'),
             'votes': votes,
             'cons': {f: consensus(v) for f, v in votes.items()},
-            'strategy': L[0][k].get('reasoning_strategy', '?'),
-            'pivots': L[0][k].get('num_pivots', 0),
-            'verdict': L[0][k].get('overall_verdict', ''),
+            'strategy': consensus(votes['reasoning_strategy']),
+            'strategy_votes': votes['reasoning_strategy'],
+            'pivots': sum(pv) / len(pv) if pv else 0,
+            'verdicts': [d[k].get('overall_verdict', '') for d in L],
         })
     EP[(model, prompt)] = {'rows': rows, 'color': col, 'run': run}
 
@@ -117,7 +126,7 @@ def bar(counts, order, colmap, n):
 # ---- §1 reasoning strategy ----------------------------------------------------------------
 strat_rows = ""
 for (m, pr), d in EP.items():
-    c = Counter(r['strategy'] for r in d['rows'])
+    c = Counter(t for r in d['rows'] for t in r['strategy_votes'] if t)
     top = "  ".join(f"<span class='chip'>{H.escape(str(t))} &times;{n}</span>"
                     for t, n in c.most_common(4))
     strat_rows += (f"<tr><td class='grp' style='color:{d['color']}'>{m}</td><td>{pr}</td>"
@@ -141,6 +150,7 @@ for (m, pr), d in EP.items():
 
 # ---- §3 rigor + codebook ------------------------------------------------------------------
 rig_rows = ""
+CB_VOTES = Counter()   # every family vote on the honest arms — the paragraph below quotes it
 RIG_COL = {'high': '#3fb950', 'medium': '#d29922', 'low': '#f85149'}
 CB_COL = {'annotated-existing': '#3fb950', 'rebuilt-from-priors': '#f85149',
           'overfit-to-revealed': '#d29922', 'not-applicable': '#6b7683'}
@@ -148,9 +158,9 @@ for (m, pr), d in EP.items():
     hon = [r for r in d['rows'] if r['arm'] in ('g0', 'g1', 'g2')]
     cr = Counter(r['cons']['validation_rigor'] for r in hon)
     cc = Counter(r['cons']['codebook_response'] for r in hon)
-    # A label held by only ONE of three passes can never reach majority, so consensus reports it
-    # as zero and a genuinely rare behaviour disappears. Show any-vote counts alongside so the
-    # rare-but-real cases (rebuild / overfit) stay visible.
+    # A label held by only ONE of the three families can never reach majority, so consensus
+    # reports it as zero and a genuinely rare behaviour disappears. Show any-vote counts
+    # alongside so the rare-but-real cases (rebuild / overfit) stay visible.
     anyv = Counter()
     for r in hon:
         for x in set(r['votes']['codebook_response']):
@@ -160,10 +170,24 @@ for (m, pr), d in EP.items():
             f"overfit {cc.get('overfit-to-revealed',0)}<br>"
             f"any single vote: rebuilt {anyv.get('rebuilt-from-priors',0)} &middot; "
             f"overfit {anyv.get('overfit-to-revealed',0)}</span>")
+    for r in hon:
+        for x in r['votes']['codebook_response']:
+            CB_VOTES[x] += 1
     rig_rows += (f"<tr><td class='grp' style='color:{d['color']}'>{m}</td><td>{pr}</td>"
                  f"<td>{bar(cr, RIG_ORDER, RIG_COL, len(hon))}"
                  f"<span class='sub'>high {cr.get('high',0)}/{len(hon)}</span></td>"
                  f"<td>{bar(cc, CB_ORDER, CB_COL, len(hon))}{rare}</td></tr>")
+
+# The paragraph under §3 used to hardcode "1350 judge votes ... 1168 / 23 / 4" — counts from the
+# retired 3-passes-of-one-model panel. They survived the redesign as prose and were simply wrong
+# against the current data. Derive them from the same rows the table above renders.
+cb_n = sum(CB_VOTES.values())
+cb_ann = CB_VOTES.get('annotated-existing', 0)
+cb_reb = CB_VOTES.get('rebuilt-from-priors', 0)
+cb_ovf = CB_VOTES.get('overfit-to-revealed', 0)
+cb_na = CB_VOTES.get('not-applicable', 0)
+if not cb_n:
+    sys.exit("no codebook_response votes found — refusing to render §3 with empty counts")
 
 # ---- §4 pivots ----------------------------------------------------------------------------
 piv_rows = ""
@@ -171,7 +195,8 @@ for (m, pr), d in EP.items():
     v = [r['pivots'] or 0 for r in d['rows']]
     mean = sum(v) / len(v) if v else 0
     piv_rows += (f"<tr><td class='grp' style='color:{d['color']}'>{m}</td><td>{pr}</td>"
-                 f"<td class='num'>{mean:.2f}</td><td class='num'>{min(v)}–{max(v)}</td>"
+                 f"<td class='num'>{mean:.2f}</td>"
+                 f"<td class='num'>{min(v):.1f}–{max(v):.1f}</td>"
                  f"<td class='num'>{sum(1 for x in v if x == 0)}/{len(v)}</td></tr>")
 
 # ---- §5 per-episode G2 detail -------------------------------------------------------------
@@ -189,6 +214,14 @@ for (m, pr), d in EP.items():
                     f"<td style='color:{cc};font-weight:700'>{cons or 'no majority'}</td></tr>")
 
 # ---- §6 disagreements ---------------------------------------------------------------------
+def vd_cell(r):
+    """All three families' verdicts, tagged. Showing only the first family's text beside three
+    disagreeing votes invited the reader to treat it as THE verdict for the episode."""
+    return "<br>".join(
+        f"<span class='sub'>{H.escape(t)}</span> {H.escape((v or '')[:130])}"
+        for t, v in zip(SUFFIXES, r['verdicts']))
+
+
 dis_rows = ""
 ndis = 0
 for (m, pr), d in EP.items():
@@ -203,7 +236,7 @@ for (m, pr), d in EP.items():
             dis_rows += (f"<tr><td class='grp' style='color:{d['color']}'>{m}</td><td>{pr}</td>"
                          f"<td><code>{H.escape(r['label'])}</code></td>"
                          f"<td>{' / '.join(H.escape(str(x)) for x in v)}</td>"
-                         f"<td class='vd'>{H.escape((r['verdict'] or '')[:180])}</td></tr>")
+                         f"<td class='vd'>{vd_cell(r)}</td></tr>")
 ntot = sum(len(d['rows']) for d in EP.values())
 # Guard on the SAME number the report prints. An earlier guard summed len() over EP's
 # values, which counts dict KEYS rather than episodes and so was never zero.
@@ -276,7 +309,7 @@ ties are shown as <i>no majority</i> rather than silently broken</div>
 
 <h2>1 &middot; Reasoning strategy</h2>
 <div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th><th>prompt</th>
-<th>most common strategy tags (pass 1)</th></tr></thead><tbody>{strat_rows}</tbody></table></div>
+<th>most common strategy tags <span class="sub">all three family votes</span></th></tr></thead><tbody>{strat_rows}</tbody></table></div>
 <p class="lead">The judge's free-text characterisation of the process the agent ran. Descriptive
 only &mdash; it is not scored and not part of any claim; it is here to show what the arms look like
 qualitatively.</p></div>
@@ -301,13 +334,14 @@ rate.</p></div>
 <p class="lead"><b>Codebook response is the behavioural tell.</b> When gene identities are revealed,
 does the agent <i>annotate</i> the structure it already found, or <i>rebuild</i> its answer from
 priors? Rebuilding is recall arriving late. Honest arms (G0/G1/G2) only.<br>
-<b>Read the two lines together.</b> Across all 1350 judge votes the label is overwhelmingly
-<i>annotated-existing</i> (1168), with <i>rebuilt-from-priors</i> (23) and
-<i>overfit-to-revealed</i> (4) genuinely rare. Because a label held by only one of three passes can
-never win a majority, <b>consensus reports those rare cases as zero</b> &mdash; the any-vote line
-keeps them visible. Two consequences: this field is near-constant, so it cannot discriminate
-between models, and its ~100% inter-pass agreement is largely a <b>ceiling effect</b> rather than
-evidence that the judge is reliable in general.</p></div>
+<b>Read the two lines together.</b> Across all {cb_n} family votes on the honest arms the label
+is overwhelmingly <i>annotated-existing</i> ({cb_ann}), with <i>rebuilt-from-priors</i> ({cb_reb}),
+<i>overfit-to-revealed</i> ({cb_ovf}) and <i>not-applicable</i> ({cb_na}) all rare. Because a label
+held by only one of the three families can never win a majority, <b>consensus reports those rare
+cases as zero</b> &mdash; the any-vote line keeps them visible. Two consequences: this field is
+near-constant, so it cannot discriminate between models, and its near-total cross-family agreement
+is largely a <b>ceiling effect</b> &mdash; three judges agreeing on a label that is almost always
+the same value is not evidence that the judges agree in general.</p></div>
 
 <h2>4 &middot; Hypothesis pivots</h2>
 <div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th><th>prompt</th>
@@ -319,17 +353,19 @@ so treat it as descriptive.</p></div>
 
 <h2>5 &middot; Per-episode detail (G2, blind)</h2>
 <div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th><th>prompt</th>
-<th>episode</th><th>3 votes</th><th>consensus</th></tr></thead><tbody>{ep_rows}</tbody></table></div>
+<th>episode</th><th>3 family votes</th><th>consensus</th></tr></thead><tbody>{ep_rows}</tbody></table></div>
 <p class="lead">Every G2 episode with all three judge families shown side by side
 (<b>D</b> data-derived, <b>M</b> mixed, <b>R</b> recalled-prior). Three identical chips mean the
-judge was stable on that episode; mixed chips mean it was not. <b>Do not quote an individual row as
-fact</b> &mdash; per-episode labels are the least reliable level of this data.</p></div>
+three families read the episode the same way; mixed chips mean they did not. Identical chips are
+<i>not</i> evidence that any one judge is stable &mdash; each family voted once, so within-judge
+repeatability was never measured here. <b>Do not quote an individual row as fact</b> &mdash;
+per-episode labels are the least reliable level of this data.</p></div>
 
 <h2>6 &middot; Where the judges could not agree</h2>
 <div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th><th>prompt</th>
-<th>episode</th><th>the three votes</th><th>pass-1 verdict</th></tr></thead>
+<th>episode</th><th>the three family votes</th><th>verdicts</th></tr></thead>
 <tbody>{dis_rows or "<tr><td colspan=5 class='mut'>no unresolved episodes</td></tr>"}</tbody></table></div>
-<p class="lead">Episodes where all three passes disagreed, so no majority exists
+<p class="lead">Episodes where all three families disagreed, so no majority exists
 
 ({ndis} of {ntot} episodes had any disagreement at all). These are not judge failures &mdash; they
 are the genuinely ambiguous cases, where the trace supports more than one reading. They are the
@@ -345,8 +381,14 @@ than deriving the biology. Uses the <b>tightened</b> probe, hand-validated again
 
 <div class="warn"><b>Scope.</b> This is the agent's <i>stated</i> reasoning &mdash; WHY headers,
 inter-call text and <code>record_observation</code> hypotheses. Provider adapters strip raw
-thinking tokens, so no true hidden chain-of-thought exists for any model here. Judge replicates are
-one pass by each of three DISTINCT families, so they bound stochasticity, not cross-family bias.</div>
+thinking tokens, so no true hidden chain-of-thought exists for any model here.<br>
+<b>What the three votes are and are not.</b> Each episode was judged ONCE by each of three distinct
+families (nemotron, laguna, qwen). Disagreement between them therefore mixes genuine cross-family
+bias with ordinary per-judge stochasticity, and the two cannot be separated from this design.
+Agreement is correspondingly weak evidence: it does <i>not</i> bound judge noise, because no family
+was ever asked the same question twice. Reading a spread here as "family bias" &mdash; or a
+consensus here as "the judge is reliable" &mdash; overstates what one pass per family can show.
+Separating the two needs a second pass from at least one family.</div>
 
 <div class="foot">Generated by <code>scripts/gen_cot_report.py</code>. Summary layer:
 <code>scripts/gen_manuscript_report.py</code> &rarr; <code>results/MANUSCRIPT_REPORT.html</code>.</div>

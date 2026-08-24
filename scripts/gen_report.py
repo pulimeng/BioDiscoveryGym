@@ -20,7 +20,11 @@ exist in that run dir, and omitted otherwise (no hardcoded "outcome only" caveat
       --model "GPT-5.5 lean:results/tcga/_ablation/lean_gpt55:#58a6ff" \
       --title "TCGA — lean vs detailed prompt (GPT-5.5)" --out results/tcga/_ablation/LEAN_VS_DETAILED.html
 """
-import glob, os, json, argparse, statistics as st
+import glob, os, json, argparse, statistics as st, sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import judges_config as J
+import panel_data
 
 COHORTS_DEFAULT = ['BRCA', 'LIHC', 'LUAD', 'OV']
 PALETTE = ['#1D9E75', '#7F77DD', '#D29922', '#58a6ff', '#f85149', '#3fb950']  # cycled if no :color
@@ -39,7 +43,49 @@ def parse_model(spec, i):
 
 
 def load(root):
-    """Per-episode: arm group, cohort, seed, normalized outcome, identity verdict, support /5."""
+    """Per-episode: arm group, cohort, seed, normalized outcome, identity verdict, support /5.
+
+    This tool predates the judge panel and only knew the flat `<ep>/<ep>_v3scores.json` layout.
+    Pointed at a current run it matched nothing, `allhon()` returned its `else 0.0`, and the report
+    rendered "honest outcome 0.000" — a missing file wearing the clothes of a terrible score.
+    Current runs are read PANEL-REDUCED (one row per episode, mean across judge families); the
+    flat path is kept as a fallback so genuinely archived single-judge runs still open.
+    """
+    panel = sorted(glob.glob(panel_data.artifact_glob(root, 'outcome', J.tags()[0])))
+    if panel:
+        return _load_panel(panel)
+    return _load_flat(root)
+
+
+def _load_panel(paths):
+    EP = []
+    for sc in paths:
+        ed = panel_data.episode_dir_of(sc)
+        v3s = panel_data.load_all_judges(ed, 'outcome')
+        sups = panel_data.load_all_judges(ed, 'support')
+        v3s = {k: v for k, v in v3s.items() if v.get('raw_scores')}
+        if not v3s:
+            continue
+        lab = panel_data.label_of(sc)
+        c = s = mis = None
+        try:
+            e = json.load(open(panel_data.episode_json_of(sc)))
+            c = e.get('cohort'); s = e.get('seed')
+            mis = (e.get('cli') or {}).get('mislead_cohort')
+        except Exception:
+            pass
+        EP.append(dict(grp=lab.split('_')[0], cohort=c, seed=s, mis=mis,
+                       norm=panel_data.mean([v.get('normalized') for v in v3s.values()]),
+                       # Majority across families; '' when they split, which reads as "no verdict"
+                       # exactly as an unscored gate does — never silently broken toward one side.
+                       verdict=J.consensus([v.get('cohort_identity_verdict')
+                                            for v in v3s.values()]) or '',
+                       support=panel_data.mean([x.get('support_score') for x in sups.values()])
+                       if sups else None))
+    return EP
+
+
+def _load_flat(root):
     EP = []
     for sc in glob.glob(f"{root}/**/*_v3scores.json", recursive=True):
         lab = os.path.basename(sc).replace('_v3scores.json', '')
@@ -71,8 +117,9 @@ def honest_stats(EP, c):
 
 
 def allhon(EP):
-    vs = [e['norm'] for e in EP if e['grp'] in ('g0', 'g1', 'g2')]
-    return round(st.mean(vs), 3) if vs else 0.0
+    vs = [e['norm'] for e in EP if e['grp'] in ('g0', 'g1', 'g2') and e['norm'] is not None]
+    # None, not 0.0 — an absent score must not be reportable as a score of zero.
+    return round(st.mean(vs), 3) if vs else None
 
 
 def ground_mean(EP):
@@ -216,6 +263,16 @@ def main():
     a = ap.parse_args()
     models = [parse_model(s, i) for i, s in enumerate(a.model)]
     cohorts = [c.strip() for c in a.cohorts.split(',') if c.strip()]
+    # Refuse before writing. A report is a claim about a dataset; emitting one for a run dir that
+    # yielded no honest-arm episode states that claim about nothing, and the page gives the reader
+    # no way to tell. This is the check whose absence produced "honest outcome 0.000".
+    empty = [(lab, root) for lab, root, _ in models
+             if allhon(load(root)) is None]
+    if empty:
+        sys.exit("REFUSING to write a report: no honest-arm (g0/g1/g2) outcome scores found for\n"
+                 + "".join(f"    {lab}  <- {root}\n" for lab, root in empty)
+                 + "  Expected either <ep>/scoring/<judge>/v3scores.json (panel layout) or the\n"
+                   "  legacy <ep>/<ep>_v3scores.json. This is a path mismatch, not a zero score.")
     html = build(models, cohorts, a.title)
     os.makedirs(os.path.dirname(a.out) or '.', exist_ok=True)
     open(a.out, 'w').write(html)
