@@ -50,16 +50,33 @@ PRICES = {
     'Sonnet 5':       {'in': 2.00,  'out': 10.00},
     'Gemini 3.5 Flash':   {'in': 1.50,  'out': 9.00},
     'deepseek-v4-pro': {'in': 0.435, 'out': 0.87},
-    # UNPRICED — the clean run swapped in models this table predates:
-    #   'Gemini 2.5 Pro'   agent, replaced Gemini 3.5 Flash (results/tcga/clean*)
+    # Gemini 2.5 Pro list price, ai.google.dev/gemini-api/docs/pricing, read 2026-08-24.
+    #
+    # This model is priced in TWO TIERS and the tier is chosen PER REQUEST by prompt size, with
+    # the higher rate applying to the whole request:
+    #     prompts <= 200k tokens   $1.25 in / $10.00 out     <- the rates below
+    #     prompts >  200k tokens   $2.50 in / $15.00 out
+    # The low tier is used because it is what this campaign actually hit, verified rather than
+    # assumed: across all 4,144 Gemini calls in clean + clean_lean, ZERO prompts exceeded 200k
+    # (largest single prompt 76,656 tokens), so tiered and flat billing agree to the cent.
+    # `tier_check()` re-verifies this every run — a longer-context campaign would silently be
+    # under-costed by up to 2x otherwise, which is exactly the kind of plausible-looking number
+    # this table exists to prevent.
+    'Gemini 2.5 Pro': {'in': 1.25, 'out': 10.00},
+    # UNPRICED — the clean run swapped in a judge this table predates:
     #   'nemotron-3-super' CoT judge, replaced deepseek-v4-pro (commit 24bc72e)
     # They are deliberately ABSENT rather than guessed. The last time this table was filled from
     # recollection it was wrong by 3-5x and inverted the model ranking; see the note above. Supply
     # them with --prices, ideally from an invoice. Until then the report shows their token counts
     # and marks the dollars UNPRICED — it no longer folds them in as $0.
 }
+# Per-request prompt-size tiers, USD/1M. Only models that actually tier appear here.
+PRICE_TIERS = {
+    'Gemini 2.5 Pro': {'threshold': 200_000, 'above': {'in': 2.50, 'out': 15.00}},
+}
 PRICES_VERIFIED = True           # supplied by the project owner 2026-07-28
-PRICES_DATE = '2026-07-28 (supplied by project owner)'
+PRICES_DATE = ('2026-07-28 (supplied by project owner); Gemini 2.5 Pro added 2026-08-24 from '
+               'ai.google.dev/gemini-api/docs/pricing')
 
 _COL = {l: c for l, s, c, t in runs_config.MODELS}
 RUNS = [(m, p, r, _COL[m]) for m, p, r in runs_config.triples()]
@@ -98,7 +115,10 @@ def agent_usage():
             lab = os.path.basename(p)[:-5]
             a = lab.split('_')[0]
             eps.append({'label': lab, 'arm': 'g3' if a.startswith('g3') else a,
-                        'in': ei, 'out': eo, 'turns': len(u)})
+                        'in': ei, 'out': eo, 'turns': len(u),
+                        # per-call prompt sizes: tiered pricing is chosen per REQUEST, so an
+                        # episode total cannot decide the tier.
+                        'calls': [x.get('input_tokens', 0) for x in u]})
         out[(model, prompt)] = dict(
             n=n, input=I, output=O, turns=turns, color=col,
             turns_per_ep=turns / max(n, 1), per_ep=per_ep, eps=eps,
@@ -194,6 +214,30 @@ def cost(model, tin, tout, prices):
     if not p:
         return None
     return tin / 1e6 * p['in'] + tout / 1e6 * p['out']
+
+
+def tier_check(usage):
+    """Requests that would bill at a model's HIGHER prompt-size tier.
+
+    Returns {model: (n_over, n_calls, largest_prompt)}. The flat rate in PRICES is only correct
+    while this is empty; a campaign with longer contexts would be under-costed silently, since a
+    too-low dollar figure looks exactly like a cheap model.
+    """
+    out = {}
+    for (model, _prompt), u in usage.items():
+        t = PRICE_TIERS.get(model)
+        if not t:
+            continue
+        n_over, n_calls, largest = 0, 0, 0
+        for e in u.get('eps', []):
+            for c in e.get('calls', []):
+                n_calls += 1
+                largest = max(largest, c)
+                if c > t['threshold']:
+                    n_over += 1
+        prev = out.get(model, (0, 0, 0))
+        out[model] = (prev[0] + n_over, prev[1] + n_calls, max(prev[2], largest))
+    return out
 
 
 def tool_usage():
@@ -313,6 +357,30 @@ def main():
         ex = ', '.join(f'"{m}": {{"in": 1.25, "out": 10.00}}' for m in sorted(unpriced))
         print(f"     Complete it with real USD-per-1M rates (invoice beats list price):")
         print(f"       python scripts/gen_cost_report.py --prices '{{{ex}}}'")
+
+    # Tiered models: the flat rate in PRICES is the LOW tier. Verify per request, every run.
+    TIERS = tier_check(A)
+    tier_warn = ""
+    for m, (n_over, n_calls, largest) in sorted(TIERS.items()):
+        t = PRICE_TIERS[m]
+        if n_over:
+            hi = t['above']
+            tier_warn += (f"<b>{m} is under-costed.</b> {n_over:,} of {n_calls:,} requests "
+                          f"exceeded {t['threshold']:,} prompt tokens (largest {largest:,}) and "
+                          f"bill at the higher tier (${hi['in']}/${hi['out']} per 1M), not the "
+                          f"${prices[m]['in']}/${prices[m]['out']} used here. The dollars below "
+                          f"are a LOWER BOUND for this model.<br>")
+            print(f"\n  !! {m} TIER: {n_over:,}/{n_calls:,} requests over "
+                  f"{t['threshold']:,} prompt tokens (largest {largest:,}).")
+            print(f"     Billed at ${hi['in']}/${hi['out']} per 1M, not "
+                  f"${prices[m]['in']}/${prices[m]['out']} — the total UNDERSTATES this model.")
+        else:
+            tier_warn += (f"<b>{m}</b> is priced at its low prompt-size tier "
+                          f"(&le;{t['threshold']:,} tokens). Verified, not assumed: "
+                          f"<b>0 of {n_calls:,}</b> requests exceeded it "
+                          f"(largest prompt {largest:,} tokens), so tiered and flat billing agree.<br>")
+            print(f"  tier check: {m} 0/{n_calls:,} requests over {t['threshold']:,} prompt "
+                  f"tokens (largest {largest:,}) — low tier correct.")
 
     T = tool_usage()
     if T:
@@ -639,6 +707,12 @@ code{background:#0b1220;padding:1px 5px;border-radius:4px;font-size:12px}
 every run) &middot; dollars derived from the editable price table below</div>
 
 {banner}
+<div class="panel"><b>Prompt-size pricing tiers.</b><br>{tier_warn}
+<span class="lead">Tiered models bill the whole request at the higher rate once a single prompt
+crosses the threshold, so an episode total cannot decide the tier &mdash; it is checked per
+request, on every run, by <code>tier_check()</code>. A campaign with longer contexts would
+otherwise be under-costed by up to 2&times;, and a too-low dollar figure looks exactly like a cheap
+model.</span></div>
 
 <h2>Agent spend</h2>
 <div class="panel"><div class="tblwrap"><table><thead><tr><th>model</th><th>prompt</th>
