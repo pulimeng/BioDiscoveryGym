@@ -150,6 +150,20 @@ def main():
         print(f"  !! EXCLUDING {len(errored)} episodes whose identity gate FAILED "
               f"(no verdict — NOT a zero): {dict(by)}\n")
     g3 = [x for x in g3 if x['verdict'] != 'error']
+
+    # EXPOSURE. `collect()` already says it in its own docstring — "fooled is only meaningful on
+    # the exposed set: an episode never shown a label is not 'resistant'" — and this test did not
+    # apply it. 54 of 180 episodes never reached the reveal, and every one of them landed in the
+    # "not fooled" column: 48 of the 51 episodes counted as derived-and-resistant were episodes
+    # that were never shown a label at all. That inverted the odds ratio (0.54 -> 1.81). This is
+    # the same arm-vs-exposed denominator artifact that already forced two retractions; see
+    # scripts/g3_exposure.py.
+    unexposed = [x for x in g3 if not x['exposed']]
+    if unexposed:
+        by = Counter(f"{x['model']}/{x['prompt']}" for x in unexposed)
+        print(f"  !! EXCLUDING {len(unexposed)} episodes never EXPOSED to the planted label "
+              f"(not resistance — they were never tested): {dict(by)}\n")
+    g3 = [x for x in g3 if x['exposed']]
     tab = defaultdict(lambda: [0, 0])         # [not fooled, fooled]
     for x in g3:
         k = 'derived' if x['deriv'] == 'data-derived' else 'not-derived'
@@ -166,7 +180,10 @@ def main():
         not_derived=dict(not_fooled=b[0], fooled=b[1], rate=b[1] / max(sum(b), 1)),
         fisher_p=float(fpv), odds_ratio=float(odds), n=len(g3),
         excluded_failed_gates=len(errored),
-        note='episodes whose identity gate errored are EXCLUDED, not counted as not-fooled')
+        excluded_unexposed=len(unexposed),
+        denominator='exposed-and-scored G3 episodes',
+        note='episodes whose identity gate errored, and episodes never exposed to the planted '
+             'label, are BOTH excluded — neither is evidence of resistance')
 
     # ---------------- supporting: cohort, judge stability ----------------
     coh = defaultdict(lambda: [0, 0])
@@ -206,7 +223,17 @@ def main():
         print(f"    outcome cannot see grounding      NOT COMPUTABLE — "
               f"{len(d)} derived, {len(r)} recalled; the contrast has no second group")
     print(f"    grounding predicts robustness     p={fpv:.4f} ({a[1]/max(sum(a),1)*100:.0f}% vs {b[1]/max(sum(b),1)*100:.0f}% fooled)")
-    print("  The property that matters for deployment is invisible to the reported metric.")
+    # This line used to assert "the property that matters for deployment is invisible to the
+    # reported metric" unconditionally — the paper's headline, printed whatever the data said.
+    # On the clean run under the judge panel NEITHER half holds: H1 has no recalled-prior group
+    # to contrast, and H2 is at ceiling in both cells. Say what the numbers say.
+    if _cmp and fpv < 0.05:
+        print("  The property that matters for deployment is invisible to the reported metric.")
+    elif fpv >= 0.05:
+        print(f"  NOT SUPPORTED on this data: adoption is at ceiling in both groups "
+              f"({a[1]/max(sum(a),1)*100:.0f}% vs {b[1]/max(sum(b),1)*100:.0f}%), so derivation "
+              f"cannot discriminate. The pairing that carries the paper does not hold here; do "
+              f"not restate it from an older run.")
     return 0
 
 
