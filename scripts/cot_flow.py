@@ -345,6 +345,15 @@ def main():
         def mean(k):
             v = [r[k] for r in R if r.get(k) is not None]
             return round(st.mean(v), 3) if v else None
+
+        # MEDIANS TOO, and they are not decoration. One episode (g0_ucec_s7) logs 352
+        # alternatives_considered entries per checkpoint and another 516 evidence_against
+        # entries; those single runs move a whole arm's mean by 2-3x. On means it looks like G0
+        # weighs the most alternatives and G3 records the most counter-evidence, and on medians
+        # both are FLAT across every arm. Report both so the skew is visible instead of narrated.
+        def med(k):
+            v = [r[k] for r in R if r.get(k) is not None]
+            return round(st.median(v), 3) if v else None
         mods = Counter(m for r in R for m in r['modalities'])
         av_seen, av_true = Counter(), Counter()
         for r in R:
@@ -355,6 +364,10 @@ def main():
         mets = Counter(m for r in R for m in r['methods'])
         return {
             'n': len(R),
+            'median': {k: med(k) for k in
+                       ('n_code', 'n_checkpoints', 'n_tool_calls', 'n_code_errors',
+                        'mean_alternatives', 'mean_evidence_against', 'mean_evidence_for',
+                        'pivots_measured', 'pivots_trace', 'conf_rise', 'ttc', 'wall_s')},
             'code_calls': mean('n_code'), 'checkpoints': mean('n_checkpoints'),
             'tool_calls': mean('n_tool_calls'), 'code_errors': mean('n_code_errors'),
             'turns': mean('n_turns'), 'wall_s': mean('wall_s'), 'pct_exec': mean('pct_exec'),
