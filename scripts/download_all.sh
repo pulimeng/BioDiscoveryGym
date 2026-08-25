@@ -3,10 +3,10 @@
 # Safe to re-run — all scripts skip already-downloaded files.
 #
 # Usage:
-#   bash scripts/download/download_all.sh                           # full setup (both benchmarks)
-#   bash scripts/download/download_all.sh --skip-tcga               # skip large TCGA downloads
-#   bash scripts/download/download_all.sh --depmap-release 24Q2
-#   bash scripts/download/download_all.sh --target-discovery-only   # skip anomaly-benchmark-only steps
+#   bash scripts/download_all.sh                                    # full setup (both benchmarks)
+#   bash scripts/download_all.sh --skip-tcga               # skip large TCGA downloads
+#   bash scripts/download_all.sh --depmap-release 24Q2
+#   bash scripts/download_all.sh --target-discovery-only   # skip anomaly-benchmark-only steps
 #
 # After TCGA downloads, build expression.parquet caches:
 #   python scripts/process_tcga.py    # all target-discovery cohorts

@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import judges_config as J
 import panel_data
 import runs_config
+import svg_charts as SV
 
 FLOW = 'manuscript/figures/cot_flow.json'
 OUT = 'results/tcga/reports/SUMMARY.html'
@@ -142,6 +143,11 @@ color:#e8d48a;font-size:13px}
 .seq{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;letter-spacing:1.5px}
 .seq .c{color:var(--acc)}.seq .r{color:var(--good)}.seq .s{color:var(--warn)}
 .foot{color:var(--mut);font-size:11.5px;margin-top:30px;border-top:1px solid var(--line);padding-top:12px}
+figure{margin:16px 0 6px}figcaption{color:var(--mut);font-size:12.5px;margin-top:8px}
+th .mut,td .u{display:block;font-weight:400;font-size:10.5px;line-height:1.35}
+table.ladder td:first-child{min-width:210px}
+table.ladder td:first-child .mut{display:block;font-weight:400;margin-top:2px}
+figure svg{display:block;overflow:visible}
 """
 
 
@@ -189,11 +195,12 @@ def main():
         model_blocks += f"""
 <h3>{esc(model)}</h3>
 <div class="panel">
-<p>{esc(model)} runs <b>{d['code_calls']:.0f} code executions</b> in a typical staged episode and
-<b>{l['code_calls']:.0f}</b> without the staged prompt, while logging
-<b>{d['checkpoints']:.1f}</b> and <b>{l['checkpoints']:.1f}</b> narrated checkpoints. It spends
-about <b>{d['wall_s']/60:.0f} minutes</b> per episode, <b>{d['pct_exec']:.0f}%</b> of it inside
-code rather than waiting on the model.</p>
+<p>{esc(model)} runs <b>{d['median']['n_code']:.0f} code executions</b> in a typical staged
+episode and <b>{l['median']['n_code']:.0f}</b> without the staged prompt, while logging
+<b>{d['median']['n_checkpoints']:.0f}</b> and <b>{l['median']['n_checkpoints']:.0f}</b> narrated
+checkpoints. A typical episode takes about <b>{d['median']['wall_s']/60:.0f} minutes</b>, with
+<b>{d['pct_exec']:.0f}%</b> of the time inside code rather than waiting on the model.
+All medians &mdash; a few runaway episodes make the means of these fields unreliable.</p>
 <p class="lead">A representative staged, blinded episode &mdash; the one closest to this lane's
 median execution count, not a favourable pick:
 {f"<code>{esc(rep['label'])}</code>, sequence {seq_html(rep['shape'])}" if rep else '&mdash;'}</p>
@@ -211,11 +218,11 @@ median execution count, not a favourable pick:
         arm_rows += (
             f"<tr><td class='grp'>{title}<span class='mut'><br>{gloss}</span></td>"
             f"<td class='num'>{a['n']}</td>"
-            f"<td class='num'>{M['n_code']:.0f}<span class='mut'> / {a['code_calls']:.0f}</span></td>"
-            f"<td class='num'>{M['n_checkpoints']:.0f}<span class='mut'> / {a['checkpoints']:.1f}</span></td>"
-            f"<td class='num'>{M['mean_alternatives']:.1f}<span class='mut'> / {a['alternatives']:.1f}</span></td>"
-            f"<td class='num'>{M['mean_evidence_against']:.1f}<span class='mut'> / {a['evidence_against']:.1f}</span></td>"
-            f"<td class='num'>{M['pivots_measured']:.0f}<span class='mut'> / {a['pivots_measured']:.1f}</span></td>"
+            f"<td class='num'>{M['n_code']:.0f}<span class='u'>mean {a['code_calls']:.0f}</span></td>"
+            f"<td class='num'>{M['n_checkpoints']:.0f}<span class='u'>mean {a['checkpoints']:.1f}</span></td>"
+            f"<td class='num'>{M['mean_alternatives']:.1f}<span class='u'>mean {a['alternatives']:.1f}</span></td>"
+            f"<td class='num'>{M['mean_evidence_against']:.1f}<span class='u'>mean {a['evidence_against']:.1f}</span></td>"
+            f"<td class='num'>{M['pivots_measured']:.0f}<span class='u'>mean {a['pivots_measured']:.1f}</span></td>"
             f"<td class='num'>{M['conf_rise']:.2f}</td></tr>")
     g0, g2 = flow['by_arm'].get('g0'), flow['by_arm'].get('g2')
     _M = {a: flow['by_arm'][a]['median'] for a in ('g0', 'g1', 'g2', 'g3') if flow['by_arm'].get(a)}
@@ -266,6 +273,63 @@ median execution count, not a favourable pick:
                        f"</blockquote>")
             seen.add(model)
     ov = flow['overall']
+    COL = {lab: col for lab, _slug, col, _tier in runs_config.MODELS}
+
+    # ---------- figures ----------
+    # Colour carries the MODEL, in the same assignment every other report uses. Validated for
+    # this dark surface: CVD dE 9.0, normal-vision 19.8, contrast >=3:1 on all pairs.
+    lane_labels = [f'{m}\n{p}' for m, p in lanes]
+    med = {f'{m} / {p}': flow['by_lane'][f'{m} / {p}']['median'] for m, p in lanes}
+
+    fig_work = SV.grouped_bar(
+        lane_labels,
+        [('code executions', '#58a6ff', [med[f'{m} / {p}']['n_code'] for m, p in lanes]),
+         ('checkpoints narrated', '#3fb950',
+          [med[f'{m} / {p}']['n_checkpoints'] for m, p in lanes])],
+        title='Work done vs work narrated, per episode',
+        sub='median; the judges only ever read the checkpoints', width=660, height=190)
+
+    arms = ['g0', 'g1', 'g2', 'g3']
+    have = [a for a in arms if flow['by_arm'].get(a)]
+    fig_ladder = SV.line_chart(
+        ['G0\ntold', 'G1\ngene names', 'G2\nblinded', 'G3\nfalse label'],
+        [('checkpoints', '#3fb950',
+          [flow['by_arm'][a]['median']['n_checkpoints'] for a in have]),
+         ('hypothesis changes', '#58a6ff',
+          [flow['by_arm'][a]['median']['pivots_measured'] for a in have])],
+        title='What withholding information changes — counts per episode',
+        sub='median; both series are counts, so they share one axis',
+        width=660, height=170)
+    # Confidence rise is 0-1 and the counts are 2-4. Plotting them together would squash this
+    # series flat against the baseline and imply a shared scale it does not have; two charts
+    # rather than two axes.
+    fig_conf = SV.line_chart(
+        ['G0\ntold', 'G1\ngene names', 'G2\nblinded', 'G3\nfalse label'],
+        [('confidence rise, low=0 high=1', '#d29922',
+          [flow['by_arm'][a]['median']['conf_rise'] for a in have])],
+        fmt=lambda v: f'{v:g}', ymax=1, width=660, height=110,
+        title='…and how confidence moves during the run',
+        sub='median change from first checkpoint to last — separate axis, it is not a count')
+
+    models = list(dict.fromkeys(m for m, _ in lanes))
+    fig_valid = SV.grouped_bar(
+        models,
+        [('staged prompt', '#58a6ff',
+          [flow['by_lane'][f'{m} / detailed']['family_rate'].get('validation', 0) * 100
+           for m in models]),
+         ('no prescribed procedure', '#d29922',
+          [flow['by_lane'][f'{m} / lean']['family_rate'].get('validation', 0) * 100
+           for m in models])],
+        fmt=lambda v: f'{v:.0f}%', ymax=100, width=660, height=170,
+        title='Episodes running any validation method',
+        sub='silhouette, bootstrap, ARI, permutation or cross-validation — parsed from the code')
+
+    fig_themes = SV.hbar(
+        [(n, rec_hits.get(n, 0) / max(len(sums), 1) * 100, '#58a6ff')
+         for n, _ in sorted(THEMES, key=lambda t: -rec_hits.get(t[0], 0))],
+        fmt=lambda v: f'{v:.0f}%', maxval=100, width=660, pad_left=210,
+        title='What the judges criticise',
+        sub=f'share of {len(sums)} judge records raising each theme at least once')
 
     html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -287,9 +351,13 @@ than in <i>how they get there</i>. Every lane opens the same way &mdash; orient 
 reduce dimensions, cluster expression, then look for survival separation and pathway support
 &mdash; and the staged prompt makes that sequence explicit rather than changing it.</p>
 <p>The differences that matter are in volume and in narration, and they do not track each other.
-A typical episode runs <b>{ov['code_calls']:.0f}</b> code executions and records
-<b>{ov['checkpoints']:.1f}</b> checkpoints, but the spread between models is enormous on the first
-number and small on the second. <b>The judges read the checkpoints.</b></p>
+A typical episode runs <b>{ov['median']['n_code']:.0f}</b> code executions and records
+<b>{ov['median']['n_checkpoints']:.0f}</b> checkpoints, but the spread between models is enormous
+on the first number and small on the second. <b>The judges read the checkpoints.</b></p>
+<figure>{fig_work}
+<figcaption>Sonnet runs roughly five times the code that GPT does and narrates <i>less</i> of it.
+The blue bars span an order of magnitude; the green bars barely move. Whatever the judges see of
+an episode, it is not proportional to the work in it.</figcaption></figure>
 <p>The clearest behavioural shift on the ladder is not in what the agents find but in how they
 hold it. Under blinding they narrate more (median {gm2} checkpoints against {gm0} when the cohort
 is disclosed), revise the working hypothesis more often (median {pv2} against {pv0}), and build
@@ -297,17 +365,32 @@ confidence during the run instead of starting confident. They do <i>not</i> run 
 code &mdash; that difference appears in the means and vanishes in the medians.</p>
 </div>
 
+<figure>{fig_ladder}{fig_conf}
+<figcaption>The three measures that survive the outlier check, on medians. Blinding (G2) and the
+planted label (G3) both push the agent to checkpoint more often, revise its hypothesis more often,
+and start less confident than it ends. Code volume is deliberately not plotted here &mdash; it
+looks like a difference on means and is flat on medians.</figcaption></figure>
+
 <h2>How each model works</h2>
 {model_blocks}
 
+<h2>What the staged prompt buys</h2>
+<div class="panel">
+<figure>{fig_valid}
+<figcaption>Removing the prescribed procedure does not change what the agents conclude so much as
+whether they check it. Under the staged prompt every lane runs some validation; without it, two of
+three models drop to fewer than half their episodes. This is read straight from the submitted
+code, so it does not depend on a judge's opinion of &ldquo;rigor&rdquo;.</figcaption></figure>
+</div>
+
 <h2>What withholding information does</h2>
-<div class="panel"><div class="tblwrap"><table>
+<div class="panel"><div class="tblwrap"><table class="ladder">
 <thead><tr><th>arm</th><th class="num">episodes</th>
-<th class="num">code runs<span class="mut">median / mean</span></th>
-<th class="num">checkpoints<span class="mut">median / mean</span></th>
-<th class="num">alternatives<span class="mut">median / mean</span></th>
-<th class="num">evidence against<span class="mut">median / mean</span></th>
-<th class="num">hypothesis changes<span class="mut">median / mean</span></th>
+<th class="num">code runs<span class="mut">median</span></th>
+<th class="num">checkpoints<span class="mut">median</span></th>
+<th class="num">alternatives<span class="mut">median</span></th>
+<th class="num">evidence against<span class="mut">median</span></th>
+<th class="num">hypothesis changes<span class="mut">median</span></th>
 <th class="num">confidence rise<span class="mut">median</span></th></tr></thead>
 <tbody>{arm_rows}</tbody></table></div>
 <p class="lead"><b>Read the medians; the means are not safe here.</b> A handful of episodes dump
@@ -327,6 +410,11 @@ none of them survives the median.</p></div>
 
 <h2>What the judges keep saying</h2>
 <div class="panel">
+<figure>{fig_themes}
+<figcaption>Cluster validation is the standing complaint &mdash; raised in more records than the
+next two themes together. Note what is <i>not</i> near the top: the judges rarely say the agent
+leaned on prior knowledge, which is the behaviour this benchmark was built to
+detect.</figcaption></figure>
 <div class="tblwrap"><table><thead><tr><th>recurring criticism</th>
 <th class="num">raised in</th><th>a typical phrasing</th>
 </tr></thead><tbody>{theme_rows}</tbody></table></div>

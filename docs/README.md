@@ -116,7 +116,7 @@ Superseded pieces are moved to `scripts/archive/` and `docs/archive/`.
 | `scripts/archive/score_decision_points.py` → `_dpscores.json` | derived>recalled scorer (ranked exploration) | **archived** — superseded by `score_support.py` (produced run1+2's `_dpscores`, cited in EXPLORE_EXPLOIT_SCORING) |
 | `docs/archive/DECISION_POINT_RUBRIC.md` | derived/recalled rubric | **archived** — superseded by `SUPPORT_JUDGE_PROMPT.md` |
 | `scripts/archive/crosstab_explore_exploit.py` | joined old `_dpscores` + `_v3scores` | **archived** — template for the pending outcome×support join (needs repointing to `_supportscores`) |
-| `scripts/proto_belief_metrics.py` | belief-trail (effort) metrics | prototype, kept top-level; the **conditional corroborator** (ttc/n_obs inside ungrounded cells), not yet wired |
+| `scripts/cot_flow.py` | belief-trail + process metrics, all 570 episodes | **live** — supersedes `proto_belief_metrics.py` (archived): same `conf_rise`/`ttc`/`n_obs`/pivot family, on 9x the data, with medians beside the means |
 | `docs/EXPLORE_EXPLOIT_SCORING.md` | the design-history record (the reframe reasoning) | keep as rationale; its "pre-commit" header is stale |
 
 **Repo layout:** data-download scripts grouped under `scripts/download/`; superseded code in

@@ -41,9 +41,9 @@ retracted finding; see `docs/DATA_INTEGRITY_AUDIT.md`.
 | script | |
 |---|---|
 | `summarize_cot.py` | CoT judge, one pass; `--out-suffix` for replicates, records `judge_model` |
-| `run_judge_panel.sh` | drives multi-pass panels; `PASSES=` selects; resume-safe |
+| ~~`run_judge_panel.sh`~~ | **archived** &rarr; `scripts/archive/` — replaced by `run_judge.sh`, one judge family per terminal |
 | `score_support.py` | support/grounding judge (D1/D2/D3) |
-| `cot_compare.py` | `--panel a,b,c` for N-pass consensus; `--agree` for two |
+| ~~`cot_compare.py`~~ | **archived** &rarr; `scripts/archive/` — read the flat `*_cotsummary.json`; use `gen_cot_report.py` or `cot_flow.py` |
 
 ## Analysis — no API
 
@@ -62,6 +62,10 @@ All write to `results/tcga/`.
 |---|---|
 | `gen_manuscript_report.py` | `MANUSCRIPT_REPORT.html` — paper-shaped summary |
 | `gen_cot_report.py` | `COT_REPORT.html` — per-episode CoT deep-dive |
+| `gen_summary_report.py` | `SUMMARY.html` — **the narrative summary**: how each model works, a representative episode's hypothesis arc, what the ladder changes, what the judges keep criticising. Charts inline, no p-values. Needs `cot_flow.py` first |
+| `cot_flow.py` | `manuscript/figures/cot_flow.json` + `FLOW_REPORT.html` — deterministic process record for all 570 episodes: tool sequence, modalities reached for, methods, confidence trajectory, pivots. **No LLM judge anywhere in it** |
+| `gen_hypothesis_report.py` | `HYPOTHESIS_REPORT.html` — renders `cot_stats.json` (H1/H2). An internal validity check, not a paper deliverable: this study is descriptive |
+| `svg_charts.py` | inline-SVG chart helpers shared by the reports — no CDN, so a report opened offline still draws |
 | `gen_ablation_report.py` | `ABLATION_REPORT.html` — detailed-vs-lean |
 | `gen_cost_report.py` | `COST_REPORT.html` — measured tokens; prices in an editable table |
 | `gen_ladder_report.py` | `LADDER_3MODEL.html` — per-cohort/modality (`--out` for the lean variant) |

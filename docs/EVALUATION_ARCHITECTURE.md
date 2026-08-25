@@ -325,7 +325,7 @@ kept, struck through, because the failure each describes is the one this project
   All three now read the panel and **refuse rather than render** when a loader comes back empty.
   Files that still name the flat suffixes do so legitimately (`judges_config.LEGACY_ARTIFACTS`,
   `migrate_episode_layout.py`, `remove_stale_judges.py`) or are retired and now exit non-zero
-  (`run_judge_panel.sh`).
+  (`scripts/archive/run_judge_panel.sh`, retired).
 - ~~The analysis layer assumes 3-passes-of-one-model (`explore_exploit.py` …).~~ **CLOSED** —
   `explore_exploit.py` reads `J.tags()` and reports no-consensus explicitly.
 - **`check_judge_integrity` was passing vacuously.** It globbed the flat names, checked nothing, and

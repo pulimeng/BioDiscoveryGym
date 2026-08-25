@@ -46,8 +46,12 @@ import sys
 MODELS = [
     ('GPT-5.5', 'gpt55', '#1D9E75', 'flagship'),
     ('Sonnet 5', 'sonnet5', '#7F77DD', 'flagship'),
-    ('Gemini 3.5 Flash', 'gemini35flash', '#EF9F27', 'flash'),
-    ('Gemini 2.5 Pro', 'gemini25pro', '#EF9F27', 'flagship'),
+    # Yellow stepped down from #EF9F27 for the dark report surface: at OKLCH L 0.764 the old
+    # value sat outside the 0.48-0.67 band every chart here is drawn on, so the Gemini mark
+    # glared against the other two. #c98500 keeps the hue and passes all six palette checks
+    # against surface #161b22 (CVD dE 9.0, normal-vision 19.8, contrast >=3:1, all pairs).
+    ('Gemini 3.5 Flash', 'gemini35flash', '#c98500', 'flash'),
+    ('Gemini 2.5 Pro', 'gemini25pro', '#c98500', 'flagship'),
 ]
 # GENERATION NOTE for the write-up: GPT-5.5 and Sonnet 5 are current flagships; Gemini 2.5 Pro is
 # a generation behind. It is here because gemini-3.1-pro-preview (released 2026-02-19) is on a

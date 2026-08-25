@@ -119,7 +119,7 @@ widening through G2 = dose-response).
 
 **Infra fixes (committed):** provider-key routing per `--model` (not always Anthropic); DeepSeek
 truncation (8k→16k + retry on `finish_reason=length`) on both judges; `score_run.sh` empty-arg bug;
-`resume_support.sh` gap-filler. **Scripts consolidated** — 4 per-run report generators → one
+`resume_support.sh` gap-filler (since **archived** — the stale files it targeted are gone). **Scripts consolidated** — 4 per-run report generators → one
 parameterized `gen_report.py`; removed dead one-offs + `__pycache__`.
 
 **Known issues / hardening ideas (not yet done):**

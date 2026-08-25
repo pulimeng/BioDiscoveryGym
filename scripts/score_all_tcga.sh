@@ -72,8 +72,20 @@ for ep in "${EPISODES[@]}"; do
         SKIPPED=$((SKIPPED + 1))
         continue
     fi
-    scorefile="${ep%.json}_v3scores.json"
-    if [[ $RESCORE -eq 0 && -f "$scorefile" ]]; then
+    # PANEL LAYOUT. This used to test "${ep%.json}_v3scores.json" — the pre-reorg flat path.
+    # score_tcga_episode.py --save writes <episode>/scoring/<judge-tag>/v3scores.json, so the flat
+    # file never appears, the resume check never fired, and every re-run re-scored and RE-BILLED
+    # the whole directory while printing normal progress. Ask the scorer where it would write.
+    scorefile="$(python - "$ep" <<'PY'
+import os, sys
+sys.path.insert(0, "scripts")
+import judges_config as J
+ep = sys.argv[1]
+tag = os.environ.get("BDG_JUDGE_TAG") or J.tags()[0]
+print(J.artifact_path(os.path.dirname(ep), "outcome", tag))
+PY
+)"
+    if [[ $RESCORE -eq 0 && -n "$scorefile" && -f "$scorefile" ]]; then
         echo "=== SKIP (already scored): $(basename "$ep") ==="
         SKIPPED=$((SKIPPED + 1))
         continue
