@@ -46,12 +46,27 @@ import sys
 MODELS = [
     ('GPT-5.5', 'gpt55', '#1D9E75', 'flagship'),
     ('Sonnet 5', 'sonnet5', '#7F77DD', 'flagship'),
+    # Opus 5 — the top Anthropic tier, opt-in. Cyan rather than a fourth warm hue: checked against
+    # the three existing marks on surface #161b22, it is the only candidate that clears the
+    # palette's CVD bar comfortably (deuteranopia dE 31.1 vs rose's marginal 10.4), and it sits in
+    # the 0.48-0.67 OKLCH band at L 0.656, contrast 5.66:1.
+    # Tier is 'flagship', NOT a new value: gen_ladder_report emits a "lighter tier, deficit is
+    # confounded" caveat for anything that is not literally 'flagship', so calling Opus 'frontier'
+    # would print a tier warning about the most capable model in the ladder.
+    ('Opus 5', 'opus5', '#3AA0B5', 'flagship'),
     # Yellow stepped down from #EF9F27 for the dark report surface: at OKLCH L 0.764 the old
     # value sat outside the 0.48-0.67 band every chart here is drawn on, so the Gemini mark
     # glared against the other two. #c98500 keeps the hue and passes all six palette checks
     # against surface #161b22 (CVD dE 9.0, normal-vision 19.8, contrast >=3:1, all pairs).
     ('Gemini 3.5 Flash', 'gemini35flash', '#c98500', 'flash'),
     ('Gemini 2.5 Pro', 'gemini25pro', '#c98500', 'flagship'),
+    # Gemini 3.1 Pro — opt-in, and the ONLY newer Pro that exists. `gemini-3.5-pro` 404s: the 3.5
+    # generation is Flash-only (verified, docs/MODEL_LADDER.md §2), so there is no 3.5 Pro lane to
+    # add however natural the name looks. 3.1 Pro is preview and 503'd on a 1-token preflight in
+    # 2026-08; registered so that IF the serving lane frees up, the analysis picks it up with no
+    # further change. Shares the Gemini hue: only one Gemini runs per campaign, and _resolve()
+    # includes only stems present on disk, so they never collide in one report.
+    ('Gemini 3.1 Pro', 'gemini31pro', '#c98500', 'flagship'),
 ]
 # GENERATION NOTE for the write-up: GPT-5.5 and Sonnet 5 are current flagships; Gemini 2.5 Pro is
 # a generation behind. It is here because gemini-3.1-pro-preview (released 2026-02-19) is on a

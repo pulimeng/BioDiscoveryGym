@@ -38,6 +38,51 @@ secrets (committable); `keys.txt` is gitignored — never commit it.
 | OpenAI | `gpt-5.5` | current flagship (`gpt-5.5-2026-04-23`). Reasoning model — runs at default reasoning_effort. |
 | Google | `gemini-3.5-flash` | **Flash tier — a deliberate tier downgrade, see the caveat below.** Smoke-passed (submits, grouping 1095). Default thinking; thought_signature round-tripped; adapter logs + backs off on transient 503/429. |
 
+**Opt-in (added 2026-08-13)** — registered in `runs_config.MODELS`, so every analysis script picks
+them up automatically once their run directories exist. Nothing else needed: `get_adapter()` routes
+on substring (`claude` / `gemini`), `run_tcga.sh` already routes the API key the same way, and the
+live 1-token preflight validates the id before 95 episodes are spent.
+
+| Provider | Model id | Notes |
+|---|---|---|
+| Anthropic | `claude-opus-5` | top Anthropic tier. **The cost driver** — see the warning below before committing to a full campaign. Registered as tier `flagship` deliberately: `gen_ladder_report` prints a "lighter tier, deficit is confounded" caveat for any tier that is not literally `flagship`, which would be nonsense on the most capable model in the ladder. |
+| Google | `gemini-3.1-pro-preview` | the only Gemini Pro newer than 2.5. **Preview, not stable**, and it returned 503 on even a 1-token preflight (2026-08) on a saturated shared lane. Registered as `gemini31pro` so the analysis picks it up if the lane frees up. Re-check availability with `scripts/list_models.py` before scheduling. |
+
+> **⚠️ Gemini Pro ids — VERIFIED against Google's own docs 2026-08-31.**
+> Sources: [ai.google.dev/gemini-api/docs/models](https://ai.google.dev/gemini-api/docs/models),
+> [changelog](https://ai.google.dev/gemini-api/docs/changelog).
+>
+> | id | status |
+> |---|---|
+> | `gemini-2.5-pro` | **Stable / GA — the latest stable Gemini Pro.** No deprecation or shutdown date announced. |
+> | `gemini-3.1-pro-preview` | **Preview only.** Released 2026-02-19; no GA announcement since. |
+> | `gemini-3.5-pro` | **Does not exist.** The 3.5 family is Flash, Flash-Lite, Transcribe and Live Translate — there is no Pro in it. |
+>
+> The 3.5-Pro name is plausible enough that it has been guessed into this repo twice. It 404s.
+> Third-party pricing aggregators claim 3.1 Pro reached GA and that 2.5 Pro shuts down 2026-10-16;
+> **both are contradicted by Google's own changelog** — do not plan a campaign against them.
+> Re-check with `python scripts/list_models.py --provider gemini --pro`, which asks the API rather
+> than trusting this table.
+>
+> **Newer Gemini that actually ships GA: `gemini-3.6-flash` / `gemini-3.7-flash`** (Flash tier).
+> They do not fix the parity problem — Flash is a lighter tier — but if the goal is a *reachable*
+> newer Gemini rather than a parity-correct one, they are GA where 3.5 Flash was not reliable.
+
+> **⚠️ COST — price Opus before you run it, not after.**
+> Opus is unpriced in `gen_cost_report.py`'s table, so a campaign including it will report
+> `UNPRICED` and a total flagged as a **lower bound** rather than a wrong number. That is the
+> intended behaviour, but it means you cannot cost the run retrospectively without the rate.
+> For scale: Sonnet 5 consumed **299M input tokens for 190 episodes** because it runs ~53
+> turns/episode and every turn re-sends the whole conversation. Opus at a comparable turn count
+> would dominate total spend. Add its rate to `PRICES` first, then decide the episode count.
+
+> **Generation parity — currently unfixable, and that is the honest position.** Gemini 2.5 Pro is a
+> generation behind GPT-5.5 and Sonnet 5, so any Gemini gap is confounded with model generation and
+> must not be read as a vendor difference. The only newer Pro is `gemini-3.1-pro-preview`, which is
+> preview-tier and has not been reachable. So the confound stands until Google ships a GA Pro above
+> 2.5 — **disclose it, do not engineer around it.**
+
+
 > **⚠️ TIER CAVEAT — Gemini is a Flash tier; the others are flagship (decided 2026-07-16).**
 > Disclose this wherever Gemini appears. It is a known, accepted asymmetry, not an oversight.
 >

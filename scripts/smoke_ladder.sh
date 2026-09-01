@@ -11,14 +11,21 @@
 # Setup:  pip install anthropic openai google-genai
 #         export ANTHROPIC_API_KEY=... OPENAI_API_KEY=... GEMINI_API_KEY=...   (or GOOGLE_API_KEY)
 # Usage:  bash scripts/smoke_ladder.sh
-#         SMOKE_MODELS="claude-opus-4-8 gpt-4.1" SMOKE_CALLS=40 bash scripts/smoke_ladder.sh
+#         SMOKE_MODELS="claude-opus-5 gemini-3.1-pro-preview" SMOKE_CALLS=40 bash scripts/smoke_ladder.sh
 set -o pipefail   # not -u: macOS bash 3.2 errors on empty-array expansion under -u
 
 COHORT="${SMOKE_COHORT:-BRCA}"
 COHORT_LC="$(echo "$COHORT" | tr '[:upper:]' '[:lower:]')"   # bash 3.2 has no ${var,,}
 SEED="${SMOKE_SEED:-42}"
 CALLS="${SMOKE_CALLS:-50}"
-read -r -a MODELS <<< "${SMOKE_MODELS:-claude-sonnet-5 claude-opus-4-8 gpt-5.5 gemini-3.5-flash}"
+# Default set = the models a campaign would actually use today. The old default still named
+# claude-opus-4-8 and gemini-3.5-flash; Flash was abandoned mid-campaign on sustained 503s
+# (results/tcga/_abandoned/.../WHY_ABANDONED.md), so smoke-testing it verified a lane nobody runs.
+# Gemini id: 2.5-pro is the newest Gemini PRO that is GA and can finish a campaign. Do NOT put
+# gemini-3.5-pro here — it 404s; the 3.5 generation is Flash-only (docs/MODEL_LADDER.md §2).
+# gemini-3.1-pro-preview exists but is preview and 503'd on a 1-token preflight (2026-08).
+# Re-check with scripts/list_models.py before assuming any of that still holds.
+read -r -a MODELS <<< "${SMOKE_MODELS:-claude-sonnet-5 claude-opus-5 gpt-5.5 gemini-2.5-pro}"
 OUT="results/tcga/_smoke/ladder"
 mkdir -p "$OUT"
 

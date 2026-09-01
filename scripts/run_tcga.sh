@@ -171,7 +171,17 @@ try:
              messages=[{"role": "user", "content": "ok"}])
     print("PREFLIGHT_OK")
 except Exception as e:
-    print(f"PREFLIGHT_FAIL {type(e).__name__}: {e}")
+    # Report the CAUSE, not just the wrapper. httpx/SDK transport errors stringify to a bare
+    # "Connection error." which names the failure class and discards the only sentence that says
+    # what to do about it — is it TLS, DNS, a proxy, a dropped VPN? Walking __cause__/__context__
+    # turns an unactionable line into a diagnosis. Same lesson as the 120-char truncation in the
+    # scorers: an error report that has to be re-derived by reproducing the failure is not a report.
+    _chain, _c, _d = [], e.__cause__ or e.__context__, 0
+    while _c is not None and _d < 4:
+        _chain.append(f"{type(_c).__name__}: {str(_c)[:200]}")
+        _c, _d = (_c.__cause__ or _c.__context__), _d + 1
+    _why = "  <- ".join(_chain)
+    print(f"PREFLIGHT_FAIL {type(e).__name__}: {e}" + (f"  <- {_why}" if _why else ""))
 PYEOF
 )
     if ! grep -q PREFLIGHT_OK <<< "$_PF"; then
@@ -192,8 +202,14 @@ PYEOF
                                  echo "     This is a PREFLIGHT limit, not necessarily a broken model — the agent runs at 32k." >&2 ;;
             *503*|*UNAVAILABLE*|*"high demand"*)
                                  echo "  -> provider capacity (503). Transient; retry, or pick a model with more headroom." >&2 ;;
-            *block*|*303*|*CERTIFICATE*)
-                                 echo "  -> network/TLS blocked this endpoint." >&2 ;;
+            *CERTIFICATE*|*SSLError*|*CERTIFICATE_VERIFY_FAILED*)
+                                 echo "  -> TLS trust failure. The corporate Cloudflare CA likely rotated;" >&2
+                                 echo "     rebuild the bundle at \$SSL_CERT_FILE from the keychain." >&2 ;;
+            *APIConnectionError*|*ConnectError*|*ConnectTimeout*|*"Connection error"*)
+                                 echo "  -> could not reach the endpoint at all (transient network / VPN drop)." >&2
+                                 echo "     TLS and billing are NOT implicated. Verify, then just retry:" >&2
+                                 echo "     curl -sS -o /dev/null -w 'HTTP %{http_code}\\n' https://api.anthropic.com/v1/messages" >&2 ;;
+            *block*|*303*)       echo "  -> network policy blocked this endpoint." >&2 ;;
         esac
         exit 1
     fi
