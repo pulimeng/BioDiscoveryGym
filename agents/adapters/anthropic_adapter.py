@@ -16,8 +16,16 @@ class AnthropicAdapter(Adapter):
     def __init__(self, api_key: str | None = None, **kw):
         super().__init__(api_key=api_key, **kw)
         import anthropic, httpx
+        # max_retries: the SDK retries 429/5xx (including 529 overloaded_error) with exponential
+        # backoff. The default of 2 is not enough for a sustained capacity window: on 2026-09-01
+        # seven consecutive g3b episodes died on {'type': 'overloaded_error'} after the agent
+        # loop's 3 attempts were exhausted, losing ~2h of a lane. The Gemini adapter already backs
+        # off on 503/429 for exactly this reason; Anthropic had no equivalent, which made the two
+        # providers fail differently under the same condition.
+        # 8 retries of SDK backoff sits comfortably inside the 600s read timeout below.
         self._client = anthropic.Anthropic(
             timeout=httpx.Timeout(connect=30, read=600, write=30, pool=30),
+            max_retries=8,
             **({"api_key": api_key} if api_key else {}))
 
     def _to_messages(self, messages: list[dict]) -> list[dict]:

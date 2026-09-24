@@ -20,7 +20,7 @@
 > call-count fallback), and the lean prompt logs a median of 4 observations — so most lean episodes
 > on the late arm **never received a false label at all** and were scored as "not fooled".
 > Conditional on exposure the contrast is null (95.3% v 92.0%, p=0.468). Full analysis:
-> `scripts/reveal_mechanism.py` → `manuscript/figures/reveal_mechanism.json`; write-up in
+> `paper/analysis/reveal_mechanism.py` → `manuscript/figures/reveal_mechanism.json`; write-up in
 > `manuscript/EXPLORE_EXPLOIT_PAPER.md` R4/R5. §7's recommendation to lead with §2b is void.
 >
 > **What replaces it:** among the 135 G3 episodes that actually received a label, **127 adopted it

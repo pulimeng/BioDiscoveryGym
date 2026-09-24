@@ -253,7 +253,7 @@ Reviewer proposed a signed-correlation diagnostic to decide between three hypoth
 
 For each run9 episode: infer directions from SGH-OS Cox → build TARGET-OS signature score → Spearman with TARGET-OS OS time. Decision rule per reviewer: ρ < −0.10 confirms (1); ρ ≈ 0 supports (2)/(3); ρ > +0.10 means signatures replicate at signed-correlation level.
 
-**Result (n=13 run9 episodes, `scripts/signed_correlation_diagnostic.py`, output in `analysis/run9_target_validation/signed_correlation.tsv`):**
+**Result (n=13 run9 episodes, `paper/analysis/signed_correlation_diagnostic.py`, output in `analysis/run9_target_validation/signed_correlation.tsv`):**
 
 | Statistic | Value |
 |---|---:|
@@ -405,7 +405,7 @@ Outputs in `analysis/run9_target_validation/`: `external_validation_run9.tsv` (p
 
 **run10 reproduces the run9 finding exactly — genuine non-replication.**
 
-1. **Per-episode signed correlation** (`scripts/signed_correlation_diagnostic.py --run-dir results/external/run10_withval`): mean ρ = **−0.089**, median −0.103, range [−0.199, +0.030], Wilcoxon vs 0 p=0.039. Breakdown 0 replicates / 8 near-zero / 1 flips (g1_s7, ρ=−0.199, p=0.07 ns). Same as run9 (mean ρ=−0.064): signatures are **uninformative, not direction-inverted**.
+1. **Per-episode signed correlation** (`paper/analysis/signed_correlation_diagnostic.py --run-dir results/external/run10_withval`): mean ρ = **−0.089**, median −0.103, range [−0.199, +0.030], Wilcoxon vs 0 p=0.039. Breakdown 0 replicates / 8 near-zero / 1 flips (g1_s7, ρ=−0.199, p=0.07 ns). Same as run9 (mean ρ=−0.064): signatures are **uninformative, not direction-inverted**.
 2. **Convergent-signature external validation** (`external_validation.py --name run10`) on the strongly-convergent core (genes in ≥3 of 9 episodes; direction from SGH-OS Cox) — protective `ZBTB42,EPHA2,GPRC5C,DAB2IP,SMAD6,SATB2`, risk `SIMC1,ZNF280C`: signature HR=**1.28, p=0.22 → FAIL** (and wrong direction). Positive controls **3/5 pass** (cytolytic HR=0.60 p=0.026, hypoxia HR=1.40 p=0.041, metastasis HR=4.58 p=5e-5) → cohort is informative, so the null is genuine. SATB2 alone is nominal (logrank p=0.043) but opposite to its SGH-OS loading.
 
 Verdict identical to run9: at n≈85–91 with a methodology-driven prompt, discovered OS prognostic signatures do not carry cross-cohort survival information, while known prognostic axes validate in the same data. The failure mode is rare-cohort signal weakness, not a pipeline bug.

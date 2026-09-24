@@ -12,7 +12,7 @@ then records `cohort_identity_verdict != mislead_cohort` — which every report 
 Lean episodes log a median of 4 observations against a gate of 5, so on the late-reveal arm only
 3/48 lean episodes were ever exposed. Reporting `fooled / n_g3` made a prompt that ENDS EPISODES
 EARLIER look like a prompt that RESISTS FALSE PREMISES, at p=6.0e-08. See
-`manuscript/EXPLORE_EXPLOIT_PAPER.md` R4/R5 and `scripts/reveal_mechanism.py`.
+`manuscript/EXPLORE_EXPLOIT_PAPER.md` R4/R5 and `paper/analysis/reveal_mechanism.py`.
 
 **A fooled-rate whose denominator is the arm rather than the exposed set is not a rate.** Use
 `exposed_g3()` for the denominator in anything that reports one.

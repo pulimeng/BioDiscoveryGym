@@ -10,7 +10,7 @@ run_log for episodes recorded before that field existed. Episodes whose provider
 usage are counted SEPARATELY rather than averaged in as zeros -- a run where half the episodes
 silently reported nothing must not render as a cheap run.
 
-No prices: see biodiscoverygym/resources.py for why. For dollars, scripts/gen_cost_report.py.
+No prices: see biodiscoverygym/resources.py for why. For dollars, paper/reports/gen_cost_report.py.
 
 Usage:
   python scripts/episode_resources.py results/tcga/clean/gpt55

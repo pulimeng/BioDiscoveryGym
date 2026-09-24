@@ -22,7 +22,7 @@ Usage:
     python scripts/score_support.py results/tcga/_archive/run1+2 --arms g0,g1 --save   # money panel
 """
 from __future__ import annotations
-import argparse, glob, json, os, sys
+import argparse, glob, json, os, sys, time
 from collections import defaultdict
 from pathlib import Path
 
@@ -47,10 +47,21 @@ def _tag_for(model, tag=None):
                      f"(known tags: {_J.tags()})")
 
 
+NOCARD_FILE = 'supportscores_nocard.json'   # card-redacted artifact; never the panel's supportscores.json
+
+
 def _dst_for(episode_json, args, create=False):
     import judges_config as _J
-    return _J.artifact_path(os.path.dirname(os.path.abspath(episode_json)), 'support',
-                            _tag_for(args.model, args.judge_tag), create=create)
+    d = os.path.dirname(os.path.abspath(episode_json))
+    tag = _tag_for(args.model, args.judge_tag)
+    if getattr(args, 'no_card', False):
+        # Separate file in the same judge directory. artifact_path() knows only the panel kinds,
+        # and registering a new kind there would make panel_status.py demand this lane everywhere.
+        sd = _J.scoring_dir(d, tag)
+        if create:
+            os.makedirs(sd, exist_ok=True)
+        return os.path.join(sd, NOCARD_FILE)
+    return _J.artifact_path(d, 'support', tag, create=create)
 
 
 def extract_trace(ep: dict) -> dict:
@@ -86,7 +97,14 @@ def arm_of(fname: str) -> str:
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("run_dir")
+    p.add_argument("run_dir", nargs="?", default=None,
+                   help="one run directory; or omit and pass --all for every run in BDG_RUNS")
+    p.add_argument("--all", action="store_true",
+                   help="judge every run directory runs_config resolves (all models, both waves)")
+    p.add_argument("--no-card", action="store_true",
+                   help="CARD-REDACTED pass: same judge, same trace, no reference card. Writes "
+                        f"<episode>/scoring/<tag>/supportscores_nocard.json, never the panel file. "
+                        "Compare with paper/analysis/card_redaction.py.")
     p.add_argument("--model", default=DEFAULT_JUDGE_MODEL,
                    help="judge model — NEUTRAL family (not in the benchmarked set). "
                         "deepseek-v4-pro (default) / claude-* / gpt-* all supported.")
@@ -117,8 +135,17 @@ def main():
 
     # exclude ALL derived artifacts, incl. "summary" — a _cotsummary.json starts with the g0..
     # label and otherwise matches the glob, so scoring it produced a _cotsummary_supportscores.json.
-    files = sorted(f for f in glob.glob(f"{args.run_dir}/*/g[0-3]*_s*.json")
-                   if not any(x in os.path.basename(f) for x in ("scores", "trace", "summary")))
+    if bool(args.run_dir) == bool(args.all):
+        sys.exit("give exactly one of: <run_dir>  or  --all")
+    if args.all:
+        import runs_config
+        run_dirs = runs_config.flat()
+    else:
+        run_dirs = [args.run_dir]
+    files = sorted(f for rd in run_dirs for f in glob.glob(f"{rd}/*/g[0-3]*_s*.json")
+                   if not any(x in os.path.basename(f) for x in ("scores", "trace", "summary", "premisetest")))
+    if args.no_card:
+        print("  [card-redacted] no reference card; output -> " + NOCARD_FILE, file=sys.stderr)
     arms_filter = {a.strip() for a in args.arms.split(",") if a.strip()}
     if arms_filter:
         files = [f for f in files if arm_of(f) in arms_filter]
@@ -140,7 +167,7 @@ def main():
         cohort, arm = ep.get("cohort", ""), arm_of(f)
         try:
             t = extract_trace(ep)
-            umsg = gj.build_user_msg(t, cohort)
+            umsg = gj.build_user_msg(t, cohort, card=not args.no_card)
         except KeyError as e:
             print(f"  !! {os.path.basename(f)} skipped: {e}", file=sys.stderr); continue
         if args.dry:
@@ -148,12 +175,34 @@ def main():
                   f"({len(t['why_headers'])} WHY, {len(t['observations'])} obs) =====")
             print(umsg[:1800] + "\n...\n")
             continue
+        # Transient transport/gateway failures (504 from bifrost under load, dropped connections,
+        # timeouts) are retried here with a long backoff AFTER the SDK's own retries are exhausted.
+        # Anything else (an incomplete verdict after 3 attempts, a schema violation) is a judge
+        # failure and is skipped as before, so a resume can pick it up.
+        levels = None
+        for _attempt, _wait in enumerate((0, 20, 60, 180, 300)):
+            if _wait:
+                print(f"  .. {os.path.basename(f)} transient error; retry {_attempt} in {_wait}s", file=sys.stderr)
+                time.sleep(_wait)
+            try:
+                levels = gj.call_judge(umsg, args.model,
+                                       system=gj.JUDGE_SYSTEM_NOCARD if args.no_card else None)
+                break
+            except Exception as e:
+                _name = type(e).__name__
+                _code = getattr(e, "status_code", None)
+                _transient = (_name in ("APIConnectionError", "APITimeoutError", "InternalServerError",
+                                        "RateLimitError", "ConnectError", "ReadTimeout", "RemoteProtocolError")
+                              or (isinstance(_code, int) and (_code >= 500 or _code in (408, 409, 429))))
+                if not _transient or _attempt == 4:
+                    print(f"  !! {os.path.basename(f)} judge failed: {_name}: {e}", file=sys.stderr); levels = None; break
+        if levels is None:
+            continue
         try:
-            levels = gj.call_judge(umsg, args.model)
             sc = gj.support_score(levels)
             flags = gj.audit_flags(levels)
         except Exception as e:
-            print(f"  !! {os.path.basename(f)} judge failed: {e}", file=sys.stderr); continue
+            print(f"  !! {os.path.basename(f)} scoring failed: {e}", file=sys.stderr); continue
         scores[arm].append(sc)
         for d in gj.DECISIONS:
             cross[arm][d][(levels[d].get("strategy"), levels[d].get("support"))] += 1
@@ -173,7 +222,7 @@ def main():
             out = {"cohort": cohort, "arm": arm, "levels": levels,
                    "support_score": sc, "score_max": sum(gj.WEIGHTS.values()),
                    "audit_flags": flags, "weights": gj.WEIGHTS,
-                   "judge_model": args.model}
+                   "judge_model": args.model, "card_redacted": bool(args.no_card)}
             _dst = _dst_for(f, args, create=True)
             _tmp = _dst + ".tmp"
             with open(_tmp, "w") as _fh:

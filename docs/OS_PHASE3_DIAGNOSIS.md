@@ -1,7 +1,7 @@
 # OS Task A — why Phase 3 never scores, and what is actually wrong
 
 **Date:** 2026-07-28 · **Status:** diagnosis complete, redesign NOT decided · **Scripts:**
-`scripts/internal_robustness.py`, `scripts/target_qc.py`
+`paper/analysis/internal_robustness.py`, `paper/analysis/target_qc.py`
 
 ## The question
 
@@ -22,7 +22,7 @@ The three experiments below say it is (2), and locate the cause in **SGH-OS, not
 
 ## Finding 1 — Internal robustness does not predict external replication
 
-`scripts/internal_robustness.py` — 22 existing episodes (run9_marker 13 + run10_withval 9),
+`paper/analysis/internal_robustness.py` — 22 existing episodes (run9_marker 13 + run10_withval 9),
 retrospective, no new episodes needed.
 
 Per episode: bootstrap sign stability (B=200), K-fold CV signature, leave-deciles-out HR SD,
@@ -78,7 +78,7 @@ version.
 
 ## Finding 3 — TARGET-OS is sound; SGH-OS is the limiting cohort
 
-`scripts/target_qc.py` — the check that had to happen before blaming anyone.
+`paper/analysis/target_qc.py` — the check that had to happen before blaming anyone.
 
 **Structure — clean.** Same normalization, no variance collapse, adequate follow-up.
 

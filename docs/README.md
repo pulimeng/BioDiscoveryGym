@@ -116,13 +116,13 @@ Superseded pieces are moved to `scripts/archive/` and `docs/archive/`.
 | `scripts/archive/score_decision_points.py` → `_dpscores.json` | derived>recalled scorer (ranked exploration) | **archived** — superseded by `score_support.py` (produced run1+2's `_dpscores`, cited in EXPLORE_EXPLOIT_SCORING) |
 | `docs/archive/DECISION_POINT_RUBRIC.md` | derived/recalled rubric | **archived** — superseded by `SUPPORT_JUDGE_PROMPT.md` |
 | `scripts/archive/crosstab_explore_exploit.py` | joined old `_dpscores` + `_v3scores` | **archived** — template for the pending outcome×support join (needs repointing to `_supportscores`) |
-| `scripts/cot_flow.py` | belief-trail + process metrics, all 570 episodes | **live** — supersedes `proto_belief_metrics.py` (archived): same `conf_rise`/`ttc`/`n_obs`/pivot family, on 9x the data, with medians beside the means |
+| `paper/analysis/cot_flow.py` | belief-trail + process metrics, all 570 episodes | **live** — supersedes `proto_belief_metrics.py` (archived): same `conf_rise`/`ttc`/`n_obs`/pivot family, on 9x the data, with medians beside the means |
 | `docs/EXPLORE_EXPLOIT_SCORING.md` | the design-history record (the reframe reasoning) | keep as rationale; its "pre-commit" header is stale |
 
 **Repo layout:** data-download scripts grouped under `scripts/download/`; superseded code in
 `scripts/archive/`, superseded docs in `docs/archive/`.
 
-**Reports:** `scripts/gen_report.py` — one parameterized generator (`--model "Label:dir[:#color]"`,
+**Reports:** `paper/reports/gen_report.py` — one parameterized generator (`--model "Label:dir[:#color]"`,
 repeatable) for any set of runs; auto-includes grounding when `*_supportscores.json` exist.
 Replaced the old per-run one-offs (`gen_run1/run2/merged_report.py`, now removed).
 

@@ -1,5 +1,8 @@
 # Scripts — what to run, and when
 
+> Manuscript-side analysis, figure and report generators moved to `paper/` on 2026-09-11 (`paper/analysis`, `paper/figures`, `paper/reports`; see `paper/README.md`). `scripts/` is production only: running, scoring, judging, data building, audits.
+
+
 Grouped by job. Anything that spends API credit is marked **$**; those are run by the PI, not by an
 assistant.
 
@@ -79,7 +82,7 @@ Phase 3 is unwinnable as specified; not being worked on.
 ## Regenerate everything after a re-score
 
 ```bash
-python scripts/cot_deepdive.py && python scripts/shortcut_analysis.py
-python scripts/gen_manuscript_report.py && python scripts/gen_cot_report.py
-python scripts/gen_ablation_report.py && python scripts/gen_cost_report.py
+python paper/analysis/cot_deepdive.py && python paper/analysis/shortcut_analysis.py
+python paper/reports/gen_manuscript_report.py && python paper/reports/gen_cot_report.py
+python paper/reports/gen_ablation_report.py && python paper/reports/gen_cost_report.py
 ```

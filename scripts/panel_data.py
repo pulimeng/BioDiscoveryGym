@@ -77,7 +77,17 @@ def load(wave=None, judges=None):
             v3s = [v for v, _, _ in per.values()]
             sups = [s for _, s, _ in per.values()]
             cots = [c for _, _, c in per.values()]
-            outs = [v.get('normalized') for v in v3s if v.get('normalized') is not None]
+            # An outcome artifact with an EMPTY `raw_scores` was never scored: the scorer
+            # emitted a shell whose `normalized` is 0.0 because it summed nothing. That zero is
+            # indistinguishable from an episode that genuinely scored zero on every component,
+            # which is this project's signature defect (see docs/DATA_INTEGRITY_AUDIT.md). Drop
+            # such a judge's number from the mean; if no judge scored the episode, the outcome
+            # is UNSCORED (None) and is counted, never averaged in as a zero.
+            scored = [v for v in v3s if (v.get('raw_scores') or {})]
+            if v3s and not scored:
+                missing['episodes_unscored_empty_components'] += 1
+            outs = [v.get('normalized') for v in scored
+                    if v.get('normalized') is not None]
             parts = lab.split('_')
             r = dict(
                 model=model, prompt=prompt, arm=parts[0], label=lab, dir=epdir,
@@ -96,7 +106,7 @@ def load(wave=None, judges=None):
                 verdict_votes=[v.get('cohort_identity_verdict') for v in v3s],
                 rigor=J.consensus([c.get('validation_rigor') for c in cots]),
                 support_score=mean([s.get('support_score') for s in sups]),
-                raw_scores=(v3s[0].get('raw_scores') or {}),
+                raw_scores=(scored[0].get('raw_scores') if scored else {}),
                 exposed=(was_exposed(os.path.join(epdir, lab + '.json'))
                          if parts[0].startswith('g3') else None))
             for lv in LEVELS:
@@ -104,6 +114,13 @@ def load(wave=None, judges=None):
                     [(s.get('levels', {}).get(lv) or {}).get('strategy') for s in sups])
                 r[lv + '_sup'] = J.consensus(
                     [(s.get('levels', {}).get(lv) or {}).get('support') for s in sups])
+                # Per-judge votes, aligned to r['judges'] (both are keyed by tag, so the mapping is
+                # explicit rather than positional). Needed for judge-sensitivity analysis: recomputing
+                # a claim under one family, or under a two-family subset, requires the raw labels —
+                # the consensus alone cannot be un-reduced.
+                r[lv + '_strat_votes'] = {
+                    tag: ((per[tag][1].get('levels', {}).get(lv) or {}).get('strategy'))
+                    for tag in sorted(per)}
             rows.append(r)
     return rows, missing
 

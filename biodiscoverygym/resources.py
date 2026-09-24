@@ -17,7 +17,7 @@ analysis reads a field instead of re-deriving it (and re-deriving it differently
 NO PRICES HERE, DELIBERATELY. Token counts are measurements and are true forever; prices are
 supplied by the project owner, change without notice, and already rewrote the model cost ranking
 once. Baking dollars into the episode record would freeze a guess next to a measurement and make
-them indistinguishable a year later. Cost stays in scripts/gen_cost_report.py, where the price
+them indistinguishable a year later. Cost stays in paper/reports/gen_cost_report.py, where the price
 table carries its own provenance date and can be overridden per run.
 
 THE TIME SPLIT IS APPROXIMATE and labelled as such. `api_s` is measured per turn and includes

@@ -7,7 +7,7 @@ a wrong result that renders as a normal one. Nothing would have flagged it.
 
 USAGE — the CLEAN campaign is the default. A bare run analyses publication-safe data:
 
-    python scripts/cot_deepdive.py   # reads results/tcga/clean/* + results/tcga/clean_lean/*
+    python paper/analysis/cot_deepdive.py   # reads results/tcga/clean/* + results/tcga/clean_lean/*
 
 Reading the contaminated pilot is now an explicit, deliberate act:
 

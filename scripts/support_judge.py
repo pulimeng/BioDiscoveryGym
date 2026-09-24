@@ -181,6 +181,25 @@ _SUPPORT_TOOL = {
 }
 
 
+# Card-redacted system prompt: identical instructions with the card paragraphs replaced by a rule
+# not to import outside knowledge. Built from JUDGE_SYSTEM so the two cannot drift apart.
+def _nocard_system(sys_text: str) -> str:
+    import re as _re
+    start = sys_text.index("CRITICAL — the reference card")
+    end = sys_text.index("Judge only what the trace shows")
+    repl = ("NO REFERENCE CARD is provided for this cohort. You do not know the true cancer type and\n"
+            "must not guess it or grade against it. Judge only whether the agent's claims are\n"
+            "supported by computation visible in THIS trace.\n\n")
+    out = sys_text[:start] + repl + sys_text[end:]
+    out = out.replace("Every biology claim you make MUST cite a card fact. Do not import outside\nknowledge beyond the card.",
+                      "Do not import outside knowledge; leave card_ref empty.")
+    out = _re.sub(r"\(see the card's caveats\)", "", out)
+    return out
+
+
+JUDGE_SYSTEM_NOCARD = _nocard_system(JUDGE_SYSTEM)
+
+
 def load_card(cohort: str) -> str:
     """Return the card section for one cohort, sliced from the cards doc."""
     header = _CARD_HEADER.get(cohort.upper())
@@ -200,15 +219,22 @@ def load_card(cohort: str) -> str:
     return text[start:end].strip()
 
 
-def build_user_msg(trace: dict, cohort: str) -> str:
-    """Assemble the per-episode judge input: card (fact-check) + trace. No backstops."""
-    card = load_card(cohort)
+def build_user_msg(trace: dict, cohort: str, card: bool = True) -> str:
+    """Assemble the per-episode judge input: card (fact-check) + trace. No backstops.
+
+    card=False is the CARD-REDACTED variant (2026-09-08): the same trace with no reference card,
+    so the judge can only see what the agent did, not whether it was right. Used to bound the
+    correctness-driven bias that the card makes possible (the judge knows the true cohort while
+    grading process). Outputs go to a separate artifact; see score_support.py --no-card.
+    """
+    card_block = ("COHORT REFERENCE CARD (fact-check only — NOT an answer key):\n" + load_card(cohort) + "\n\n"
+                  if card else
+                  "NO REFERENCE CARD IS PROVIDED. Judge only from the trace below.\n\n")
     whys = trace.get("why_headers", [])
     obs = trace.get("observations", [])
     return (
-        "COHORT REFERENCE CARD (fact-check only — NOT an answer key):\n"
-        f"{card}\n\n"
-        "TRACE:\n"
+        card_block
+        + "TRACE:\n"
         "RUN_CODE # WHY: headers, in order:\n"
         + "\n".join(f"  {i}. {w}" for i, w in enumerate(whys)) + "\n\n"
         "record_observation hypotheses, in order:\n"
@@ -252,20 +278,21 @@ def _is_complete(v: dict) -> bool:
     return (v.get("d2_identity") or {}).get("recall_type") in RECALL_TYPES
 
 
-def call_judge(user_msg: str, model: str = DEFAULT_JUDGE_MODEL) -> dict:
+def call_judge(user_msg: str, model: str = DEFAULT_JUDGE_MODEL, system: str | None = None) -> dict:
     """Force the verdict through tool-use (valid JSON + enum-checked levels). Routes by model
     so the judge can be a NEUTRAL family not in the benchmarked set (self-preference bias):
     claude* -> Anthropic; deepseek*/gpt*/o* -> OpenAI-compatible (DeepSeek endpoint for deepseek*)."""
+    system = system or JUDGE_SYSTEM
     ml = model.lower()
     if ml.startswith("claude") or "claude" in ml:
-        return _judge_anthropic(user_msg, model)
-    return _judge_openai_compatible(user_msg, model)
+        return _judge_anthropic(user_msg, model, system)
+    return _judge_openai_compatible(user_msg, model, system)
 
 
-def _judge_anthropic(user_msg: str, model: str) -> dict:
+def _judge_anthropic(user_msg: str, model: str, system: str = JUDGE_SYSTEM) -> dict:
     import anthropic
     r = anthropic.Anthropic().messages.create(
-        model=model, max_tokens=2500, system=JUDGE_SYSTEM,
+        model=model, max_tokens=2500, system=system,
         tools=[_SUPPORT_TOOL],
         tool_choice={"type": "tool", "name": "record_support"},
         messages=[{"role": "user", "content": user_msg}],
@@ -276,7 +303,7 @@ def _judge_anthropic(user_msg: str, model: str) -> dict:
     raise ValueError(f"no record_support tool_use in response (stop_reason={r.stop_reason})")
 
 
-def _judge_openai_compatible(user_msg: str, model: str) -> dict:
+def _judge_openai_compatible(user_msg: str, model: str, system: str = JUDGE_SYSTEM) -> dict:
     """DeepSeek (the neutral judge) + OpenAI, via the OpenAI SDK with forced tool-calling.
     DeepSeek is served at api.deepseek.com and is OpenAI-compatible incl. tool calls."""
     import openai, json, os
@@ -295,7 +322,11 @@ def _judge_openai_compatible(user_msg: str, model: str) -> dict:
         # reasoning and the tool-call JSON — too small and the args truncate mid-string
         # ("Unterminated string" on json.loads) — and rejects a forced tool_choice, so "auto"
         # with the prompt instructing it to call record_support.
-        client = openai_client_for(model)
+        # max_retries=4: the SDK retries 408/409/429/5xx and connection errors with backoff.
+        # The gateway 504s under load (2026-09-08: 54 laguna episodes lost to it in one pass);
+        # the default of 2 quick retries was not enough. The outer loop in score_support adds a
+        # slower, longer backoff on top for the cases the SDK gives up on.
+        client = openai_client_for(model, timeout=600.0, max_retries=4)
         tok_key, base_tokens, retry_tokens = "max_tokens", 16000, 32000
         tool_choice = "auto"
     else:                                       # openai gpt/o-series
@@ -309,7 +340,7 @@ def _judge_openai_compatible(user_msg: str, model: str) -> dict:
     def _call(max_toks):
         return client.chat.completions.create(
             model=model,
-            messages=[{"role": "system", "content": JUDGE_SYSTEM},
+            messages=[{"role": "system", "content": system},
                       {"role": "user", "content": user_msg}],
             tools=[tool], tool_choice=tool_choice, **{tok_key: max_toks})
 
