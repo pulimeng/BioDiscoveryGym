@@ -25,7 +25,7 @@ import types
 # changing judges meant changing all eight and a missed one would silently keep judging with the
 # old model while the run looked uniform.
 #
-# nemotron-3-super is served by the St. Jude internal gateway. Two properties make it the right
+# nemotron-3-super is served by an institutional OpenAI-compatible gateway. Two properties make it the right
 # default: it belongs to NO benchmarked agent family (no self-preference exposure, unlike
 # GPT/Claude/Gemini), and it is inside the network perimeter, so it cannot be firewalled off
 # mid-run the way DeepSeek was on 2026-08-06.
@@ -47,13 +47,12 @@ BIFROST_BASE_URL = os.environ.get("BIFROST_BASE_URL",
 # Qwen — a SECOND neutral judge family, added 2026-08-18 for the cross-family pass. The
 # existing cross-family check rests on n=42 episodes (DeepSeek vs Nemotron, 67% exact
 # agreement), and it is load-bearing: it is what decides whether the empty `recalled-prior`
-# cell is a property of the data or of the judge. Qwen is served by the St. Jude AIE serving
-# platform and, like nemotron/laguna, belongs to no benchmarked agent family.
+# cell is a property of the data or of the judge. Qwen is served by a second institutional
+# model-serving endpoint and, like nemotron/laguna, belongs to no benchmarked agent family.
 #
-# NOTE the host differs from bifrost's: it is an HPE Ezmeral serving endpoint presenting the
-# "AIE Root CA - ai-application.stjude.org" root, which is NOT in the system trust store or in
-# ~/certs/combined-ca.pem. Until that root is installed, calls fail TLS verification. Do not
-# "fix" this by disabling verification.
+# NOTE the host differs from the gateway's: it presents a private root CA that is NOT in the
+# system trust store or in ~/certs/combined-ca.pem. Until that root is installed, calls fail
+# TLS verification. Do not "fix" this by disabling verification.
 QWEN_BASE_URL = os.environ.get(
     "QWEN_BASE_URL",
     "https://qwen36-27b-fp8.austaadmin-stju-b700e7ae.serving.ai-application.stjude.org/v1")
@@ -63,9 +62,9 @@ QWEN_BASE_URL = os.environ.get(
 # have failed every call. Override with BDG_QWEN_MODEL if the deployment changes.
 QWEN_MODEL = os.environ.get("BDG_QWEN_MODEL", "Qwen/Qwen3.6-27B-FP8")
 
-# TLS verification for the AIE serving platform ONLY.
+# TLS verification for the Qwen serving endpoint ONLY.
 #
-# Its root ("AIE Root CA - ai-application.stjude.org", HPE Ezmeral) is in neither the system
+# Its private root CA is in neither the system
 # trust store, nor ~/certs/combined-ca.pem, nor any keychain; the host sends only its leaf
 # certificate (chain depth 1) and advertises no AIA URL, so the chain cannot be built
 # automatically. Verification is therefore disabled FOR THIS HOST, by explicit decision.
@@ -96,8 +95,8 @@ def openai_client_for(model: str, **kw):
         import httpx
         global _qwen_tls_warned
         if not _qwen_tls_warned:
-            print("  [tls] certificate verification DISABLED for the Qwen/AIE endpoint only "
-                  "(missing AIE root CA). All other providers still verify. "
+            print("  [tls] certificate verification DISABLED for the Qwen endpoint only "
+                  "(missing private root CA). All other providers still verify. "
                   "Set BDG_QWEN_VERIFY=1 once the root is installed.", file=sys.stderr)
             _qwen_tls_warned = True
         kw["http_client"] = httpx.Client(verify=False, timeout=kw.pop("timeout", 600.0))
@@ -164,8 +163,8 @@ class _JudgeClient:
                     model=model, max_tokens=max_tokens, system=system, messages=messages)
             import openai
             # Routed from the one table above (judge_provider). A non-None base_url means a
-            # self-hosted / third-party OpenAI-compatible endpoint: bifrost (nemotron, laguna),
-            # the AIE serving platform (qwen), or DeepSeek.
+            # self-hosted / third-party OpenAI-compatible endpoint: the gateway (nemotron, laguna),
+            # the Qwen serving endpoint, or DeepSeek.
             env_key, base_url = judge_provider(model)
             if base_url:
                 client = openai_client_for(model, timeout=600.0, max_retries=3)

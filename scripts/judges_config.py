@@ -41,9 +41,9 @@ from biodiscoverygym.scoring.judge import QWEN_MODEL as _QWEN_MODEL  # noqa: E40
 
 # (tag, model id, description). The tag becomes the filename suffix and the reporting label.
 PANEL = [
-    ('nemotron', 'nemotron-3-super', 'NVIDIA Nemotron, St. Jude bifrost gateway'),
-    ('laguna',   'laguna',           'Laguna, St. Jude bifrost gateway'),
-    ('qwen',     _QWEN_MODEL, 'Qwen, St. Jude AIE serving platform'),
+    ('nemotron', 'nemotron-3-super', 'NVIDIA Nemotron, institutional gateway'),
+    ('laguna',   'laguna',           'Laguna, institutional gateway'),
+    ('qwen',     _QWEN_MODEL, 'Qwen, institutional serving platform'),
 ]
 
 # artifact kind -> filename inside the episode's scoring/<judge>/ directory.
