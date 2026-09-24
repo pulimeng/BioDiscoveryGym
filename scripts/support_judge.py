@@ -2,7 +2,7 @@
 """Support judge — shared prompt + I/O for the calibration scorer.
 
 Design: docs/SUPPORT_JUDGE_PROMPT.md (strategy tag [neutral] x support [scored]).
-Fact-check card: docs/COHORT_REFERENCE_CARDS.md, injected per cohort.
+Fact-check card: prompts/COHORT_REFERENCE_CARDS.md, injected per cohort.
 The judge is BLIND to the objective backstops (concordance NMI, cohort-identity gate) —
 those reconcile against its calls offline, not as judge input.
 
@@ -18,7 +18,7 @@ DECISIONS = ["d1_partition", "d2_identity", "d3_mechanism"]
 SUPPORT_POINTS = {"grounded": 1.0, "unsupported": 0.25, "anchored": 0.0}
 WEIGHTS = {"d1_partition": 2.0, "d2_identity": 2.0, "d3_mechanism": 1.0}
 
-_CARDS_PATH = Path(__file__).resolve().parent.parent / "docs" / "COHORT_REFERENCE_CARDS.md"
+_CARDS_PATH = Path(__file__).resolve().parent.parent / "prompts" / "COHORT_REFERENCE_CARDS.md"
 # cohort code -> the "## <NAME> — ..." header prefix in the cards doc
 _CARD_HEADER = {
     "BRCA": "## BRCA",

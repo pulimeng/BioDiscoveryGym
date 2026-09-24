@@ -7,6 +7,9 @@ results/
 # Stray default-path episode artifacts (run_episode.py with no --results-base)
 output_dir/
 
+# Internal bookkeeping — not part of the release
+docs/
+
 # Analysis outputs — figures, scratch scripts, intermediate files
 analysis/
 

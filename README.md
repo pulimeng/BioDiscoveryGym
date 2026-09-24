@@ -209,6 +209,7 @@ biodiscoverygym/
 
 prompts/
   agent_system_tcga.txt     — TCGA faithfulness prompt
+  COHORT_REFERENCE_CARDS.md — per-cohort fact-check card injected into the support judge
   examination/              — Phase 2 examination question sets (legacy)
   archive/                  — superseded prompts
 
@@ -222,10 +223,6 @@ scripts/
   archive/                  — abandoned Task B + experimental scorers
 
 analysis/                   — (gitignored) one-off analysis scripts + outputs
-
-docs/
-  GRAND_DESIGN.md           — three-part architecture (Skills Library + Benchmark + Evaluator)
-  BENCHMARK_PLAN.md         — running notes on benchmark cohort + group choices
 ```
 
 ---
