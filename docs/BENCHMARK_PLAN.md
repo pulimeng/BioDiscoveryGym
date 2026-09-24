@@ -13,7 +13,6 @@ Evaluate whether frontier LLMs can perform genuine data-driven biological discov
 1. Does the data-driven blind phase (G2) improve discovery quality over pure recall (G0)?
 2. Are agents robust to misleading provenance signals (G3)?
 3. Do model families differ in data-following vs. recall-relying behavior?
-4. Does performance on the held-out osteosarcoma cohort (no TCGA contamination) diverge from TCGA performance?
 
 ---
 
@@ -37,7 +36,6 @@ Each episode: agent receives an anonymized patient cohort (expression ± mutatio
 
 **4 TCGA cohorts:** BRCA, LIHC, LUAD, OV (trimmed from 7 on 2026-06-18 for cost — dropped LUSC/PRAD/UCEC; OV + LUAD retained as the G3 true cohorts)
 
-**Held-out test set:** SGH-OS (Jia et al. 2022, 91 samples, multi-omics). Run G0/G1/G2 only (no G3 — single cohort). Discovery rubric scored against TARGET-OS external validation (Phase 3) rather than the paper's reported markers.
 
 ### Models
 
@@ -53,18 +51,17 @@ Each episode: agent receives an anonymized patient cohort (expression ± mutatio
 
 ### Infrastructure
 
-- Runners: `bash scripts/run_tcga.sh --tag <run>` (G0-G3, TCGA cohorts) and `bash scripts/run_cohort.sh --tag <run> --cohort OS` (G0-G2, SGH-OS)
-- Results saved to `results/tcga/<run>/<uuid>/` (TCGA) or `results/external/<run>/<uuid>/` (OS)
-- Scorers: `scripts/score_tcga_episode.py` (TCGA faithfulness, 16 pts) and `scripts/score_sghos_episode.py` (OS discovery, 24 pts)
+- Runner: `bash scripts/run_tcga.sh --tag <run>` (G0-G3, TCGA cohorts)
+- Results saved to `results/tcga/<run>/<uuid>/`
+- Scorer: `scripts/score_tcga_episode.py` (TCGA faithfulness, 16 pts)
 
 ---
 
 ## Evaluation Metrics
 
-Scoring is now bifurcated between the two experiments. See `docs/TASK_A_COHORT.md § Scoring (post-hoc, bifurcated)` and the `README.md` Scoring section for the canonical component-level rubrics.
+See the `README.md` Scoring section for the canonical component-level rubric.
 
 - **TCGA faithfulness rubric** — 16 pts, 8 Phase 1 components (no Phase 2). Reference concordance against known TCGA subtypes is the faithfulness anchor.
-- **SGH-OS discovery rubric** — 24 pts: Phase 1 = 16 pts (7 components) + Phase 2 Examination = 3 pts + Phase 3 TARGET-OS external validation = 5 pts. Reference concordance deliberately absent.
 
 ### Secondary metrics
 
@@ -72,7 +69,6 @@ Scoring is now bifurcated between the two experiments. See `docs/TASK_A_COHORT.m
 |--------|-----------------|
 | G0 − G2 score delta | How much recall contributes vs. data reasoning |
 | G3 mislead rate | Fraction of G3 episodes where agent adopts the false identity |
-| TCGA vs. osteosarcoma score gap | Recall confound magnitude — models that score well on TCGA but poorly on osteosarcoma are relying on memorization |
 | Score variance across seeds | Stability of each model's reasoning |
 
 ---
@@ -92,7 +88,6 @@ After the G3a/G3b sub-arm split (2026-06-15) and the cohort trim from 7 → 4 (2
 | Line item | Amount |
 |-----------|--------|
 | TCGA 5-model × 40 episodes (200 episodes) | ~$1,160 |
-| Osteosarcoma — 5 models × 9 episodes (45 episodes), incl. Phase 3 | ~$300 |
 | Scoring API cost (LLM judge) — all episodes | ~$80 |
 | Reruns / debugging | ~$100 |
 | **Total budget** | **~$1,640** |
@@ -106,8 +101,6 @@ After the G3a/G3b sub-arm split (2026-06-15) and the cohort trim from 7 → 4 (2
 | Run M1 (Sonnet) — all 40 eps | Budget approved |
 | Score M1, verify pipeline end-to-end | M1 complete |
 | Run M2–M5 in parallel | M1 pipeline verified |
-| Osteosarcoma data ready → build scorer | Data collection complete |
-| Run osteosarcoma episodes (M1, M2, M3) | Scorer built |
 | Analysis and writeup | All scoring complete |
 
 ---
@@ -117,9 +110,6 @@ After the G3a/G3b sub-arm split (2026-06-15) and the cohort trim from 7 → 4 (2
 | File | Purpose |
 |------|---------|
 | `scripts/run_tcga.sh` | TCGA G0-G3 benchmark runner (resume-safe; `--smoke-test` for pipeline check) |
-| `scripts/run_cohort.sh` | OS G0-G2 benchmark runner (resume-safe; `--smoke-test` for pipeline check) |
 | `scripts/run_episode.py` | Single-episode CLI (cohort-aware default results-base) |
 | `scripts/score_tcga_episode.py` | TCGA faithfulness scorer (Phase 1, 16 pts) |
-| `scripts/score_sghos_episode.py` | OS discovery scorer (Phase 1+2+3, up to 24 pts) |
-| `docs/TASK_A_COHORT.md` | Full task design and empirical findings |
 | `docs/GRAND_DESIGN.md` | Overall benchmark architecture |

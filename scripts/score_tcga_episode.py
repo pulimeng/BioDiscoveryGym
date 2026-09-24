@@ -5,8 +5,6 @@ Faithfulness rubric — scores whether the agent derived the known TCGA subtype
 biology through data-driven reasoning vs prior recall. Runs all v2 components
 AND extracts an agent trace from the raw message log.
 
-For OS / external cohorts, use score_sghos_episode.py instead (discovery rubric).
-
 Usage:
     python scripts/score_tcga_episode.py path/to/episode.json --cohort BRCA --save
     python scripts/score_tcga_episode.py path/to/episode.json --cohort LUAD --save --skip-llm
@@ -34,7 +32,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="Score a BioDiscoveryGym v3 episode post-hoc.")
     p.add_argument("episode_json", help="Path to episode result JSON (from --save-log)")
     p.add_argument("--cohort", default=None,
-                   help="Cohort name (e.g. BRCA, OS). Reads from episode JSON if omitted.")
+                   help="Cohort name (e.g. BRCA). Reads from episode JSON if omitted.")
     p.add_argument("--data-dir", default="data", help="Root data directory (default: data)")
     p.add_argument("--save", action="store_true", help="Save score + trace JSON files")
     p.add_argument("--judge-tag", default=None,
@@ -129,7 +127,7 @@ def main():
 
     data_dir = Path(args.data_dir)
 
-    _EXTERNAL_COHORT_DIRS = {"OS": "data/external/os_jia2022"}
+    _EXTERNAL_COHORT_DIRS: dict[str, str] = {}
 
     print("Loading dataset...")
     from biodiscoverygym.utils.data_loader import DataLoader

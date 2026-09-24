@@ -8,7 +8,6 @@ Responsibilities:
   4. Write anonymized data to a per-process staging dir for agent access (biodiscoverygym/paths.py)
   5. Run the agent (tool-use loop)
   6. Return EpisodeResult — scoring is post-hoc via scripts/score_tcga_episode.py
-     (TCGA cohorts) or scripts/score_sghos_episode.py (SGH-OS, discovery rubric)
 """
 
 from __future__ import annotations

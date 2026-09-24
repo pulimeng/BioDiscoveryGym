@@ -224,11 +224,11 @@ python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42
 # Score a single episode (v3: scores + trace)
 python scripts/score_episode_v3.py results/{id}/episode.json --save
 
-# Multi-seed cohort benchmark (G0 × 3 seeds + G1 × 5 seeds + G2 × 5 seeds = 13 runs)
-bash scripts/run_cohort.sh --tag run6_canonical --cohort OS
+# Multi-seed TCGA benchmark (G0/G1/G2/G3 × seeds × cohorts)
+bash scripts/run_tcga.sh --tag run10
 
-# Score all episodes in a results folder
-bash scripts/score_all_withMeth.sh results/external/run6_canonical/
+# Score all episodes in a run directory
+bash scripts/score_all_tcga.sh results/tcga/run10/
 ```
 
 ### Task B — target discovery

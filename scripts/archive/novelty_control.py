@@ -31,7 +31,6 @@ FRAMING = (
 
 _EXAMINATION_MODULES = {
     "LIHC": "biodiscoverygym.examination.lihc",
-    "OS":   "biodiscoverygym.examination.os",
 }
 
 

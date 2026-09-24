@@ -201,7 +201,6 @@ echo "Data layout:"
 du -sh "$ROOT/data"/*/  2>/dev/null || true
 echo
 echo "Run benchmarks:"
-echo "  Cohort analysis  : python scripts/run_episode.py --cohort OS    # SGH-OS discovery"
-echo "                   : python scripts/run_episode.py --cohort LIHC  # TCGA faithfulness"
-echo "  Multi-seed       : bash scripts/run_cohort.sh --tag run10 --cohort OS"
+echo "  Cohort analysis  : python scripts/run_episode.py --cohort LIHC  # TCGA faithfulness"
+echo "  Multi-seed       : bash scripts/run_tcga.sh --tag run10"
 echo "  Tests            : pytest tests/ -v"

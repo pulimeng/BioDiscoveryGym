@@ -169,8 +169,7 @@ relationship in either direction"** — not "derived scores higher", which the p
 1. ~~Re-score~~ **DONE** — 78 episodes re-scored 2026-07-29; all 450 gates now scored
    (`true_cohort` 397, `mislead_cohort` 35, `hedged` 11, `other` 7, **error 0**).
 2. **Guard applied:** `cot_deepdive.py` excludes errored gates and prints the count.
-3. **DONE 2026-07-29 — the class of bug is closed.** Both `score_tcga_episode.py` and
-   `score_sghos_episode.py` now scan `report.diagnostics` for an `error` key after scoring and, if
+3. **DONE 2026-07-29 — the class of bug is closed.** `score_tcga_episode.py` now scans `report.diagnostics` for an `error` key after scoring and, if
    any component failed, **refuse to write a score file and exit non-zero**.
 
    The discriminator was already in the data and simply unread: a legitimate zero carries

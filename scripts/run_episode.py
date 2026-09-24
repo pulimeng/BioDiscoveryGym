@@ -22,12 +22,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from biodiscoverygym.resources import summarize as resource_summary, format_line as format_resources
 
-VALID_COHORTS = ["BRCA", "PRAD", "UCEC", "LUAD", "LIHC", "LUSC", "OV", "OS"]
+VALID_COHORTS = ["BRCA", "PRAD", "UCEC", "LUAD", "LIHC", "LUSC", "OV"]
 
 # External cohorts not under data/tcga/ — map cohort name → data directory
-EXTERNAL_COHORT_DIRS: dict[str, str] = {
-    "OS": "data/external/os_jia2022",
-}
+EXTERNAL_COHORT_DIRS: dict[str, str] = {}
 
 
 def _serialize_messages(messages: list) -> list:
@@ -91,7 +89,7 @@ def parse_args():
         metavar="DIR",
         help=(
             "Root directory for episode output. Episode UUID subdir is created inside it. "
-            "Defaults to results/external/ for external cohorts (OS), results/tcga/ for TCGA."
+            "Defaults to results/tcga/."
         ),
     )
     p.add_argument(

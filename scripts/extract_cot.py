@@ -76,11 +76,11 @@ CODEBOOK_PAT = re.compile(
 )
 
 # Disease-naming signatures (broad cancer naming) — first call where agent commits to a diagnosis.
-# Covers the 7-cohort TCGA ladder (BRCA/LIHC/LUAD/LUSC/OV/PRAD/UCEC) AND the legacy pediatric set.
+# Covers the 7-cohort TCGA ladder (BRCA/LIHC/LUAD/LUSC/OV/PRAD/UCEC) plus legacy terms kept for back-compat.
 # Without the TCGA terms, disease_at/pre-codebook leak detection was blind to OV/PRAD/UCEC/LUSC.
 DISEASE_PAT = re.compile(
     r"\b("
-    # legacy (SGH-OS / external runs)
+    # legacy terms from earlier external runs; kept so first-naming calls are stable
     r"osteosarcoma|ewing\s+sarcoma|rhabdomyosarcoma|wilms|chondrosarcoma|"
     r"acute\s+myeloid\s+leukemia|glioblastoma|melanoma|"
     # TCGA ladder cohorts
@@ -131,10 +131,8 @@ def count_based_identity(rec, sizes, window=120):
 
 
 # Pediatric/young-patient inference signatures — first call where clinical-metadata
-# narrowing has occurred (the leak channel identified in the run8 SGH-OS analysis).
-# LEGACY: this channel is meaningful only for the pediatric osteosarcoma cohort; TCGA
-# ladder cohorts are adult, so pediatric_at is expected to stay None there (kept for
-# back-compat with external-run reports, harmless on TCGA).
+# narrowing has occurred. LEGACY: TCGA ladder cohorts are adult, so pediatric_at is
+# expected to stay None (kept for back-compat with earlier external-run reports).
 PEDIATRIC_PAT = re.compile(
     r"\b(pediatric|paediatric|adolescent|young\s+patients?|young\s+adult|"
     r"median\s+(?:age\s+)?(?:1[0-9]|2[0-5])|AYA\s+cancer|childhood\s+(?:cancer|tumor))\b",

@@ -44,7 +44,7 @@ _BLOCKED_SUBSTRINGS = (
     ".biodiscoverygym/vault",
     "episode_key",
     "data/tcga",
-    "data/external",  # raw source files (e.g. os_jia2022/) with real gene/sample names
+    "data/external",  # raw source files with real gene/sample names
     "data/subtypes",
     "data/genesets",
     "data/cancer_genes",

@@ -66,11 +66,6 @@ Everything here comes from contaminated G2/G3 episodes and is superseded by the 
   association is partly circular (fixed `12963d9`, but the pilot labels were produced unblinded).
 - H1 (outcome vs strategy), the rigor paradox, the mechanism markers, and the shortcut analysis.
 
-### OS track — PARKED
-
-Phase 3 is unwinnable as specified: SGH-OS cannot predict its own survival under honest CV while
-TARGET can. Not being worked on. `docs/OS_PHASE3_DIAGNOSIS.md`.
-
 ---
 
 # Historical log (pre-2026-07-28 — superseded, numbers unreliable)
@@ -149,30 +144,10 @@ parameterized `gen_report.py`; removed dead one-offs + `__pycache__`.
 | Support scoring on run1+2 | **Done (2026-07-02)** — 62 eps scored; two axes orthogonal (support ≠ correctness), Sonnet grounds well, anchoring only under G3 mislead. "unwarranted recall common" did NOT hold for a frontier model → motivates the model ladder |
 | Model ladder | **Ready (2026-07-07)** — provider adapters (`agents/adapters/`) run ONE identical agent across Sonnet/Opus/GPT-4.1/Gemini-flash (`--model` routes by prefix). Smoke-tested, parity confirmed (`reveal@RO=3` all 4). Full run: **48 eps/model** (G0 now 3 seeds), **~$1000 total** (Opus ~$720). Guide: `docs/MODEL_LADDER.md` |
 | Mechanism prompt loosening | Committed but **dormant** (`690b3db`); cheap A/B **done** — flat D3 both arms (loosening did not unflatten → model behavior, not prompt). No full re-run. Local-only `run_mech_ab.sh` |
-| SGH-OS scorer (Phase 1+2+3) | Complete — 11 components, 24 pts, with TARGET-OS external validation |
 | Unified prompt | `agent_system.txt` replaces g0/g1/g2_system.txt; codebook auto-injected |
 | multimodal_cluster() | Pre-loaded in executor namespace (MOFA+/SNF/concat_pca) |
 | PrimeKG + PCST | Integrated — `--primekg` flag, PCST via networkx steiner_tree |
 | OpenTargets | Downloaded and integrated — 1,227 genes, revealed at Stage 5 |
-
----
-
-## OS Benchmark Results (SGH-OS, Jia et al. 2022)
-
-**9 runs complete. Seed 42 stale runs archived in `results/external/stale/`.**
-
-| Group | Seeds | Mean total (/15) | Normalized | SD |
-|-------|-------|----------------:|-----------|-----|
-| G0 — explicit retrieval | 0, 1, 7 | 7.93 | 0.529 | 0.23 |
-| G1 — implicit retrieval | 0, 1, 7 | 7.59 | 0.506 | 0.40 |
-| G2 — data-driven        | 0, 1, 7 | 7.69 | 0.513 | 0.06 |
-
-Key findings:
-- All 9 runs recover the same 4-cluster partition (25/25/21/20); variation lives in narrative, not clustering
-- Mode differences (≤0.35 pts) are smaller than G1 seed-to-seed spread (~1 pt) — no mode effect
-- G2 is the most stable (SD = 0.06); best individual run G0 s7 = 8.25 (normalized 0.55)
-- 3 pts structurally unavailable: `genomic_coherence_drivers` + `genomic_coherence_rppa` require CNA/WES (pending GSA HRA003260)
-- Full analysis: `results/external/os_benchmark_summary.md`
 
 ---
 
@@ -197,10 +172,6 @@ Key findings:
 - Agent access: automatically revealed inside `request_codebook` response (no flag needed)
 - Tool: `biodiscoverygym/tools/opentargets.py` — `get_actionability(gene)`, `batch_actionability([genes])`
 
-### OS subtypes added to reference
-- Added 91 OS rows to `data/subtypes/pancan_subtypes.tsv` → `reference_concordance` now non-zero (NMI = 0.135, weighted = 0.271)
-- _noCNA_noSNV tag on OS run names = CNA and full SNV data absent (pending controlled access)
-
 ### run6 → run7 infrastructure changes (2026-06-01)
 
 **Unified system prompt:** `prompts/agent_system.txt` replaces three mode-specific files. All G0/G1/G2 differences handled by 5 format vars. `request_codebook` tool removed; codebook is now auto-injected into the conversation as a narrative.
@@ -216,7 +187,7 @@ Key findings:
 - G2 codebook never fired: `_ro_count >= 5` → `_run_code_count >= 8` in run_code handler
 - `data/external` unblocked: added to `_BLOCKED_SUBSTRINGS` (was fully readable, bypassing anonymization)
 
-**Smoke test:** `bash scripts/run_cohort.sh --smoke-test --cohort OS` → G0/G1/G2 × seed=42, 15 calls, results in `results/external/dry-run/`
+**Smoke test:** `bash scripts/run_tcga.sh --smoke-test` → G0/G1/G2 × seed=42, 15 calls, results in `results/external/dry-run/`
 
 ---
 
@@ -240,9 +211,6 @@ Key findings:
 - Gate=0 agents: not fooled (biological identity established early from gene names)
 - Gate=30 agents: fooled in ~4/6 runs
 
-### OS multi-seed benchmark (2026-05-15/19)
-- All 9 runs converge to identical partition — stable benchmark property
-- Mode effect absent; seed variance dominates within G1
 
 ---
 
@@ -268,16 +236,14 @@ python scripts/run_episode.py --cohort BRCA --gene-codebook-gate 0 --seed 42
 python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42
 
 # Score any episode (cohort-specific tracks)
-python scripts/score_sghos_episode.py results/external/run10/<uuid>/<label>.json --save     # OS discovery
 python scripts/score_tcga_episode.py results/tcga/run10/<uuid>/<label>.json --cohort BRCA --save  # TCGA
-bash scripts/score_all_sghos.sh results/external/run10/                    # batch OS
 bash scripts/score_all_tcga.sh results/tcga/run10/                      # batch TCGA
 
 # OS smoke test (1 seed/mode, fast verify)
-bash scripts/run_cohort.sh --smoke-test --cohort OS
+bash scripts/run_tcga.sh --smoke-test
 
 # OS full benchmark run (G0/G1/G2 × 3 seeds = 9 episodes)
-bash scripts/run_cohort.sh --tag run10 --cohort OS
+bash scripts/run_tcga.sh --tag run10
 
 # Task B (archived — see scripts/archive/run_target_discovery*.py)
 ```
@@ -293,4 +259,4 @@ bash scripts/run_cohort.sh --tag run10 --cohort OS
 4. **Opus arm** — detailed + lean, last (cost driver ~$720+)
 5. **Multi-judge robustness** — score a 15–20 ep subset with a 2nd judge; show the cross-model ranking is judge-stable
 6. **Harden for production** — submit-time grouping validation; Anthropic adapter backoff
-7. *(parked)* run7 OS benchmark; OS with WES/CNA once GSA HRA003260 granted; Task B systematic runs
+7. Task B systematic runs

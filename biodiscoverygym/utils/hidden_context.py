@@ -227,7 +227,7 @@ _CLINICAL_RENAME: dict = {
 # Categorical values are remapped to CAT_0, CAT_1, … in-place; column name unchanged.
 # Skipped in G0 mode (rename_clinical=False) since the cohort is already known.
 _VALUE_REMAP = {
-    "tumor_stage",   # Enneking IIB/III → CAT_0/CAT_1 (Enneking is bone-tumor-specific)
+    "tumor_stage",   # stage values (e.g. IIB/III) → CAT_0/CAT_1; the staging system itself fingerprints the cohort
 }
 
 # Columns that directly reveal cancer type, tissue of origin, or molecular subtype.

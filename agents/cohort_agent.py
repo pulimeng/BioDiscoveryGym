@@ -27,7 +27,6 @@ _COHORT_FULL_NAMES: dict[str, str] = {
     "LIHC": "Liver Hepatocellular Carcinoma",
     "LUSC": "Lung Squamous Cell Carcinoma",
     "OV":   "Ovarian Serous Cystadenocarcinoma",
-    "OS":   "Osteosarcoma (SGH-OS, Jia et al. 2022)",
 }
 
 _SAMPLE_CODEBOOK_TOOL: dict = {
@@ -182,7 +181,7 @@ _TOOLS: list[dict] = [
                 },
                 "next_experiment": {
                     "type": "string",
-                    "description": "Optional. One testable experiment to validate the hypothesis. Only scored on the OS discovery rubric (as validation_experiment); TCGA scoring ignores this field.",
+                    "description": "Optional. One testable experiment to validate the hypothesis. Not scored by the TCGA rubric.",
                 },
             },
             "required": [
@@ -206,10 +205,10 @@ class CohortAgent:
     partition commit). G1 pre-reveals the codebook; G0 pre-reveals both disease and
     codebook via explicit_cohort.
 
-    Prompt is selected per cohort: OS → agent_system_os.txt, others → agent_system_tcga.txt.
+    The TCGA prompt (agent_system_tcga.txt) is used for every cohort unless a prompt file is given.
     """
 
-    _COHORT_PROMPTS: dict[str, str] = {"OS": "agent_system_os.txt"}
+    _COHORT_PROMPTS: dict[str, str] = {}
     _DEFAULT_TCGA_PROMPT = "agent_system_tcga.txt"
     _FALLBACK_PROMPT = "agent_system.txt"
 
@@ -279,7 +278,6 @@ class CohortAgent:
                 _pf.read_text() if _pf.is_file() else _load_prompt(prompt_file)
             )
         else:
-            # OS → agent_system_os.txt, TCGA → agent_system_tcga.txt
             _prompt_name = self._COHORT_PROMPTS.get(self.cohort or "", self._DEFAULT_TCGA_PROMPT)
             try:
                 _system_prompt_template = _load_prompt(_prompt_name)
@@ -376,7 +374,7 @@ class CohortAgent:
             codebook_narrative = self._do_reveal_codebook(output_dir, executor)
             if self.explicit_cohort:
                 full_name = _COHORT_FULL_NAMES.get(self.explicit_cohort, self.explicit_cohort)
-                tcga_prefix = "" if self.explicit_cohort in ("OS",) else "TCGA "
+                tcga_prefix = "TCGA "
                 pre_reveal_narrative = (
                     f"Your assistant has identified: this is "
                     f"{tcga_prefix}{self.explicit_cohort} ({full_name}).\n\n"
@@ -728,7 +726,7 @@ class CohortAgent:
                         sc_path.write_text(json.dumps(fake_map))
                         executor.namespace["sample_codebook"] = dict(fake_map)
                         full_name = _COHORT_FULL_NAMES.get(self.mislead_cohort, self.mislead_cohort)
-                        tcga_prefix = "" if self.mislead_cohort in ("OS",) else "TCGA "
+                        tcga_prefix = "TCGA "
                         sample_narrative = (
                             f"Your assistant has identified the source cohort: "
                             f"{tcga_prefix}{self.mislead_cohort} ({full_name}). "

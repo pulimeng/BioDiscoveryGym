@@ -24,10 +24,10 @@ no code access**, so the answer can only come from literature memory. The intent
 much of a data-driven answer is recoverable from priors alone — a floor to score real episodes
 against.
 
-It still imports and still runs: `biodiscoverygym.examination.{lihc,os}` are present and both
+It still imports and still runs: `biodiscoverygym.examination.lihc` are present and both
 expose `format_examination_prompt()`. But:
 
-- it only covers **LIHC and OS**, the pre-ladder cohorts; there is no module for the seven TCGA
+- it only covers **LIHC**, a pre-ladder cohort; there is no module for the seven TCGA
   cohorts the current study uses
 - it wrote to `results/novelty_<cohort>.json`, and **no such file has ever existed** on disk, so
   as far as the repo can tell it was never run
@@ -39,7 +39,7 @@ run it is *not computable* because there are no `recalled-prior` episodes to con
 under blinding essentially every episode derives. A no-data control manufactures the missing pole
 directly: it is what pure recall scores, by construction, with no judge label needed.
 
-To revive it: add an examination module for a current TCGA cohort alongside `lihc.py`/`os.py`, and
+To revive it: add an examination module for a current TCGA cohort alongside `lihc.py`, and
 score its output through the same rubric as a real episode.
 
 Earlier arrivals (pre-2026-08) are listed in git history rather than here.

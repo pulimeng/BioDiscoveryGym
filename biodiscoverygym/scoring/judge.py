@@ -377,7 +377,6 @@ _COHORT_FULL_NAMES: dict[str, str] = {
     "LIHC": "Liver Hepatocellular Carcinoma",
     "LUSC": "Lung Squamous Cell Carcinoma",
     "OV":   "Ovarian Serous Cystadenocarcinoma",
-    "OS":   "Osteosarcoma",
 }
 
 _FOOLED_VERDICTS = ("mislead_cohort", "other")
