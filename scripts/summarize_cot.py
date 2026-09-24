@@ -217,7 +217,7 @@ def call_judge(user_msg: str, model: str = DEFAULT_JUDGE_MODEL) -> dict:
     import openai
     # Routed from judge_provider (biodiscoverygym/scoring/judge.py) — the one table. A non-None
     # base_url is a self-hosted / third-party OpenAI-compatible endpoint: bifrost (nemotron,
-    # laguna), the AIE serving platform (qwen, a SEPARATE host and key from bifrost), or
+    # laguna), the Qwen serving endpoint (qwen, a SEPARATE host and key from bifrost), or
     # DeepSeek. All are neutral judges: none belongs to a benchmarked agent family.
     _env_key, _base_url = judge_provider(model)
     if _base_url:

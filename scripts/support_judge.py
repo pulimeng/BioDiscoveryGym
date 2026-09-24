@@ -318,7 +318,7 @@ def _judge_openai_compatible(user_msg: str, model: str, system: str = JUDGE_SYST
     env_key, base_url = judge_provider(model)
     if base_url:
         # Self-hosted / third-party OpenAI-compatible endpoint (bifrost: nemotron, laguna; the
-        # AIE serving platform: qwen; DeepSeek). A thinking model needs room for BOTH the
+        # Qwen serving endpoint: qwen; DeepSeek). A thinking model needs room for BOTH the
         # reasoning and the tool-call JSON — too small and the args truncate mid-string
         # ("Unterminated string" on json.loads) — and rejects a forced tool_choice, so "auto"
         # with the prompt instructing it to call record_support.
