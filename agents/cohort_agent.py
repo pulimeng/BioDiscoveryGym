@@ -16,18 +16,15 @@ from typing import Any
 from agents.adapters import get_adapter
 
 from biodiscoverygym.executor import CodeExecutor
+from biodiscoverygym.models import DEFAULT_AGENT_MODEL, DEFAULT_EFFORT
+from biodiscoverygym.trace import EpisodeTrace
+from biodiscoverygym import protocol as P
+from biodiscoverygym.tasks import get_task
 from biodiscoverygym.utils.prompts import load as _load_prompt
 from biodiscoverygym.utils.skills import CONSULT_SKILL_TOOL as _CONSULT_SKILL_TOOL
 
-_COHORT_FULL_NAMES: dict[str, str] = {
-    "BRCA": "Breast Invasive Carcinoma",
-    "PRAD": "Prostate Adenocarcinoma",
-    "UCEC": "Uterine Corpus Endometrial Carcinoma",
-    "LUAD": "Lung Adenocarcinoma",
-    "LIHC": "Liver Hepatocellular Carcinoma",
-    "LUSC": "Lung Squamous Cell Carcinoma",
-    "OV":   "Ovarian Serous Cystadenocarcinoma",
-}
+# Cancer names, delivery texts, markers and the answer space now come from the task adapter
+# (biodiscoverygym/tasks/cohort_identity.py).
 
 _SAMPLE_CODEBOOK_TOOL: dict = {
     "name": "request_sample_codebook",
@@ -67,7 +64,7 @@ _SUBMIT_DATA_LOCK_TOOL: dict = {
     },
 }
 
-_RECORD_OBSERVATION_TOOL: dict = {
+_RECORD_OBSERVATION_BASE: dict = {
     "name": "record_observation",
     "description": (
         "Record a structured checkpoint of your evolving hypothesis. "
@@ -116,6 +113,64 @@ _RECORD_OBSERVATION_TOOL: dict = {
         ],
     },
 }
+
+def _schema_of(name: str) -> dict:
+    return next(t for t in _TOOLS if t["name"] == name)["input_schema"]
+
+
+_RECORD_MILESTONE_BASE: dict = {
+    "name": "record_milestone",
+    # Only what the harness cannot observe: the agent's current belief, how firmly it holds it,
+    # and what moved it. The prior belief is NOT asked for: the harness records it from the last
+    # observation (trace.milestone_declared). No kind enum: it carried no information the scope
+    # and the change itself do not.
+    "description": (
+        "Record a turning point at the moment it happens, not at the end of a stage: your belief "
+        "about something changed because of a specific result. Optional; does not count as a "
+        "stage checkpoint."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "scope": {"type": "string",
+                      "enum": [],   # filled from task.claim_scopes
+                      "description": "What the change is about."},
+            "belief": {"type": "string", "description": "What you hold now, in one sentence."},
+            "confidence": {"type": "string", "enum": ["high", "medium", "low"],
+                           "description": "How firmly you hold it."},
+            "trigger": {"type": "string",
+                        "description": "The specific result that changed your belief."},
+            "evidence_steps": {
+                "type": "array", "items": {"type": "integer"},
+                "description": "Tool-call numbers of the run_code calls behind it.",
+            },
+        },
+        "required": ["scope", "belief", "confidence", "trigger", "evidence_steps"],
+    },
+}
+
+def observation_tool(task) -> dict:
+    """record_observation with the task's answer block appended (last, as before the split). The
+    answer is a structured checkpoint asked identically in every arm; the harness stamps each
+    observation with what the agent could see at that moment."""
+    import copy
+    t = copy.deepcopy(_RECORD_OBSERVATION_BASE)
+    t["input_schema"]["properties"][task.answer_field] = task.answer_schema()
+    t["input_schema"]["required"].append(task.answer_field)
+    return t
+
+
+def milestone_tool(task) -> dict:
+    import copy
+    t = copy.deepcopy(_RECORD_MILESTONE_BASE)
+    t["input_schema"]["properties"]["scope"]["enum"] = list(task.claim_scopes)
+    return t
+
+
+_DEFAULT_TASK = get_task()
+_RECORD_OBSERVATION_TOOL = observation_tool(_DEFAULT_TASK)   # module-level copies for imports/tests
+_RECORD_MILESTONE_TOOL = milestone_tool(_DEFAULT_TASK)
+
 
 _TOOLS: list[dict] = [
     {
@@ -190,10 +245,13 @@ _TOOLS: list[dict] = [
                 "pathway_evidence",
                 "mechanism_hypothesis",
                 "confidence",
+                "next_experiment",
             ],
         },
     },
 ]
+
+_SUBMIT_SCHEMA = _schema_of("submit_discovery")
 
 
 class CohortAgent:
@@ -214,7 +272,7 @@ class CohortAgent:
 
     def __init__(
         self,
-        model: str = "claude-sonnet-4-6",
+        model: str = DEFAULT_AGENT_MODEL,
         max_tool_calls: int = 120,
         data_dir: str | Path = "data",
         verbose: bool = True,
@@ -226,7 +284,7 @@ class CohortAgent:
         explicit_cohort: str | None = None,
         primekg: bool = False,
         clinical_codebook: dict | None = None,
-        thinking_budget: int = 0,
+        effort: str | None = DEFAULT_EFFORT,
         no_examination: bool = False,
         examination_max_calls: int = 40,
         data_lock_max_calls: int = 20,
@@ -234,8 +292,12 @@ class CohortAgent:
         action_based_gate: bool = False,
         skill: str | None = None,
         prompt_file: str | None = None,
+        task: str | None = None,
     ):
         self.model = model
+        self.task = get_task(task)
+        self._obs_tool = observation_tool(self.task)
+        self._ms_tool = milestone_tool(self.task)
         self.max_tool_calls = max_tool_calls
         self.data_dir = Path(data_dir)
         self.verbose = verbose
@@ -247,7 +309,7 @@ class CohortAgent:
         self.explicit_cohort = explicit_cohort.upper() if explicit_cohort else None
         self.primekg = primekg
         self.clinical_codebook = clinical_codebook or {}
-        self.thinking_budget = thinking_budget
+        self.effort = effort  # Anthropic output_config.effort; other adapters ignore it
         self.no_examination = no_examination
         self.examination_max_calls = examination_max_calls
         self.data_lock_max_calls = data_lock_max_calls
@@ -353,7 +415,7 @@ class CohortAgent:
             self._log(f"[CohortAgent] Skill offered (agent-invoked via consult_skill): {self._skill_name}")
         self._skill_consulted = False  # set True when the agent calls consult_skill
 
-        self._tools = list(_TOOLS) + [_RECORD_OBSERVATION_TOOL]
+        self._tools = list(_TOOLS) + [self._obs_tool, self._ms_tool]
         if self.skill:
             self._tools.append(_CONSULT_SKILL_TOOL)
         # request_sample_codebook is only registered when the tool-based gate is in
@@ -365,6 +427,21 @@ class CohortAgent:
 
     def run(self, episode_id: str, output_dir: Path | None = None) -> tuple[dict[str, Any], list, dict]:
         executor = CodeExecutor(data_dir=self.data_dir, output_dir=output_dir)
+        # Harness-side event log + visibility record (biodiscoverygym/trace.py). Never shown to
+        # the agent; lands next to the episode JSON as events.jsonl.
+        trace = EpisodeTrace(
+            (Path(output_dir) / "events.jsonl") if output_dir else None,
+            self.gene_map, true_cohort=self.cohort, planted_cohort=self.mislead_cohort,
+            task=self.task,
+            config={"model": self.model, "effort": self.effort,
+                    "codebook_gate": self.codebook_gate,
+                    "explicit_cohort": self.explicit_cohort,
+                    "mislead_cohort": self.mislead_cohort,
+                    "sample_codebook_ro_gate": self.sample_codebook_ro_gate,
+                    "max_tool_calls": self.max_tool_calls,
+                    "protocol": P.PROTOCOL_VERSION},
+        )
+        self._trace = trace
 
         # Pre-reveal codebook for G0 (explicit cohort) and G1 (codebook_gate == 0)
         pre_reveal_narrative = ""
@@ -372,14 +449,11 @@ class CohortAgent:
 
         if self.gene_map and self.codebook_gate == 0:
             codebook_narrative = self._do_reveal_codebook(output_dir, executor)
+            trace.symbols_revealed(0, "opening")
             if self.explicit_cohort:
-                full_name = _COHORT_FULL_NAMES.get(self.explicit_cohort, self.explicit_cohort)
-                tcga_prefix = "TCGA "
-                pre_reveal_narrative = (
-                    f"Your assistant has identified: this is "
-                    f"{tcga_prefix}{self.explicit_cohort} ({full_name}).\n\n"
-                    + codebook_narrative
-                )
+                trace.label_delivered(0, self.explicit_cohort, "opening")
+                pre_reveal_narrative = (self.task.explicit_answer_text(self.explicit_cohort)
+                                        + codebook_narrative)
                 self._log(f"[CohortAgent] Pre-revealed disease identity + gene codebook (G0)")
             else:
                 pre_reveal_narrative = codebook_narrative
@@ -397,6 +471,25 @@ class CohortAgent:
             self._log(
                 f"[CohortAgent] Pre-revealed sample codebook ({self.mislead_cohort} barcodes) → namespace['sample_codebook']"
             )
+            trace.label_delivered(0, self.mislead_cohort, "opening_barcodes")
+
+        # ro_gate == 0: the false label arrives in the opening message (v2 G3a). Same sentence as
+        # the Nth-record_observation drop (v2 G3b, ro_gate=3), same prompt (no
+        # request_sample_codebook tool, no Stage-5 hint, since ro_gate is set), so the only
+        # difference between G3a and G3b is WHEN the label arrives. Placed directly after the
+        # begin line, as the G0 preamble is, so G0 and G3a differ only in label truth.
+        start_sample_narrative = ""
+        if self.mislead_cohort and self.sample_codebook_ro_gate == 0:
+            fake_map = self._generate_fake_sample_codebook()
+            sc_path = output_dir / "sample_codebook.json"
+            sc_path.write_text(json.dumps(fake_map))
+            executor.namespace["sample_codebook"] = dict(fake_map)
+            start_sample_narrative = self._sample_codebook_narrative(len(fake_map))
+            self._log(
+                f"[CohortAgent] Sample codebook ({self.mislead_cohort}) dropped at episode start "
+                f"(ro_gate=0) → {sc_path}"
+            )
+            trace.label_delivered(0, self.mislead_cohort, "opening")
 
         if self.primekg:
             kg_base = Path("data/networks")
@@ -441,11 +534,18 @@ class CohortAgent:
                 self._log(f"[CohortAgent] PrimeKG enabled → {kg_base}/primekg_*.parquet")
             else:
                 missing = [k for k, p in kg_files.items() if not p.exists()]
-                self._log(f"[CohortAgent] PrimeKG requested but missing splits: {missing} — run scripts/download_primekg.py")
+                self._log(f"[CohortAgent] PrimeKG requested but missing splits: {missing} — run scripts/data/download/download_primekg.py")
 
-        begin_text = "Begin. Work through each stage in order and show your reasoning."
+        # One opening sentence for every arm. The ICLR harness said "...in order and show your
+        # reasoning."; with a label sentence appended (G0, and v2's start-label G3a) that phrase
+        # trips the Opus 5 `reasoning_extraction` classifier: empty turn-0 refusal, 8/8 resends
+        # (2026-11-10). Dropping it everywhere keeps the arms identical instead of giving the
+        # start-label cells their own wording.
+        begin_text = "Begin. Work through each stage in order."
         if pre_reveal_narrative:
             begin_text += f"\n\n{pre_reveal_narrative}"
+        if start_sample_narrative:
+            begin_text += f"\n\n{start_sample_narrative}"
         if pre_reveal_lines:
             begin_text += (
                 "\n\nAdditional resources available at the start of this episode:\n"
@@ -469,7 +569,9 @@ class CohortAgent:
         discovery: dict | None = None
         usage_log: list[dict] = []
         observations: list[dict] = []
-        _ro_count = 0
+        _ro_count = 0                 # VALID observations only (protocol R3)
+        _submit_rejections = 0
+        rejected_calls: list[dict] = []
         _codebook_injected = self.codebook_gate == 0  # already revealed for G0/G1
         # Sample codebook (G3 mislead): if ro_gate is None, the tool path handles
         # delivery and this flag stays True (no auto-drop). If ro_gate is set, the
@@ -478,6 +580,7 @@ class CohortAgent:
             self.mislead_cohort is None
             or self.sample_codebook_ro_gate is None
             or self.sample_codebook_gate == 0  # already pre-revealed above
+            or self.sample_codebook_ro_gate == 0  # dropped at episode start above
         )
 
         self._log(f"[CohortAgent] Starting episode {episode_id} (model={self.model})")
@@ -488,9 +591,8 @@ class CohortAgent:
             tools=self._tools,
             max_tokens=32000,
         )
-        if self.thinking_budget > 0:
-            _api_kwargs["thinking"] = {"type": "enabled", "budget_tokens": self.thinking_budget}
-            self._log(f"[CohortAgent] Extended thinking enabled (budget={self.thinking_budget})")
+        if self.effort:
+            _api_kwargs["effort"] = self.effort
 
         while (
             tool_call_count < self.max_tool_calls
@@ -508,6 +610,21 @@ class CohortAgent:
                         raise
                     _retries += 1
                     self._log(f"[CohortAgent] API error (attempt {attempt+1}/3): {e} — retrying")
+            # EMPTY REFUSAL = resend the identical request. Opus 5 intermittently returns
+            # stop_reason="refusal" with no content on the unchanged TCGA-OV opening request
+            # (2026-11-09: 4 of 6 identical requests refused, the other 2 answered normally). The
+            # loop below treats any unexpected stop_reason as terminal and forces a submission,
+            # which turned 8 rebuttal episodes into one-turn submissions made from the label
+            # alone. Resending adds nothing to what the agent sees, and an episode that never
+            # refuses behaves exactly as before. Counted in usage_log["refusals"] so it is visible.
+            _refusals = 0
+            while (getattr(response, "stop_reason", None) == "refusal"
+                   and not response.content and _refusals < 8):
+                _refusals += 1
+                self._log(f"[CohortAgent] Empty refusal ({_refusals}/8, category="
+                          f"{getattr(response, 'refusal_category', None)}) — resending the same request")
+                time.sleep(min(2 * _refusals, 10))
+                response = self.adapter.create(messages=messages, **_api_kwargs)
             # Includes retry backoff by design: a provider that stalls and retries costs real
             # wall-clock, and a turn that took 400s because of backoff should not look like a
             # turn that took 400s of thinking. `retries` is what tells the two apart.
@@ -527,8 +644,20 @@ class CohortAgent:
                     "output_tokens": getattr(usage, "output_tokens", None),
                     "api_s": round(_api_s, 2),
                     "retries": _retries,
+                    "refusals": _refusals,
+                    "refusal_category": getattr(response, "refusal_category", None),
                     "tool_calls": [b.name for b in response.content if getattr(b, "type", None) == "tool_use"],
                 })
+            trace.model_turn(
+                tool_call_count, stop_reason=response.stop_reason,
+                input_tokens=getattr(usage, "input_tokens", None),
+                output_tokens=getattr(usage, "output_tokens", None),
+                api_s=round(_api_s, 2), retries=_retries, refusals=_refusals,
+                refusal_category=getattr(response, "refusal_category", None),
+                text="\n".join(getattr(b, "text", "") or "" for b in response.content
+                               if getattr(b, "type", None) == "text"),
+                tool_calls=[b.name for b in response.content if getattr(b, "type", None) == "tool_use"],
+            )
 
             messages.append({"role": "assistant", "content": response.content})
 
@@ -552,12 +681,14 @@ class CohortAgent:
                 if examination_active and not q4_injected and self._q4_prompt:
                     q4_injected = True
                     self._log("[CohortAgent] Q1-Q3 complete — injecting Q4 as separate turn")
+                    trace.harness_event("q4_injected", tool_call_count)
                     messages.append({"role": "user", "content": self._q4_prompt})
                     continue
                 if discovery is None:
                     self._log("[CohortAgent] Model stopped naturally — no submission made.")
                 else:
                     self._log("[CohortAgent] Model stopped naturally — using existing submission.")
+                trace.harness_event("model_stopped", tool_call_count, submitted=discovery is not None)
                 break
 
             if response.stop_reason == "max_tokens":
@@ -580,6 +711,9 @@ class CohortAgent:
 
             if response.stop_reason != "tool_use" and not _has_tool_use:
                 self._log(f"[CohortAgent] Unexpected stop_reason: {response.stop_reason}")
+                trace.harness_event("unexpected_stop", tool_call_count,
+                                    stop_reason=response.stop_reason,
+                                    refusal_category=getattr(response, "refusal_category", None))
                 break
             if response.stop_reason != "tool_use":
                 # Tool calls present under an unexpected stop_reason — process them, but say so.
@@ -618,6 +752,7 @@ class CohortAgent:
                         self._log(
                             f"[request_sample_codebook] Released ({self.mislead_cohort} barcodes) → {sc_path}"
                         )
+                        trace.label_delivered(tool_call_count, self.mislead_cohort, "tool")
                     tool_results.append(
                         {"type": "tool_result", "tool_use_id": block.id, "content": content}
                     )
@@ -644,16 +779,64 @@ class CohortAgent:
                     self._log(f"[run_code #{tool_call_count}] {code[:120].strip()!r}")
                     output = executor.execute(code)
                     self._log(f"  → {output[:200].strip()!r}")
+                    trace.run_code(tool_call_count, code, output,
+                                   executor.timing_log[-1] if executor.timing_log else None)
                     tool_results.append(
                         {
                             "type": "tool_result",
                             "tool_use_id": block.id,
-                            "content": output,
+                            # The call number lets the agent cite evidence by step
+                            # (cancer_identity.evidence_steps, record_milestone). Same in every arm.
+                            "content": f"[call {tool_call_count}]\n{output}",
                         }
                     )
 
+                elif block.name == "record_milestone":
+                    payload, errs = P.live_check(
+                        "record_milestone", dict(block.input),
+                        self._ms_tool["input_schema"], step=tool_call_count,
+                        run_code_steps=trace.run_code_steps, n_valid_obs=_ro_count, answer_field=self.task.answer_field)
+                    if errs:
+                        trace.tool_rejected(tool_call_count, "record_milestone", errs)
+                        rejected_calls.append({"call_num": tool_call_count,
+                                               "tool": "record_milestone", "errors": errs})
+                        tool_results.append({"type": "tool_result", "tool_use_id": block.id,
+                                             "content": P.rejection_message("record_milestone", errs)})
+                        continue
+                    trace.milestone_declared(tool_call_count, payload)
+                    self._log(f"[record_milestone] call={tool_call_count} kind={payload.get('kind')} "
+                              f"what={str(payload.get('what', ''))[:80]!r}")
+                    # The validity check is harness-side only; the agent just gets an ack.
+                    tool_results.append({
+                        "type": "tool_result", "tool_use_id": block.id,
+                        "content": f"Milestone recorded (call {tool_call_count}).",
+                    })
+
                 elif block.name == "submit_discovery":
-                    new_submission = dict(block.input)
+                    norm, errs = P.live_check(
+                        "submit_discovery", dict(block.input), _SUBMIT_SCHEMA,
+                        step=tool_call_count, run_code_steps=trace.run_code_steps,
+                        n_valid_obs=_ro_count, answer_field=self.task.answer_field)
+                    if errs:
+                        left = self.max_tool_calls - tool_call_count
+                        if left <= P.SUBMIT_GRACE_CALLS or _submit_rejections >= P.MAX_SUBMIT_REJECTIONS:
+                            # Grace valve: never lose an episode to the protocol. Logged, so the
+                            # scorer reports it instead of hiding it.
+                            reason = ("budget" if left <= P.SUBMIT_GRACE_CALLS
+                                      else f"{_submit_rejections}_rejections")
+                            trace.rule_violation_accepted(tool_call_count, "submit_discovery",
+                                                          errs, reason=reason)
+                            self._log(f"[submit_discovery] accepted despite {errs} ({reason})")
+                        else:
+                            _submit_rejections += 1
+                            trace.tool_rejected(tool_call_count, "submit_discovery", errs)
+                            rejected_calls.append({"call_num": tool_call_count,
+                                                   "tool": "submit_discovery", "errors": errs})
+                            self._log(f"[submit_discovery] REJECTED call={tool_call_count}: {errs}")
+                            tool_results.append({"type": "tool_result", "tool_use_id": block.id,
+                                                 "content": P.rejection_message("submit_discovery", errs)})
+                            continue
+                    new_submission = dict(norm) if isinstance(norm, dict) else dict(block.input)
                     if discovery is not None:
                         new_submission["data_lock_report"] = discovery.get("data_lock_report", "")
                     discovery = new_submission
@@ -663,12 +846,17 @@ class CohortAgent:
                     self._log(
                         f"[submit_discovery] grouping size={len(discovery.get('proposed_grouping', {}))}"
                     )
+                    trace.harness_event("submit_discovery", tool_call_count,
+                                        grouping_size=len(discovery.get("proposed_grouping") or {}),
+                                        confidence=discovery.get("confidence"))
                     if self._data_lock_prompt and not data_lock_active and not examination_active:
                         # Inject clinical codebook for G1/G2 at examination start
                         if not self.explicit_cohort and self.clinical_codebook:
                             executor.namespace["clinical_codebook"] = dict(self.clinical_codebook)
                             self._log("[CohortAgent] Examination start — injecting clinical_codebook for G1/G2")
+                            trace.clinical_codebook_injected(tool_call_count)
                         data_lock_active = True
+                        trace.harness_event("data_lock_start", tool_call_count)
                         self._tools.append(_SUBMIT_DATA_LOCK_TOOL)
                         self._log("[CohortAgent] Discovery submitted — beginning Examination (Data Lock)")
                         tool_results.append({
@@ -680,7 +868,9 @@ class CohortAgent:
                         # Data lock skipped — go straight to examination questions
                         if not self.explicit_cohort and self.clinical_codebook:
                             executor.namespace["clinical_codebook"] = dict(self.clinical_codebook)
+                            trace.clinical_codebook_injected(tool_call_count)
                         examination_active = True
+                        trace.harness_event("exam_start", tool_call_count, via="submit_discovery")
                         self._log("[CohortAgent] Skipping Data Lock — injecting Examination questions (Q1-Q3)")
                         tool_results.append({
                             "type": "tool_result",
@@ -696,8 +886,24 @@ class CohortAgent:
                         submitted = True
 
                 elif block.name == "record_observation":
-                    obs = dict(block.input)
+                    norm, errs = P.live_check(
+                        "record_observation", dict(block.input),
+                        self._obs_tool["input_schema"], step=tool_call_count,
+                        run_code_steps=trace.run_code_steps, n_valid_obs=_ro_count, answer_field=self.task.answer_field)
+                    if errs:
+                        # R3: not recorded, not counted toward any reveal gate.
+                        trace.tool_rejected(tool_call_count, "record_observation", errs)
+                        rejected_calls.append({"call_num": tool_call_count,
+                                               "tool": "record_observation", "errors": errs})
+                        self._log(f"[record_observation] REJECTED call={tool_call_count}: {errs}")
+                        tool_results.append({"type": "tool_result", "tool_use_id": block.id,
+                                             "content": P.rejection_message("record_observation", errs)})
+                        continue
+                    obs = dict(norm)
                     obs["call_num"] = tool_call_count
+                    # Stamp BEFORE any reveal below: the identity was stated with what the agent
+                    # could see up to now, not with what this tool result is about to show it.
+                    obs["vis"] = trace.observation(tool_call_count, obs)
                     observations.append(obs)
                     _ro_count += 1
                     hyp_preview = obs.get("current_hypothesis", "")[:80]
@@ -711,6 +917,7 @@ class CohortAgent:
                         codebook_narrative = self._do_reveal_codebook(output_dir, executor)
                         ro_content += f"\n\n{codebook_narrative}"
                         _codebook_injected = True
+                        trace.symbols_revealed(tool_call_count, "record_observation")
                         self._log(
                             f"[CohortAgent] Codebook revealed on record_observation #{_ro_count} (action-based gate={self.codebook_gate})"
                         )
@@ -725,17 +932,10 @@ class CohortAgent:
                         sc_path = output_dir / "sample_codebook.json"
                         sc_path.write_text(json.dumps(fake_map))
                         executor.namespace["sample_codebook"] = dict(fake_map)
-                        full_name = _COHORT_FULL_NAMES.get(self.mislead_cohort, self.mislead_cohort)
-                        tcga_prefix = "TCGA "
-                        sample_narrative = (
-                            f"Your assistant has identified the source cohort: "
-                            f"{tcga_prefix}{self.mislead_cohort} ({full_name}). "
-                            f"The sample-identifier mapping (SAMPLE_XXXX → original barcode) "
-                            f"is available as the variable `sample_codebook` in your Python "
-                            f"namespace — {len(fake_map)} samples."
-                        )
+                        sample_narrative = self._sample_codebook_narrative(len(fake_map))
                         ro_content += f"\n\n{sample_narrative}"
                         _sample_codebook_injected = True
+                        trace.label_delivered(tool_call_count, self.mislead_cohort, "record_observation")
                         self._log(
                             f"[CohortAgent] Sample codebook ({self.mislead_cohort}) "
                             f"revealed on record_observation #{_ro_count} "
@@ -753,8 +953,11 @@ class CohortAgent:
                     if discovery is not None:
                         discovery["data_lock_report"] = data_lock_report
                     data_lock_active = False
+                    trace.harness_event("submit_data_lock", tool_call_count,
+                                        report_chars=len(data_lock_report))
                     if self._q1_q3_prompt:
                         examination_active = True
+                        trace.harness_event("exam_start", tool_call_count, via="submit_data_lock")
                         self._log("[CohortAgent] Data Lock complete — revealing Examination questions (Q1-Q3)")
                         tool_results.append({
                             "type": "tool_result",
@@ -784,6 +987,7 @@ class CohortAgent:
                 last = tool_results[-1]
                 last["content"] = str(last.get("content") or "") + warning
                 self._log(f"[CohortAgent] Budget warning injected ({remaining} remaining)")
+                trace.harness_event("budget_warning", tool_call_count, remaining=remaining)
 
             if tool_results:
                 messages.append({"role": "user", "content": tool_results})
@@ -795,6 +999,7 @@ class CohortAgent:
                 data_lock_call_count += 1
                 if data_lock_call_count >= self.data_lock_max_calls:
                     self._log(f"[CohortAgent] Data Lock budget exhausted ({self.data_lock_max_calls} calls).")
+                    trace.harness_event("data_lock_budget_exhausted", tool_call_count)
                     data_lock_active = False
                     if self._q1_q3_prompt and not examination_active:
                         examination_active = True
@@ -803,17 +1008,35 @@ class CohortAgent:
                 examination_call_count += 1
                 if examination_call_count >= self.examination_max_calls:
                     self._log(f"[CohortAgent] Examination budget exhausted ({self.examination_max_calls} calls).")
+                    trace.harness_event("exam_budget_exhausted", tool_call_count)
                     break
 
         # Post-loop: if budget exhausted without a submission, do up to 3 forced turns
         if discovery is None and not data_lock_active and not examination_active:
             self._log("[CohortAgent] No submission — attempting forced submission (up to 3 turns).")
+            trace.harness_event("forced_submit_start", tool_call_count)
             discovery = self._force_submit(messages, output_dir)
+            trace.harness_event("forced_submit_end", tool_call_count, submitted=discovery is not None)
+            if discovery is not None:
+                # Always accepted (the budget is gone), but checked and logged like any other.
+                _, errs = P.live_check("submit_discovery", dict(discovery), _SUBMIT_SCHEMA,
+                                       step=tool_call_count + 1,
+                                       run_code_steps=trace.run_code_steps, n_valid_obs=_ro_count, answer_field=self.task.answer_field)
+                if errs:
+                    trace.rule_violation_accepted(tool_call_count, "submit_discovery", errs,
+                                                  reason="forced_submit")
+                trace.harness_event("submit_discovery", tool_call_count, forced=True,
+                                    grouping_size=len(discovery.get("proposed_grouping") or {}))
 
         run_log = {
             "usage_log": usage_log,
             "timing_log": executor.timing_log,
             "observations": observations,
+            "rejected_calls": rejected_calls,
+            "trace": trace.close(tool_call_count, submitted=discovery is not None,
+                                 n_turns=len(usage_log),
+                                 n_refusals=sum(u.get("refusals", 0) or 0 for u in usage_log),
+                                 n_exec_timeouts=sum(1 for t in executor.timing_log if t.get("timed_out"))),
         }
         return discovery or {}, messages, run_log
 
@@ -832,8 +1055,8 @@ class CohortAgent:
             tools=self._tools,
             max_tokens=16000,
         )
-        if self.thinking_budget > 0:
-            force_kwargs["thinking"] = {"type": "enabled", "budget_tokens": self.thinking_budget}
+        if self.effort:
+            force_kwargs["effort"] = self.effort
 
         for attempt in range(3):
             try:
@@ -918,55 +1141,22 @@ class CohortAgent:
         return {}
 
     def _do_reveal_codebook(self, output_dir: Path, executor) -> str:
-        """Write codebook to disk, inject into namespace, unblock genesets. Returns narrative."""
+        """Write codebook to disk, inject into namespace, unblock genesets. Returns the narrative
+        (wording owned by the task adapter)."""
         codebook_path = output_dir / "codebook.json"
         codebook_path.write_text(json.dumps(self.gene_map))
         executor.namespace["codebook"] = dict(self.gene_map)
         executor.unblock_genesets()
-
         ot_available = (
             Path("data/opentargets/ot_tractability.parquet").exists()
             and Path("data/opentargets/ot_known_drugs.parquet").exists()
         )
-        ot_section = (
-            f"\nOpenTargets actionability (tractability + approved/clinical drugs):\n"
-            f"  data/opentargets/ot_tractability.parquet\n"
-            f"    columns: gene_symbol, modality (SM/AB/PR/OC), bucket_label,\n"
-            f"             value (bool), has_approved_drug, has_clinical_drug\n"
-            f"  data/opentargets/ot_known_drugs.parquet\n"
-            f"    columns: gene_symbol, drug_id, drug_name, drug_type,\n"
-            f"             max_phase_str (e.g. PHASE_3 / APPROVAL), max_phase_num (1-4),\n"
-            f"             is_approved, disease_id, disease_name\n"
-            f"  Quick lookup:\n"
-            f"    from biodiscoverygym.tools.opentargets import get_actionability, batch_actionability\n"
-            f"    print(get_actionability('EGFR').summary())\n"
-            f"    ranked = batch_actionability(['EGFR','TP53','MYC'])  # DataFrame\n"
-        ) if ot_available else ""
+        return self.task.symbol_reveal_text(len(self.gene_map), ot_available)
 
-        return (
-            f"Your assistant has identified the gene codebook — {len(self.gene_map)} translations loaded.\n"
-            f"`codebook` is now available in your Python namespace:\n"
-            f"  real_symbol = codebook['GENE_XXXXX']\n"
-            f"\n"
-            f"Reference files now accessible:\n"
-            f"\n"
-            f"Pathway gene sets (MSigDB):\n"
-            f"  Hallmarks  : data/genesets/msigdb/h.all.v2023.2.Hs.symbols.gmt\n"
-            f"  Reactome   : data/genesets/msigdb/c2.cp.reactome.v2023.2.Hs.symbols.gmt\n"
-            f"  KEGG       : data/genesets/msigdb/c2.cp.kegg_medicus.v2023.2.Hs.symbols.gmt\n"
-            f"  GO BP      : data/genesets/msigdb/c5.go.bp.v2023.2.Hs.symbols.gmt\n"
-            f"  GMT format: name, _, *genes = line.strip().split('\\t')\n"
-            f"\n"
-            f"Protein interaction network (STRING, high-confidence):\n"
-            f"  PPI edges  : data/genesets/stringdb/human_ppi_high_conf.tsv\n"
-            f"               columns: gene1, gene2, combined_score (700–1000)\n"
-            f"  Annotations: data/genesets/stringdb/9606.protein.info.v12.0.txt.gz\n"
-            f"               columns: preferred_name, annotation\n"
-            f"\n"
-            f"Cancer gene list (OncoKB):\n"
-            f"  data/cancer_genes/oncokb_cancer_gene_list.tsv\n"
-            f"{ot_section}"
-        )
+    def _sample_codebook_narrative(self, n_samples: int) -> str:
+        """The harness sentence that supplies a (planted) cohort label; wording owned by the task
+        adapter (CohortIdentityTask.label_sentence), found by its disclosure_regex."""
+        return self.task.label_sentence(self.mislead_cohort, n_samples)
 
     def _generate_fake_sample_codebook(self) -> dict[str, str]:
         """Return {SAMPLE_XXXX: TCGA-{mislead_cohort}-XXXX} by reading the episode parquet index."""

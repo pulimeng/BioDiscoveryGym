@@ -7,7 +7,7 @@ Responsibilities:
   3. Replace TCGA barcodes with SAMPLE_XXXX
   4. Write anonymized data to a per-process staging dir for agent access (biodiscoverygym/paths.py)
   5. Run the agent (tool-use loop)
-  6. Return EpisodeResult — scoring is post-hoc via scripts/score_tcga_episode.py
+  6. Return EpisodeResult — scoring is post-hoc via scripts/score/score_tcga_episode.py
 """
 
 from __future__ import annotations
@@ -114,7 +114,7 @@ class Episode:
 
         anonymize_genes=True replaces gene symbols with GENE_XXXX identifiers.
         perturb=True loads survival-inverted + mutation-swapped data files
-        (must run scripts/perturb_lihc.py first).
+        (must run scripts/data/perturb_lihc.py first).
         tcga_dir overrides the default data/tcga/<cohort> path (for external cohorts).
         """
         data_dir = Path(data_dir)

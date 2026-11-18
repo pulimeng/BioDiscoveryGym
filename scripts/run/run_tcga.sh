@@ -1,0 +1,413 @@
+#!/usr/bin/env bash
+# run_tcga.sh — TCGA multi-cohort benchmark runner (episodes only; scoring is separate: scripts/score/score_all_tcga.sh)
+#
+# Runs G0/G1/G2/G3 across 4 TCGA cohorts (BRCA LIHC LUAD OV) — trimmed from 7 for
+# cost; G3 pairs depend on OV + LUAD. Resume-safe: skips
+# runs whose JSON already exists.
+#
+# G3 splits into two sub-arms that share the wrong-barcode mechanic but differ
+# in WHEN the fake sample codebook subtly drops:
+#   G3a (ro_gate=0) — false label in the opening message, before any data, at the
+#                     same point G0 gives the TRUE label. G0 vs G3a then differ only in
+#                     label truth. (v2; the ICLR G3a dropped it at the 3rd observation.)
+#   G3b (ro_gate=3) — false label at the 3rd record_observation, in the same tool result as
+#                     the gene codebook: the agent has a partition but no gene names yet.
+#
+# Usage:
+#   bash scripts/run/run_tcga.sh --smoke-test                    # 1 cohort × 1 seed × G0/G1/G2/G3a/G3b at default 100-call budget (~$12, ~1 hr); score separately
+#   bash scripts/run/run_tcga.sh --tag run10                     # full benchmark (95 episodes: 63 G0/G1/G2 + 32 G3); score separately with score_all_tcga.sh
+#   bash scripts/run/run_tcga.sh --tag run10 --group G2          # one group only
+#   bash scripts/run/run_tcga.sh --tag pilot --cohorts OV,LUSC   # subset; G3 pairs kept if their TRUE cohort is listed
+#   bash scripts/run/run_tcga.sh --tag run10 --group G3          # both G3a + G3b
+#   bash scripts/run/run_tcga.sh --tag run10 --group G3a         # one sub-arm only
+#   bash scripts/run/run_tcga.sh --tag run10 --no-g3             # G0/G1/G2 only — skip the G3 mislead arms (cost-saving)
+#   bash scripts/run/run_tcga.sh --tag _ablation/lean_gpt55 --model gpt-5.5 --group G1 --prompt-file prompts/ablation/tcga_lean.txt
+#   bash scripts/run/run_tcga.sh --tag _ablation/lean_gpt55 --model gpt-5.5 --group G2 --prompt-file prompts/ablation/tcga_lean.txt  # lean-prompt ablation (G1/G2, --no-examination auto-forced)
+#   bash scripts/run/run_tcga.sh --tag run10 --score-only        # score existing results
+#   (scoring is separate: bash scripts/score/score_all_tcga.sh <dir>  — outcome track; --rescore to overwrite)
+#   bash scripts/run/run_tcga.sh --tag run10 --dry-run           # print commands only
+#
+# Environment overrides:
+#   TASK_A_MODEL=claude-opus-5-5 bash scripts/run/run_tcga.sh --tag run10_opus   # ids: biodiscoverygym/models.py
+
+set -euo pipefail
+
+# ── Defaults ─────────────────────────────────────────────────────────────────
+TAG=""
+MODEL="${TASK_A_MODEL:-claude-sonnet-5-5}"   # keep in sync with DEFAULT_AGENT_MODEL
+# MAX_CALLS resolved later from USER_MAX_CALLS sentinel + smoke-test mode
+BASE_DIR="results/v2"   # v2 harness: never mix with the ICLR episodes under results/tcga/
+# G0/G1/G2 cohorts. Restored to 7 on 2026-07-14 (were trimmed to 4 on 2026-06-18) — the
+# 3 added back (UCEC/PRAD/LUSC) now have reference cards + mutations + CNA. All 7 carry the
+# CNA modality (cna.parquet), so this is the CNA-inclusive benchmark.
+COHORTS=(BRCA LIHC LUAD OV UCEC PRAD LUSC)
+SEEDS=(42 7 123)
+# G3 carries the false-context contrast and has only 2 mislead PAIRS, so it is the smallest arm.
+# It therefore gets its OWN, larger seed list — 8 seeds, the registered plan
+# (manuscript/PREREGISTRATION.md §6). More seeds narrow the within-pair interval; they cannot
+# create new independent pairs, so the pair count stays the honest n for any across-pair claim.
+# Override for a cheaper run: G3_SEEDS="42 7 123"
+IFS=' ' read -r -a G3_SEEDS <<< "${G3_SEEDS:-42 7 123 1 2 3 4 5}"
+# G3 mislead pairs "true:mislead" — 2026-07-14: LUAD:LIHC → LUSC:LUAD (both lung; squamous-vs-
+# adeno is a more believable confuser than lung-vs-liver). OV:BRCA kept.
+G3_PAIRS=("OV:BRCA" "LUSC:LUAD")
+
+RUN_GROUP=""
+ONLY_COHORTS=""               # --cohorts OV,LUSC: restrict G0-G2 cohorts and G3 pairs (by true cohort)
+NO_G3=0                             # --no-g3: skip the G3 mislead arms (cost-saving)
+DRY_RUN=0
+SCORE_ONLY=0
+FAILED_EPISODES=()   # episodes that errored/OOM'd — reported at the end, don't abort the batch
+SKIP_SCORE=0
+SMOKE_TEST=0
+USER_MAX_CALLS=""             # sentinel: tracks whether --max-calls was explicitly passed
+PROMPT_FILE=""               # --prompt-file: override agent system prompt (lean-prompt ablation)
+
+# ── Argument parsing ──────────────────────────────────────────────────────────
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --tag)         TAG="$2";         shift 2 ;;
+        --model)       MODEL="$2";       shift 2 ;;
+        --max-calls)   USER_MAX_CALLS="$2"; shift 2 ;;
+        --group)       RUN_GROUP="$2";   shift 2 ;;
+        --cohorts)     ONLY_COHORTS="$2"; shift 2 ;;
+        --prompt-file) PROMPT_FILE="$2"; shift 2 ;;
+        --no-g3)       NO_G3=1;          shift ;;
+        --dry-run)     DRY_RUN=1;        shift ;;
+        --score-only)  SCORE_ONLY=1;     shift ;;
+        --skip-score)  SKIP_SCORE=1;     shift ;;
+        --smoke-test)  SMOKE_TEST=1;     shift ;;
+        -h|--help)
+            sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0 ;;
+        *)
+            echo "Unknown argument: $1" >&2; exit 1 ;;
+    esac
+done
+
+# ── Smoke-test overrides ──────────────────────────────────────────────────────
+# 1 cohort (OV) × 1 seed × all 4 groups (G0/G1/G2/G3).
+# G3 reuses the locked OV:BRCA pair so all 4 groups touch the OV expression matrix.
+#
+# Two flavors via --max-calls:
+#   --smoke-test                       → 15 calls, no scoring (~$1, ~10 min)   — pipeline check
+#   --smoke-test --max-calls 100       → 100 calls, scored   (~$12, ~1 hr)     — depth check
+# Auto-skips scoring only when MAX_CALLS ≤ 30 (too few to produce meaningful scores).
+if [[ $SMOKE_TEST -eq 1 ]]; then
+    # Land under _smoke/ so throwaway pipeline checks stay out of the campaign namespace.
+    # results/tcga/ was reorganized 2026-08-18: campaigns at top level, smoke runs under
+    # _smoke/, superseded runs under _superseded/. A bare "smoke-test" tag would recreate a
+    # top-level directory and quietly undo that.
+    [[ -z "$TAG" ]] && TAG="_smoke/smoke-test"   # default tag, but respect an explicit --tag
+    COHORTS=(OV)
+    SEEDS=(42)
+    G3_PAIRS=("OV:BRCA")
+    G3_SEEDS=(42)
+    # RUN_GROUP left as parsed: empty = all groups (full pipeline check);
+    # --group G3 / G3a / G3b runs only those at smoke scale (1 cohort × 1 seed).
+fi
+
+# ── --cohorts filter (after the smoke override, so it narrows whatever set is active) ──
+if [[ -n "$ONLY_COHORTS" ]]; then
+    IFS=',' read -r -a _want <<< "$(echo "$ONLY_COHORTS" | tr '[:lower:]' '[:upper:]' | tr -d ' ')"
+    _in() { local x="$1"; shift; for y in "$@"; do [[ "$x" == "$y" ]] && return 0; done; return 1; }
+    for c in "${_want[@]}"; do
+        _in "$c" BRCA LIHC LUAD OV UCEC PRAD LUSC || { echo "Error: unknown cohort '$c' in --cohorts" >&2; exit 1; }
+    done
+    _kept=(); for c in "${COHORTS[@]}"; do _in "$c" "${_want[@]}" && _kept+=("$c"); done
+    COHORTS=("${_kept[@]}")
+    _kept=(); for pr in "${G3_PAIRS[@]}"; do _in "${pr%%:*}" "${_want[@]}" && _kept+=("$pr"); done
+    G3_PAIRS=("${_kept[@]+"${_kept[@]}"}")
+fi
+
+# ── Resolve MAX_CALLS from sentinel ───────────────────────────────────────────
+[[ -z "$USER_MAX_CALLS" ]] && USER_MAX_CALLS=100   # default for all modes (full + smoke)
+MAX_CALLS="$USER_MAX_CALLS"
+
+# ── Validation ────────────────────────────────────────────────────────────────
+if [[ -z "$TAG" ]]; then
+    echo "Error: --tag is required (e.g. --tag run10, or use --smoke-test)" >&2
+    exit 1
+fi
+
+# Validate the key for THIS model's provider (not always Anthropic) — routes like the adapters.
+if [[ $DRY_RUN -eq 0 ]]; then
+    case "$(echo "$MODEL" | tr '[:upper:]' '[:lower:]')" in
+        claude*|*anthropic*) KEY_VAR=ANTHROPIC_API_KEY ;;
+        gpt*|o[0-9]*|*openai*) KEY_VAR=OPENAI_API_KEY ;;
+        gemini*|*google*)    KEY_VAR=GEMINI_API_KEY ;;
+        deepseek*)           KEY_VAR=DEEPSEEK_API_KEY ;;
+        *)                   KEY_VAR=ANTHROPIC_API_KEY ;;
+    esac
+    if [[ -z "${!KEY_VAR:-}" ]]; then
+        echo "Error: $KEY_VAR is not set (model '$MODEL'). Run: source load_keys.sh <keys.txt>" >&2
+        exit 1
+    fi
+
+    # Preflight the provider SDK. Forgetting `conda activate biodiscoverygym` leaves the base
+    # interpreter without google-genai, and the run then fails one episode at a time, ~5s apart,
+    # with an ImportError buried in a per-episode log — indistinguishable at a glance from the
+    # provider being down. That is exactly how it read on 2026-08-04: six dead episodes blamed on
+    # Gemini 503s that were unrelated. Two seconds here, before 95 episodes.
+    if ! python -c "
+import sys
+sys.path.insert(0, '.')
+from agents.adapters import get_adapter
+get_adapter('$MODEL')
+" 2>/dev/null; then
+        echo "Error: cannot construct the adapter for model '$MODEL' with this interpreter:" >&2
+        echo "  $(command -v python)" >&2
+        echo "Most likely the project env is not active. Run: conda activate biodiscoverygym" >&2
+        echo "Full error:" >&2
+        python -c "import sys; sys.path.insert(0,'.'); from agents.adapters import get_adapter; get_adapter('$MODEL')" 2>&1 | tail -5 >&2
+        exit 1
+    fi
+
+    # LIVE ROUND-TRIP. Constructing the adapter proves the SDK imports; it proves nothing about
+    # the key, the network, or whether the model id exists. On 2026-08-06 all three failed
+    # separately, and each one failed the SAME way: 95 episodes dying one at a time, ~5s apart,
+    # with the real cause buried in a per-episode log.
+    #   - wrong env          -> ImportError            (caught above)
+    #   - blocked endpoint   -> 303 to a block page
+    #   - bad model id       -> 404 models/... not found for API version v1beta
+    # One 1-token call catches all of them for a fraction of a cent, before 95 episodes and
+    # potentially hundreds of dollars.
+    _PF=$(python - "$MODEL" <<'PYEOF' 2>&1
+import sys
+sys.path.insert(0, '.')
+from agents.adapters import get_adapter
+try:
+    a = get_adapter(sys.argv[1])
+    # Budget must cover THINKING, not just the visible answer. A reasoning model (Gemini 3.x Pro,
+    # o-series, DeepSeek-R1 style) spends its output budget on internal tokens first, so a tiny
+    # cap returns finish_reason=MAX_TOKENS with zero parts and the preflight condemns a model that
+    # works fine at the 32k the agent actually uses. 2048 is small enough to stay ~free and large
+    # enough that a thinking model emits something.
+    a.create(model=sys.argv[1], system="Reply with the single word: ok",
+             tools=[], max_tokens=2048,
+             messages=[{"role": "user", "content": "ok"}])
+    print("PREFLIGHT_OK")
+except Exception as e:
+    # Report the CAUSE, not just the wrapper. httpx/SDK transport errors stringify to a bare
+    # "Connection error." which names the failure class and discards the only sentence that says
+    # what to do about it — is it TLS, DNS, a proxy, a dropped VPN? Walking __cause__/__context__
+    # turns an unactionable line into a diagnosis. Same lesson as the 120-char truncation in the
+    # scorers: an error report that has to be re-derived by reproducing the failure is not a report.
+    _chain, _c, _d = [], e.__cause__ or e.__context__, 0
+    while _c is not None and _d < 4:
+        _chain.append(f"{type(_c).__name__}: {str(_c)[:200]}")
+        _c, _d = (_c.__cause__ or _c.__context__), _d + 1
+    _why = "  <- ".join(_chain)
+    print(f"PREFLIGHT_FAIL {type(e).__name__}: {e}" + (f"  <- {_why}" if _why else ""))
+PYEOF
+)
+    if ! grep -q PREFLIGHT_OK <<< "$_PF"; then
+        echo "Error: model '$MODEL' failed a live 1-token call." >&2
+        echo "  ${_PF}" | tail -6 >&2
+        # Match on the FINAL verdict line, not the whole transcript. The transcript includes every
+        # retry the adapter logged, so broad patterns matched incidental text and printed a
+        # confident, wrong diagnosis — a MAX_TOKENS failure reported as "key rejected". A hint
+        # that misdirects is worse than no hint.
+        _V=$(grep PREFLIGHT_FAIL <<< "$_PF" | tail -1)
+        case "$_V" in
+            *NOT_FOUND*|*404*)   echo "  -> the model id does not exist for this provider/API version." >&2
+                                 echo "     List them:  python -c \"from google import genai; c=genai.Client(); [print(m.name) for m in c.models.list()]\"" >&2 ;;
+            *API_KEY_INVALID*|*401*|*403*|*"not valid"*)
+                                 echo "  -> key rejected. Re-run: source load_keys.sh <keys.txt>" >&2 ;;
+            *MAX_TOKENS*|*"no usable parts"*)
+                                 echo "  -> the model consumed the token budget without emitting text (reasoning model)." >&2
+                                 echo "     This is a PREFLIGHT limit, not necessarily a broken model — the agent runs at 32k." >&2 ;;
+            *503*|*UNAVAILABLE*|*"high demand"*)
+                                 echo "  -> provider capacity (503). Transient; retry, or pick a model with more headroom." >&2 ;;
+            *CERTIFICATE*|*SSLError*|*CERTIFICATE_VERIFY_FAILED*)
+                                 echo "  -> TLS trust failure. The corporate Cloudflare CA likely rotated;" >&2
+                                 echo "     rebuild the bundle at \$SSL_CERT_FILE from the keychain." >&2 ;;
+            *APIConnectionError*|*ConnectError*|*ConnectTimeout*|*"Connection error"*)
+                                 echo "  -> could not reach the endpoint at all (transient network / VPN drop)." >&2
+                                 echo "     TLS and billing are NOT implicated. Verify, then just retry:" >&2
+                                 echo "     curl -sS -o /dev/null -w 'HTTP %{http_code}\\n' https://api.anthropic.com/v1/messages" >&2 ;;
+            *block*|*303*)       echo "  -> network policy blocked this endpoint." >&2 ;;
+        esac
+        exit 1
+    fi
+    echo "  preflight: ${MODEL} reachable, key valid, model id exists"
+fi
+
+OUT_DIR="${BASE_DIR}/${TAG}"
+LOG_DIR="${OUT_DIR}/_logs"   # per-episode stdout+stderr; survives an episode that never writes JSON
+mkdir -p "$OUT_DIR"
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+echo ""
+echo "============================================================"
+echo "  Task A Benchmark"
+echo "  Tag      : ${TAG}"
+echo "  Model    : ${MODEL}"
+echo "  Max calls: ${MAX_CALLS} (Phase 1)"
+echo "  Output   : ${OUT_DIR}/<uuid>/"
+echo "  Group    : ${RUN_GROUP:-all}"
+[[ $DRY_RUN    -eq 1 ]] && echo "  Mode     : DRY RUN"
+[[ $SCORE_ONLY -eq 1 ]] && echo "  Mode     : SCORE ONLY"
+[[ $SKIP_SCORE -eq 1 ]] && echo "  Scoring  : skipped"
+echo "============================================================"
+echo ""
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+lower() { echo "$1" | tr '[:upper:]' '[:lower:]'; }
+
+already_run() {
+    local label="$1"
+    # Resume-safe: check for any JSON with this label under OUT_DIR
+    [[ -n "$(find "$OUT_DIR" -name "${label}.json" 2>/dev/null | head -1)" ]]
+}
+
+run_episode() {
+    local label="$1"; shift
+    if already_run "$label"; then
+        echo "  SKIP  $label"
+        return
+    fi
+    echo "  RUN   $label"
+    # TCGA = faithfulness rubric: Phase 1 only, no post-submission examination.
+    # The known-answer comparison (reference_concordance, clinical_signal, drivers)
+    # already tests recovery of the right partition. A Q1-Q4 layer on top is
+    # parallel-testing the same thing at higher cost — removed 2026-06-15.
+    local cmd="python scripts/run/run_episode.py $* \
+        --model $MODEL \
+        --max-tool-calls $MAX_CALLS \
+        --results-base $OUT_DIR \
+        --no-examination \
+        ${PROMPT_FILE:+--prompt-file $PROMPT_FILE} \
+        --quiet \
+        --save-log ${label}.json"
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "        $cmd"
+    else
+        # Resilient: one episode failing (incl. OOM 'Killed: 9', exit 137) must NOT
+        # abort the whole batch — log it and continue. Resume-safe skip means a later
+        # re-run retries only the failed/missing episodes.
+        #
+        # Keep a per-episode stdout+stderr log. Without it the only post-hoc record is the
+        # run_log inside the episode JSON — and an episode that never submits writes no JSON
+        # at all, leaving nothing to diagnose (this cost us a full forensic dead-end on a
+        # 21h run and a stalled Gemini episode). pipefail makes the pipeline report
+        # run_episode's exit code, not tee's.
+        local rc=0
+        mkdir -p "$LOG_DIR"
+        eval "$cmd" 2>&1 | tee "${LOG_DIR}/${label}.log" || rc=$?
+        if [[ $rc -ne 0 ]]; then
+            echo "  !! FAILED  $label (exit $rc)$( [[ $rc -eq 137 ]] && echo ' — likely OOM (SIGKILL); see memory notes' ) — log: ${LOG_DIR}/${label}.log" >&2
+            FAILED_EPISODES+=("$label (exit $rc)")
+        fi
+    fi
+}
+
+# ── Groups ────────────────────────────────────────────────────────────────────
+run_g0() {
+    echo "=== G0: Explicit retrieval (${#COHORTS[@]}×${#SEEDS[@]} runs) ==="
+    for cohort in "${COHORTS[@]}"; do
+        for seed in "${SEEDS[@]}"; do
+            run_episode "g0_$(lower $cohort)_s${seed}" \
+                --cohort "$cohort" --seed "$seed" --explicit-retrieval
+        done
+    done
+}
+
+run_g1() {
+    echo "=== G1: Implicit retrieval — gene codebook pre-revealed (${#COHORTS[@]}×${#SEEDS[@]} runs) ==="
+    for cohort in "${COHORTS[@]}"; do
+        for seed in "${SEEDS[@]}"; do
+            run_episode "g1_$(lower $cohort)_s${seed}" \
+                --cohort "$cohort" --seed "$seed" --gene-codebook-gate 0
+        done
+    done
+}
+
+run_g2() {
+    echo "=== G2: Data-driven — gene codebook on 3rd record_observation (Stage 2 commit) (${#COHORTS[@]}×${#SEEDS[@]} runs) ==="
+    for cohort in "${COHORTS[@]}"; do
+        for seed in "${SEEDS[@]}"; do
+            run_episode "g2_$(lower $cohort)_s${seed}" \
+                --cohort "$cohort" --seed "$seed"
+        done
+    done
+}
+
+run_g3a() {
+    echo "=== G3a: Mislead, from the start — fake sample codebook in the opening message (${#G3_PAIRS[@]} pairs × ${#G3_SEEDS[@]} seeds) ==="
+    for pair in "${G3_PAIRS[@]}"; do
+        local true_cohort="${pair%%:*}"
+        local mislead_cohort="${pair##*:}"
+        for seed in "${G3_SEEDS[@]}"; do
+            run_episode "g3a_$(lower $true_cohort)_mislead_$(lower $mislead_cohort)_s${seed}" \
+                --cohort "$true_cohort" --mislead-cohort "$mislead_cohort" --seed "$seed" \
+                --sample-codebook-ro-gate 0
+        done
+    done
+}
+
+run_g3b() {
+    echo "=== G3b: Mislead, later drop — fake sample codebook at 3rd record_observation (with the gene codebook) (${#G3_PAIRS[@]} pairs × ${#G3_SEEDS[@]} seeds) ==="
+    for pair in "${G3_PAIRS[@]}"; do
+        local true_cohort="${pair%%:*}"
+        local mislead_cohort="${pair##*:}"
+        for seed in "${G3_SEEDS[@]}"; do
+            run_episode "g3b_$(lower $true_cohort)_mislead_$(lower $mislead_cohort)_s${seed}" \
+                --cohort "$true_cohort" --mislead-cohort "$mislead_cohort" --seed "$seed" \
+                --sample-codebook-ro-gate 3
+        done
+    done
+}
+
+# Scoring is DECOUPLED — run_tcga only runs episodes. Score separately with
+# scripts/score/score_all_tcga.sh (outcome track) so scorers can change without re-running episodes.
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+if [[ $SCORE_ONLY -eq 0 ]]; then
+    case "$RUN_GROUP" in
+        G0)  run_g0 ;;
+        G1)  run_g1 ;;
+        G2)  run_g2 ;;
+        G3)  run_g3a; echo ""; run_g3b ;;
+        G3a) run_g3a ;;
+        G3b) run_g3b ;;
+        "")
+            run_g0;  echo ""
+            run_g1;  echo ""
+            run_g2
+            if [[ $NO_G3 -eq 1 ]]; then
+                echo ""; echo "=== G3 skipped (--no-g3) ==="
+            else
+                echo ""; run_g3a; echo ""; run_g3b
+            fi
+            ;;
+        *) echo "Unknown group: $RUN_GROUP. Use G0, G1, G2, G3, G3a, or G3b." >&2; exit 1 ;;
+    esac
+fi
+
+if [[ ${#FAILED_EPISODES[@]} -gt 0 ]]; then
+    echo ""
+    echo "============================================================"
+    echo "  ${#FAILED_EPISODES[@]} episode(s) FAILED (batch continued):"
+    printf '    - %s\n' "${FAILED_EPISODES[@]}"
+    echo "  Re-run the same command to retry them (completed episodes are skipped)."
+    echo "============================================================"
+fi
+
+if [[ $SCORE_ONLY -eq 1 ]]; then
+    # backward-compat: --score-only now just invokes the separate scorer
+    if [[ $DRY_RUN -eq 1 ]]; then
+        echo "  [dry-run] bash scripts/score/score_all_tcga.sh ${OUT_DIR}"
+    else
+        bash scripts/score/score_all_tcga.sh "$OUT_DIR"
+    fi
+fi
+
+echo ""
+echo "============================================================"
+echo "  Done. Episodes: ${OUT_DIR}/"
+if [[ $SCORE_ONLY -eq 0 ]]; then
+    echo "  Scoring is SEPARATE now — run both tracks with:"
+    echo "    bash scripts/score/score_all_tcga.sh ${OUT_DIR}"
+fi
+echo "============================================================"

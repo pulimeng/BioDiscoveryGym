@@ -92,7 +92,8 @@ class GeminiAdapter(Adapter):
                     contents.append(t.Content(role="user", parts=parts))
         return contents
 
-    def create(self, *, model, system, messages, tools, max_tokens, thinking=None) -> Response:
+    def create(self, *, model, system, messages, tools, max_tokens, thinking=None,
+               effort=None) -> Response:  # effort: Anthropic-only, ignored here
         t = self._t
         cfg = dict(
             max_output_tokens=min(max_tokens, self.max_output_cap),

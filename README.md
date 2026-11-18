@@ -33,7 +33,7 @@ pip install -e .
 export ANTHROPIC_API_KEY="sk-..."
 
 # Smoke test (TCGA): 1 cohort × 4 groups × 100 calls, scored, ~$12, ~1 hr
-bash scripts/run_tcga.sh --smoke-test
+bash scripts/run/run_tcga.sh --smoke-test
 ```
 
 ---
@@ -138,8 +138,8 @@ export ANTHROPIC_API_KEY="sk-..."
 <br>
 
 ```bash
-python scripts/download_tcga.py    # BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV
-python scripts/process_tcga.py     # builds expression.parquet caches
+python scripts/data/download/download_tcga.py    # BRCA, PRAD, UCEC, LUAD, LIHC, LUSC, OV
+python scripts/data/process_tcga.py     # builds expression.parquet caches
 ```
 
 </details>
@@ -152,23 +152,23 @@ python scripts/process_tcga.py     # builds expression.parquet caches
 
 ```bash
 # G2 default — blind, data-driven, codebook gated on 3rd record_observation
-python scripts/run_episode.py --cohort BRCA --seed 42 --save-log results/ep.json
+python scripts/run/run_episode.py --cohort BRCA --seed 42 --save-log results/ep.json
 
 # G0 ceiling — disease + gene names revealed
-python scripts/run_episode.py --cohort BRCA --seed 42 --explicit-retrieval
+python scripts/run/run_episode.py --cohort BRCA --seed 42 --explicit-retrieval
 
 # G1 — gene names revealed, disease redacted
-python scripts/run_episode.py --cohort BRCA --seed 42 --gene-codebook-gate 0
+python scripts/run/run_episode.py --cohort BRCA --seed 42 --gene-codebook-gate 0
 
 # G3 — mislead with wrong-cohort barcodes
-python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42
+python scripts/run/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42
 ```
 
 ### Multi-seed benchmarks
 
 ```bash
-bash scripts/run_tcga.sh --smoke-test              # 1×1×4 groups at 100 calls, scored      (~$12, ~1 hr)
-bash scripts/run_tcga.sh --tag run10               # full 40 episodes + scoring             (~$120)
+bash scripts/run/run_tcga.sh --smoke-test              # 1×1×4 groups at 100 calls, scored      (~$12, ~1 hr)
+bash scripts/run/run_tcga.sh --tag run10               # full 40 episodes + scoring             (~$120)
 ```
 
 > [!TIP]
@@ -178,13 +178,13 @@ bash scripts/run_tcga.sh --tag run10               # full 40 episodes + scoring 
 
 ```bash
 # Faithfulness rubric (16 pts)
-python scripts/score_tcga_episode.py results/tcga/<run>/<uuid>/<label>.json --cohort BRCA --save
+python scripts/score/score_tcga_episode.py results/tcga/<run>/<uuid>/<label>.json --cohort BRCA --save
 
 # Batch-score a whole run
-bash scripts/score_all_tcga.sh results/tcga/<run>/
+bash scripts/score/score_all_tcga.sh results/tcga/<run>/
 
 # Skip LLM judges (no API cost, partial score)
-python scripts/score_tcga_episode.py <...>.json --skip-llm
+python scripts/score/score_tcga_episode.py <...>.json --skip-llm
 ```
 
 > [!WARNING]

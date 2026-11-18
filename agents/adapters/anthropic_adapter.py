@@ -44,16 +44,26 @@ class AnthropicAdapter(Adapter):
                                    "name": obj.name, "input": obj.input or {}})
                 elif kind == "tool_result":
                     blocks.append(obj)  # already {"type":"tool_result","tool_use_id",...}
-                # thinking blocks are dropped (thinking standardized off for the ladder)
+                # thinking blocks are dropped from the replayed history. Dropping ALL of them keeps
+                # the preserved-thinking history check satisfied (removing every block is allowed);
+                # it matches the ICLR ladder, where no provider saw its earlier reasoning.
             out.append({"role": msg["role"], "content": blocks})
         return out
 
-    def create(self, *, model, system, messages, tools, max_tokens, thinking=None) -> Response:
+    def create(self, *, model, system, messages, tools, max_tokens, thinking=None,
+               effort=None) -> Response:
         kwargs = dict(model=model, system=system, tools=tools,
                       max_tokens=min(max_tokens, self.max_output_cap),
                       messages=self._to_messages(messages))
+        # Current Claude models (Opus 5.5 / Sonnet 5.5 / Haiku 5.5) run adaptive thinking when
+        # `thinking` is omitted, and reject `budget_tokens` and `{"type": "disabled"}` (Opus 5.5)
+        # with a 400. Depth is set by effort instead.
         if thinking:
             kwargs["thinking"] = thinking
+        if effort:
+            kwargs["output_config"] = {"effort": effort}
+        # No server-side `fallbacks`: a fallback silently answers with ANOTHER model mid-episode,
+        # which would mix two models into one benchmark arm. Refusals stay visible instead.
         with self._client.messages.stream(**kwargs) as stream:
             msg = stream.get_final_message()
 
@@ -70,4 +80,6 @@ class AnthropicAdapter(Adapter):
         usage = SimpleNamespace(
             input_tokens=getattr(u, "input_tokens", None),
             output_tokens=getattr(u, "output_tokens", None))
-        return Response(content=content, stop_reason=msg.stop_reason, usage=usage)
+        sd = getattr(msg, "stop_details", None)
+        return Response(content=content, stop_reason=msg.stop_reason, usage=usage,
+                        refusal_category=getattr(sd, "category", None) if sd else None)

@@ -46,6 +46,7 @@ from .components import (
     score_structure_validity,
 )
 from .judge import (
+    DEFAULT_JUDGE_MODEL,
     score_cohort_identity,
     score_exam_experiment_depth,
     score_exam_mechanistic_integration,
@@ -184,7 +185,7 @@ class EvaluatorV2:
     def __init__(
         self,
         data_dir: str | Path = "data",
-        llm_model: str = "claude-sonnet-4-6",
+        llm_model: str = DEFAULT_JUDGE_MODEL,  # neutral judge; never a benchmarked family
     ):
         self.data_dir = Path(data_dir)
         self.llm_model = llm_model

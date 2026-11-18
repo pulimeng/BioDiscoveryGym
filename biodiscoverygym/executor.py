@@ -82,8 +82,14 @@ _TIMEOUT_MSG = (
 )
 
 
-class _ExecTimeout(Exception):
-    """Raised inside exec() by the SIGALRM handler when a call overruns."""
+class _ExecTimeout(BaseException):
+    """Raised inside exec() by the SIGALRM handler when a call overruns.
+
+    BaseException, not Exception (2026-11-09): agent code that wraps a loop in
+    `try: ... except Exception: continue` swallowed the one-shot timeout and ran on unbounded
+    (a Sonnet rebuttal episode at 99% CPU for 45 min past the 600 s cap). The alarm also
+    re-fires every 30 s after the cap, so even a bare `except:` loop is eventually broken.
+    Only episodes that would otherwise hang are affected."""
 
 
 @contextlib.contextmanager
@@ -111,7 +117,7 @@ def _time_limit(seconds: int):
         raise _ExecTimeout
 
     prev = signal.signal(signal.SIGALRM, _handler)
-    signal.setitimer(signal.ITIMER_REAL, seconds)
+    signal.setitimer(signal.ITIMER_REAL, seconds, 30)  # then every 30 s until the block exits
     try:
         yield
     finally:

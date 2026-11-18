@@ -9,6 +9,7 @@ output_dir/
 
 # Internal bookkeeping — not part of the release
 docs/
+ARCHIVE.md
 
 # Analysis outputs — figures, scratch scripts, intermediate files
 analysis/

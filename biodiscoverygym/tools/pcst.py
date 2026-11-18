@@ -118,7 +118,7 @@ def run_pcst(
     if not kg_path.exists():
         raise FileNotFoundError(
             f"PrimeKG gene-gene network not found at {kg_path}. "
-            f"Run: python scripts/download_primekg.py"
+            f"Run: python scripts/data/download/download_primekg.py"
         )
 
     # 1. Compute prizes

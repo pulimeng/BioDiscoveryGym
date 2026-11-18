@@ -18,19 +18,19 @@ export ANTHROPIC_API_KEY="sk-..."
 ## Option A: One-command setup
 
 ```bash
-bash scripts/download_all.sh
+bash scripts/data/download_all.sh
 ```
 
 This downloads everything (~50 GB total) and builds all caches. Safe to re-run — skips completed steps.
 
 For target discovery only (no anomaly-benchmark extras):
 ```bash
-bash scripts/download_all.sh --target-discovery-only
+bash scripts/data/download_all.sh --target-discovery-only
 ```
 
 To skip the large TCGA raw downloads (e.g., if you already have parquets):
 ```bash
-bash scripts/download_all.sh --skip-tcga
+bash scripts/data/download_all.sh --skip-tcga
 ```
 
 ---
@@ -39,33 +39,33 @@ bash scripts/download_all.sh --skip-tcga
 
 ### 1. DepMap 23Q4 (~4 GB)
 ```bash
-python scripts/download_depmap.py
+python scripts/data/download/download_depmap.py
 ```
 Downloads: CRISPR gene effect, RNA expression, mutation matrix, CNV, cell line metadata.
 
 ### 2. PRISM drug screen (~800 MB)
 ```bash
-python scripts/download_prism.py
+python scripts/data/download/download_prism.py
 ```
 
 ### 3. GTEx normal tissue (~75 MB)
 ```bash
-python scripts/download_gtex.py
+python scripts/data/download/download_gtex.py
 ```
 
 ### 4. gnomAD gene constraint (~10 MB)
 ```bash
-python scripts/download_gnomad.py
+python scripts/data/download/download_gnomad.py
 ```
 
 ### 5. Human Protein Atlas — normal tissue (~30 MB)
 ```bash
-python scripts/download_hpa.py
+python scripts/data/download/download_hpa.py
 ```
 
 ### 5b. CCLE proteomics — mass-spec protein abundance (~31 MB)
 ```bash
-python scripts/download_ccle_proteomics.py
+python scripts/data/download/download_ccle_proteomics.py
 ```
 378 cancer cell lines × 12,196 proteins (Nusinow et al. 2020). Complements RNA expression — lets the agent check if a gene's protein is actually present.
 
@@ -74,35 +74,35 @@ python scripts/download_ccle_proteomics.py
 Download raw files from GDC:
 ```bash
 # Target discovery cohorts (10):
-python scripts/download_tcga.py --cohorts BRCA COAD HNSC KIRC LIHC LUAD LUSC OV PRAD SKCM
+python scripts/data/download/download_tcga.py --cohorts BRCA COAD HNSC KIRC LIHC LUAD LUSC OV PRAD SKCM
 
 # Anomaly detection adds UCEC:
-python scripts/download_tcga.py --cohorts UCEC
+python scripts/data/download/download_tcga.py --cohorts UCEC
 ```
 
 Build expression.parquet caches (required before running benchmarks):
 ```bash
-python scripts/process_tcga.py                  # all target-discovery cohorts
-python scripts/process_tcga.py --cohorts UCEC   # cohort analysis (Task A)
+python scripts/data/process_tcga.py                  # all target-discovery cohorts
+python scripts/data/process_tcga.py --cohorts UCEC   # cohort analysis (Task A)
 ```
 
 ### 7. TCGA somatic mutations (~200 MB)
 ```bash
-python scripts/download_mutations.py --cohorts BRCA COAD HNSC KIRC LIHC LUAD LUSC OV PRAD SKCM UCEC
+python scripts/data/download/download_mutations.py --cohorts BRCA COAD HNSC KIRC LIHC LUAD LUSC OV PRAD SKCM UCEC
 ```
 
 ### 8. (Anomaly detection only) Additional data
 ```bash
-python scripts/download_gdsc.py
-python scripts/download_rppa.py   --cohorts BRCA PRAD UCEC LUAD LIHC LUSC OV
-python scripts/download_subtypes.py
-python scripts/download_genesets.py
-python scripts/download_cancer_genes.py
+python scripts/data/download/download_gdsc.py
+python scripts/data/download/download_rppa.py   --cohorts BRCA PRAD UCEC LUAD LIHC LUSC OV
+python scripts/data/download/download_subtypes.py
+python scripts/data/download/download_genesets.py
+python scripts/data/download/download_cancer_genes.py
 ```
 
 ### 13. PrimeKG knowledge graph (~50 MB, optional)
 ```bash
-python scripts/download_primekg.py
+python scripts/data/download/download_primekg.py
 ```
 
 Downloads from Harvard Dataverse (doi:10.7910/DVN/IXA7BM) and splits into four parquets:
@@ -118,7 +118,7 @@ Used by the `--primekg` agent flag for Prize-Collecting Steiner Tree analysis an
 
 ### 14. OpenTargets actionability (~5 MB, optional)
 ```bash
-python scripts/download_opentargets.py
+python scripts/data/download/download_opentargets.py
 ```
 
 Queries the OpenTargets Platform GraphQL API (no auth required) for ~1,200 OncoKB cancer genes. Takes ~5 minutes.
@@ -207,28 +207,28 @@ Expected output:
 
 ```bash
 # G2 — data-driven (default)
-python scripts/run_episode.py --cohort BRCA --seed 42 --save-log results/ep.json
+python scripts/run/run_episode.py --cohort BRCA --seed 42 --save-log results/ep.json
 
 # G2 + PrimeKG (PCST + path-finding)
-python scripts/run_episode.py --cohort BRCA --seed 42 --primekg --save-log results/ep.json
+python scripts/run/run_episode.py --cohort BRCA --seed 42 --primekg --save-log results/ep.json
 
 # G0 — explicit retrieval ceiling
-python scripts/run_episode.py --cohort BRCA --explicit-retrieval --seed 42
+python scripts/run/run_episode.py --cohort BRCA --explicit-retrieval --seed 42
 
 # G1 — implicit retrieval (real gene names from call 0)
-python scripts/run_episode.py --cohort BRCA --gene-codebook-gate 0 --seed 42
+python scripts/run/run_episode.py --cohort BRCA --gene-codebook-gate 0 --seed 42
 
 # mislead (wrong barcodes injected)
-python scripts/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42
+python scripts/run/run_episode.py --cohort OV --mislead-cohort BRCA --seed 42
 
 # Score a single episode (v3: scores + trace)
 python scripts/score_episode_v3.py results/{id}/episode.json --save
 
 # Multi-seed TCGA benchmark (G0/G1/G2/G3 × seeds × cohorts)
-bash scripts/run_tcga.sh --tag run10
+bash scripts/run/run_tcga.sh --tag run10
 
 # Score all episodes in a run directory
-bash scripts/score_all_tcga.sh results/tcga/run10/
+bash scripts/score/score_all_tcga.sh results/tcga/run10/
 ```
 
 ### Task B — target discovery

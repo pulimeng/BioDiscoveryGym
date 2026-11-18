@@ -75,8 +75,12 @@ QWEN_MODEL = os.environ.get("BDG_QWEN_MODEL", "Qwen/Qwen3.6-27B-FP8")
 # security to fix an unrelated host. The connection is unauthenticated as to server identity:
 # on a trusted internal network that is a considered trade, not a safe default.
 #
-# Set BDG_QWEN_VERIFY=1 to restore verification once the root CA is installed.
-QWEN_VERIFY = os.environ.get("BDG_QWEN_VERIFY", "0").lower() not in ("0", "false", "no", "")
+# 2026-11-18: DEFAULT IS NOW VERIFY. The gateway operator's guidance is to install the internal CA and
+# never disable verification. Two defects fixed: (1) the opt-out was keyed on "qwen" appearing in the
+# MODEL NAME, so bifrost's AI-Workstation/qwen3.8-flash (the R3 judge) also ran unverified, contrary
+# to the paragraph above; it is now keyed on the Qwen platform URL only. (2) The opt-out is no longer
+# the default: set BDG_QWEN_VERIFY=0 explicitly, and only for the Qwen platform host.
+QWEN_VERIFY = os.environ.get("BDG_QWEN_VERIFY", "1").lower() not in ("0", "false", "no", "")
 _qwen_tls_warned = False
 
 
@@ -91,7 +95,7 @@ def openai_client_for(model: str, **kw):
     env_key, base_url = judge_provider(model)
     if base_url is None:
         return openai.OpenAI(**kw)
-    if "qwen" in (model or "").lower() and not QWEN_VERIFY:
+    if base_url == QWEN_BASE_URL and not QWEN_VERIFY:
         import httpx
         global _qwen_tls_warned
         if not _qwen_tls_warned:
@@ -105,7 +109,9 @@ def openai_client_for(model: str, **kw):
 
 # Families that are UNDER EVALUATION in this benchmark. A judge drawn from one of these has
 # self-preference exposure and is not a valid neutral judge — see docs/SUPPORT_JUDGE_PROMPT.md.
-BENCHMARKED_FAMILIES = ("gpt", "claude", "gemini")
+# "gemma" added 2026-11-09: Google's open family shares a vendor with Gemini, which is evaluated;
+# the gateway now offers gemma4-31b, and the substring guard would otherwise let it through.
+BENCHMARKED_FAMILIES = ("gpt", "claude", "gemini", "gemma")
 
 
 def judge_provider(model: str) -> tuple[str, str | None]:
@@ -123,6 +129,11 @@ def judge_provider(model: str) -> tuple[str, str | None]:
     names are distinctive enough that over-matching is not a realistic risk.
     """
     ml = (model or "").lower()
+    # Gateway-qualified ids (bifrost requires `provider/model` since 2026-11). Checked FIRST: the
+    # gateway now serves a Qwen model (AI-Workstation/qwen3.8-flash), which the "qwen" branch
+    # below would otherwise send to the separate Qwen serving platform.
+    if ml.startswith("ai-workstation/"):
+        return ("BIFROST_API_KEY", BIFROST_BASE_URL)
     if "claude" in ml:
         return ("ANTHROPIC_API_KEY", None)
     if "qwen" in ml:
@@ -368,15 +379,8 @@ def score_experiment_quality(
 # COMPONENT_WEIGHTS / TOTAL_MAX are unchanged.
 # ──────────────────────────────────────────────────────────────────────────────
 
-_COHORT_FULL_NAMES: dict[str, str] = {
-    "BRCA": "Breast Invasive Carcinoma",
-    "PRAD": "Prostate Adenocarcinoma",
-    "UCEC": "Uterine Corpus Endometrial Carcinoma",
-    "LUAD": "Lung Adenocarcinoma",
-    "LIHC": "Liver Hepatocellular Carcinoma",
-    "LUSC": "Lung Squamous Cell Carcinoma",
-    "OV":   "Ovarian Serous Cystadenocarcinoma",
-}
+# Cancer names live in the cohort_identity task adapter (was duplicated here and in the agent).
+from biodiscoverygym.tasks.cohort_identity import FULL_NAMES as _COHORT_FULL_NAMES  # noqa: E402
 
 _FOOLED_VERDICTS = ("mislead_cohort", "other")
 _VALID_VERDICTS = {"true_cohort", "mislead_cohort", "other", "hedged"}

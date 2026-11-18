@@ -1,82 +1,74 @@
-# Scripts — what to run, and when
+# Scripts (v2)
 
-> Manuscript-side analysis, figure and report generators moved to `paper/` on 2026-09-11 (`paper/analysis`, `paper/figures`, `paper/reports`; see `paper/README.md`). `scripts/` is production only: running, scoring, judging, data building, audits.
+Grouped by job. Run everything from the repo root. Anything that spends API credit is marked **$**;
+the PI launches those. Scripts find the repo root themselves (the folder holding `setup.py`), so the
+folder depth does not matter.
 
+```
+scripts/
+  run/      run_episode.py, run_tcga.sh            episodes                          $
+  audit/    audit_blinding.py, g3_exposure.py      blinding + label-delivery gate
+  score/    score_tcga_episode.py, score_all_tcga.sh   outcome scoring              $ (LLM parts)
+  judge/    run_evidence_judge.py                  v2 evidence-support judge        $ (gateway)
+  report/   v2_report.py, episode_resources.py     judge-free reports
+  data/     process_tcga.py, perturb_lihc.py, download_all.sh, download/   data building
+  tools/    list_models.py                         provider catalogues
+```
 
-Grouped by job. Anything that spends API credit is marked **$**; those are run by the PI, not by an
-assistant.
+Judge routing and score-file names (`judges_config`) are library code:
+`biodiscoverygym/scoring/judges_config.py`.
 
-## Gates — run these before trusting a run
+## run/  **$**
+
+| script | |
+|---|---|
+| `run_episode.py` | one episode; output defaults to `results/v2/` |
+| `run_tcga.sh` | a run directory under `results/v2/<tag>`; `--group`, `--cohorts OV,LUSC`, `--model`, `--dry-run` |
+
+## audit/  (run before trusting a run)
 
 | script | asserts | exit |
 |---|---|---|
-| `audit_blinding.py` | nothing the **harness** showed the agent reveals identity | 1 on any hit |
-| `audit_integrity.py` | the `output_dir` leak + failed identity gates | 1 if a gate errored |
-| `check_judge_integrity.py` | every judge output parses, is complete, schema-valid | 1 if corrupt |
-| `check_judge_symmetry.py` | the judge sees the same reasoning channel for every model | 1 on asymmetry |
+| `audit_blinding.py` | nothing the harness showed the agent reveals the cohort; labels arrived at the arm's gate | 1 on any hit |
+| `g3_exposure.py` | locates the label delivery (`check_disclosure`); imported by `audit_blinding.py` | |
 
 ```bash
-python scripts/audit_blinding.py <run_dir>      # MUST exit 0 for a blinding claim to stand
-python scripts/audit_integrity.py --json out.json
-python scripts/check_judge_integrity.py --delete-bad   # removes corrupt so a resume re-judges
+python scripts/audit/audit_blinding.py <run_dir>     # must exit 0 for a blinding claim to stand
+python scripts/audit/audit_blinding.py --self-test
 ```
 
-`audit_blinding.py` is **arm-aware**: G0 discloses the true cohort and G3 a false one *by design*,
-so cohort checks are suppressed there; plumbing checks (episode label, results path, arm token,
-arm+seed, the word `mislead`) apply to every arm. Validated against known-bad data — 422/450 pilot
-episodes fail.
-
-## Running episodes  **$**
+## score/  **$** (LLM components)
 
 | script | |
 |---|---|
-| `run_episode.py` | single episode |
-| `run_tcga.sh` | a full run directory |
-| `score_tcga_episode.py` / `score_all_tcga.sh` | outcome scoring, resume-safe |
+| `score_tcga_episode.py` | one episode; `--skip-llm` for the deterministic parts only; adds the protocol check |
+| `score_all_tcga.sh` | a run directory, resume-safe, `--rescore` to overwrite |
 
-Both scorers **refuse to write a score file if any LLM judge errored** and exit non-zero — a failed
-judge returns `0.0`, which is indistinguishable from a real zero. That defect once produced a
-retracted finding; see `docs/DATA_INTEGRITY_AUDIT.md`.
+Both refuse to write a score file if any LLM judge errored.
 
-## Process judging  **$**
+## judge/  **$** (institutional gateway, campus network)
 
 | script | |
 |---|---|
-| `summarize_cot.py` | CoT judge, one pass; `--out-suffix` for replicates, records `judge_model` |
-| ~~`run_judge_panel.sh`~~ | **archived** &rarr; `scripts/archive/` — replaced by `run_judge.sh`, one judge family per terminal |
-| `score_support.py` | support/grounding judge (D1/D2/D3) |
-| ~~`cot_compare.py`~~ | **archived** &rarr; `scripts/archive/` — read the flat `*_cotsummary.json`; use `gen_cot_report.py` or `cot_flow.py` |
+| `run_evidence_judge.py` | does the evidence an agent cited support its claim? `--swap` adds the sensitivity test; writes `<run_dir>/_judging/evidence_<judge>.jsonl` |
 
-## Analysis — no API
+## report/
 
-| script | answers | writes |
-|---|---|---|
-| `cot_deepdive.py` | H1 (outcome vs derivation), H2 (derivation vs fooled) | `manuscript/figures/cot_stats.json` |
-| `shortcut_analysis.py` | how identity is reached, and what it costs | `manuscript/figures/shortcut_stats.json` |
-| `extract_cot.py` | trace distiller + `count_based_identity` probe | *(imported, also a CLI)* |
-| `episode_resources.py` | tokens in/out and wall-clock **per episode**; `--by-arm`, `--csv` | stdout / CSV |
-
-## Reports — no API
-
-All write to `results/tcga/`.
-
-| script | output |
+| script | |
 |---|---|
-| `gen_manuscript_report.py` | `MANUSCRIPT_REPORT.html` — paper-shaped summary |
-| `gen_cot_report.py` | `COT_REPORT.html` — per-episode CoT deep-dive |
-| `gen_summary_report.py` | `SUMMARY.html` — **the narrative summary**: how each model works, a representative episode's hypothesis arc, what the ladder changes, what the judges keep criticising. Charts inline, no p-values. Needs `cot_flow.py` first |
-| `cot_flow.py` | `manuscript/figures/cot_flow.json` + `FLOW_REPORT.html` — deterministic process record for all 570 episodes: tool sequence, modalities reached for, methods, confidence trajectory, pivots. **No LLM judge anywhere in it** |
-| `gen_hypothesis_report.py` | `HYPOTHESIS_REPORT.html` — renders `cot_stats.json` (H1/H2). An internal validity check, not a paper deliverable: this study is descriptive |
-| `svg_charts.py` | inline-SVG chart helpers shared by the reports — no CDN, so a report opened offline still draws |
-| `gen_ablation_report.py` | `ABLATION_REPORT.html` — detailed-vs-lean |
-| `gen_cost_report.py` | `COST_REPORT.html` — measured tokens; prices in an editable table |
-| `gen_ladder_report.py` | `LADDER_3MODEL.html` — per-cohort/modality (`--out` for the lean variant) |
+| `v2_report.py` | protocol compliance, label exposure, identity timing, basis-vs-visibility and anchoring flags; `--calls` lists every call and its code |
+| `episode_resources.py` | tokens, turns and timing per episode (no prices) |
 
+## data/
 
-## Regenerate everything after a re-score
+| script | |
+|---|---|
+| `process_tcga.py` | builds the TCGA cohort files under `data/` |
+| `perturb_lihc.py` | perturbed LIHC files for `run_episode.py --perturb` |
+| `download_all.sh`, `download/` | source downloads |
 
-```bash
-python paper/analysis/cot_deepdive.py && python paper/analysis/shortcut_analysis.py
-python paper/reports/gen_manuscript_report.py && python paper/reports/gen_cot_report.py
-python paper/reports/gen_ablation_report.py && python paper/reports/gen_cost_report.py
-```
+## tools/
+
+| script | |
+|---|---|
+| `list_models.py` | the model ids each provider serves (check before adding one to `biodiscoverygym/models.py`) |

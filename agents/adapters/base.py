@@ -14,7 +14,7 @@ Neutral dialect (what the agent holds in `messages`):
 Tools are Anthropic-format dicts: {"name","description","input_schema": {...json schema...}}.
 Each adapter converts these to its provider's function/tool schema.
 
-An adapter implements: create(*, model, system, messages, tools, max_tokens, thinking=None)
+An adapter implements: create(*, model, system, messages, tools, max_tokens, thinking=None, effort=None)
 -> Response, mapping the provider's stop reason to {"end_turn","max_tokens","tool_use"}.
 """
 from __future__ import annotations
@@ -53,6 +53,9 @@ class Response:
     stop_reason: str               # normalized: "end_turn" | "max_tokens" | "tool_use"
     usage: SimpleNamespace = field(default_factory=lambda: SimpleNamespace(
         input_tokens=None, output_tokens=None))
+    # Anthropic stop_details.category when stop_reason == "refusal" (e.g. "reasoning_extraction",
+    # "bio", "cyber"); None otherwise and on providers that do not report one.
+    refusal_category: str | None = None
 
 
 class Adapter:
@@ -66,7 +69,8 @@ class Adapter:
         self.api_key = api_key
 
     def create(self, *, model: str, system: str, messages: list[dict],
-               tools: list[dict], max_tokens: int, thinking: dict | None = None) -> Response:
+               tools: list[dict], max_tokens: int, thinking: dict | None = None,
+               effort: str | None = None) -> Response:
         raise NotImplementedError
 
 

@@ -66,7 +66,8 @@ class OpenAIAdapter(Adapter):
                     out.append({"role": "user", "content": "\n".join(pending_text)})
         return out
 
-    def create(self, *, model, system, messages, tools, max_tokens, thinking=None) -> Response:
+    def create(self, *, model, system, messages, tools, max_tokens, thinking=None,
+               effort=None) -> Response:  # effort: Anthropic-only, ignored here
         resp = self._client.chat.completions.create(
             model=model, messages=self._messages(system, messages),
             tools=self._tools(tools), tool_choice="auto",

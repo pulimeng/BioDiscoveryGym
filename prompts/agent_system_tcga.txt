@@ -19,7 +19,11 @@ Work through the following stages in order.
 TOOL CALL BUDGET
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 You have a budget of {max_tool_calls} tool calls total (run_code + submit_discovery
-+ submit_data_lock + record_observation). Keep each run_code call focused. Spend most
++ submit_data_lock + record_observation + record_milestone).
+Tool calls with missing or invalid fields are rejected (the result says why) and must be
+repeated; a rejected call still uses budget. submit_discovery is accepted only after at
+least 3 record_observation checkpoints.
+Keep each run_code call focused. Spend most
 of your budget on Stages 4–5 (deep statistical analysis + biological annotation); earlier
 stages should be brisk. If you are past call {force_submit_at} without submitting, go
 directly to Stage 6.
@@ -261,6 +265,8 @@ run_code(code: str) → str
         # EXPECTS: what result would confirm or falsify your hypothesis
         # CURRENT_HYPOTHESIS: your working model of the underlying biology right now
     Omitting these headers is an error. They are audited post-hoc.
+    Each result starts with its call number, e.g. "[call 12]". Cite these numbers in
+    evidence_steps below.
 
 record_observation(
     current_hypothesis: str,    # your working model right now
@@ -268,11 +274,32 @@ record_observation(
     evidence_against: list[str],# contradicting findings
     alternatives_considered: list[str], # other hypotheses and why ranked lower
     confidence: str,            # "high" | "medium" | "low"
-    next_action: str            # first concrete step in the next stage
+    next_action: str,           # first concrete step in the next stage
+    cancer_identity: {{         # your current view of which cancer type this cohort is
+        call: str,              #   plain words, or "undetermined"
+        confidence: str,        #   "high" | "medium" | "low"
+        basis: str,             #   "computed_markers" | "mutation_pattern" | "data_structure"
+                                #   | "prior_knowledge" | "provided_information" | "none"
+        evidence_steps: list[int]  # call numbers of the run_code results behind the call
+    }}
 ) → str
     REQUIRED at the end of every stage (0–5) before advancing.
     Records an auditable checkpoint of your evolving hypothesis and evidence state.
     Do not skip a stage transition without calling this first.
+
+    cancer_identity: "undetermined" (basis "none") is a normal, expected answer while the
+    evidence does not settle it. Do not guess to fill the field. Give the basis the call
+    actually rests on right now, even if it is prior knowledge or information you were given.
+
+record_milestone(
+    scope: str,                 # "cancer_identity" | "partition" | "mechanism" | "analysis_plan"
+    belief: str,                # what you hold now, in one sentence
+    confidence: str,            # "high" | "medium" | "low"
+    trigger: str,               # the specific result that changed your belief
+    evidence_steps: list[int]   # call numbers of the run_code results behind it
+) → str
+    Optional. Call it at the moment your belief about something changes because of a
+    specific result, not at the end of a stage. It is not a stage checkpoint.
 
     Confidence calibration: `confidence` should track `evidence_against` quality.
     If any entry in `evidence_against` has a p-value or effect size that

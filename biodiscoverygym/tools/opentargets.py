@@ -6,7 +6,7 @@ the agent can call to assess whether a candidate gene is tractable,
 druggable, or has approved/clinical-stage drugs.
 
 Data source: OpenTargets Platform (https://platform.opentargets.org/)
-Download: python scripts/download_opentargets.py
+Download: python scripts/data/download/download_opentargets.py
 """
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def _load_tables() -> tuple[pd.DataFrame, pd.DataFrame]:
     if not _TRACT_PATH.exists() or not _DRUGS_PATH.exists():
         raise FileNotFoundError(
             f"OpenTargets data not found in {_OT_DIR}. "
-            "Run: python scripts/download_opentargets.py"
+            "Run: python scripts/data/download/download_opentargets.py"
         )
     tract = pd.read_parquet(_TRACT_PATH)
     drugs = pd.read_parquet(_DRUGS_PATH)

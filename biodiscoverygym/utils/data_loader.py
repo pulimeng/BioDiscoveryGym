@@ -258,7 +258,7 @@ class DataLoader:
 
         if perturb and not (d / "LIHC_clinical_perturbed.tsv").exists():
             raise FileNotFoundError(
-                "Perturbed data not found. Run: python scripts/perturb_lihc.py"
+                "Perturbed data not found. Run: python scripts/data/perturb_lihc.py"
             )
 
         methylation_path = d / "methylation.parquet"
